@@ -136,14 +136,12 @@ jobs:
       # ---------------------------------------------------------------------
       # Step 1: Acquire ZIP
       # ---------------------------------------------------------------------
-      - name: Acquire source ZIP
+      - name: Package SERMAX Android v0.2 source
         id: acquire
         run: |
-          python3 scripts/acquire_zip.py \
-            --source "${{ inputs.zip_source || 'input-directory' }}" \
-            --url "${{ inputs.zip_url }}" \
-            --tag "${{ inputs.release_tag }}" \
-            --path "${{ inputs.zip_path || 'input/web-build-1792243053947-SERMAX_Android_Previa_v0.1_projeto.zip' }}"
+          cd sermax-android
+          zip -qr "$GITHUB_WORKSPACE/sermax-android-v0.2.zip" .
+          echo "zip_path=$GITHUB_WORKSPACE/sermax-android-v0.2.zip" >> "$GITHUB_OUTPUT"
 
       # ---------------------------------------------------------------------
       # Step 2: Extract ZIP
