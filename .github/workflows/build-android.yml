@@ -21,6 +21,10 @@ name: Build Android APK
 #  11. On failure, run automated diagnosis
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-android.yml"
   workflow_dispatch:
     inputs:
       zip_source:
@@ -139,7 +143,7 @@ jobs:
             --source "${{ inputs.zip_source || 'input-directory' }}" \
             --url "${{ inputs.zip_url }}" \
             --tag "${{ inputs.release_tag }}" \
-            --path "${{ inputs.zip_path }}"
+            --path "${{ inputs.zip_path || 'web-build-1792243053947-SERMAX_Android_Previa_v0.1_projeto.zip' }}"
 
       # ---------------------------------------------------------------------
       # Step 2: Extract ZIP
