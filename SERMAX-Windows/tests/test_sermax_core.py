@@ -48,7 +48,7 @@ class TestMemoriaSERMAX(unittest.TestCase):
             {"role": "user", "content": "Meu carro é um Fiat Siena 2008"},
         ])
         resultado = core.buscar_memorias("carro Siena")
-        self.assertTrue(any("Siena" in x for x in resultado))
+        self.assertTrue(any("Siena" in item["content"] for item in resultado))
 
     def test_calculo_local(self):
         self.assertEqual(
