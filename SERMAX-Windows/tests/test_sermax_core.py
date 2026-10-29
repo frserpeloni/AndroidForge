@@ -2,7 +2,6 @@ import json
 import os
 import tempfile
 import unittest
-from unittest import mock
 
 import sermax_core as core
 
@@ -52,7 +51,10 @@ class TestMemoriaSERMAX(unittest.TestCase):
         self.assertTrue(any("Siena" in x for x in resultado))
 
     def test_calculo_local(self):
-        self.assertEqual(core.responder_calculo_local("quanto é 125 x 87"), "10875")
+        self.assertEqual(
+            core.responder_calculo_local("quanto é 125 x 87"),
+            "Resultado: 10.875"
+        )
 
     def test_ollama_indisponivel_nao_crasha_import(self):
         self.assertTrue(callable(core.perguntar))
