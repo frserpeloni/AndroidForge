@@ -67,7 +67,7 @@ jobs:
             'if cmd == "/reiniciar":',
             'if cmd == "/repetir"'
           )
-          $missingMarkers = @($requiredMarkers | Where-Object { $terminal -notlike "*$_*" })
+          $missingMarkers = @($requiredMarkers | Where-Object { -not $terminal.Contains($_) })
           if ($terminal -match "terminal de contingência" -or $missingMarkers.Count -gt 0) {
             Write-Error ("Original terminal UI not restored. Missing markers: " + ($missingMarkers -join ", "))
             exit 1
