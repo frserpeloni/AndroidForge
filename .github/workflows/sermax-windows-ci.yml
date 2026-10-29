@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - sermax-windows-community
+      - sermax-windows-integration-20261029
     paths:
       - "SERMAX-Windows/**"
       - ".github/workflows/sermax-windows-ci.yml"
@@ -32,11 +33,33 @@ jobs:
           python-version: "3.11"
       - name: Install build tool
         run: python -m pip install --upgrade pip pyinstaller
+      - name: Verify required SERMAX sources
+        shell: pwsh
+        run: |
+          $required = @(
+            "sermax_core.py",
+            "sermax_launcher.py",
+            "SERMAX.spec",
+            "SERMAX_terminal/sermax_terminal.py",
+            "SERMAX_terminal/sermax_voz.py",
+            "SERMAX_terminal/sermax_integracao_comandos.py",
+            "sermax_historico_comandos.py",
+            "sermax_planejador.py",
+            "sermax_executor.py",
+            "sermax_tarefas.py",
+            "ferramenta_windows.py"
+          )
+          $missing = @($required | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            Write-Error ("SERMAX source integration incomplete. Missing files: " + ($missing -join ", "))
+            exit 1
+          }
       - name: Syntax check
         shell: pwsh
         run: |
-          $files = Get-ChildItem -Recurse -Filter *.py | Where-Object { $_.FullName -notmatch '\\(build|dist|__pycache__)\\' }
-          if (-not $files) { throw "No Python source files found in SERMAX-Windows." }
+          $files = @(Get-ChildItem -Path . -Recurse -File -Filter *.py |
+            Where-Object { $_.FullName -notmatch '[\\\\](build|dist|__pycache__)[\\\\]' })
+          if ($files.Count -eq 0) { throw "No Python source files found in SERMAX-Windows." }
           foreach ($file in $files) {
             python -m py_compile $file.FullName
             if ($LASTEXITCODE -ne 0) { throw "Syntax check failed: $($file.FullName)" }
@@ -50,16 +73,14 @@ jobs:
           } else {
             Write-Host "No tests directory yet; syntax validation only."
           }
-      - name: Build SERMAX.exe when spec exists
+      - name: Build SERMAX.exe
         shell: pwsh
         run: |
-          if (Test-Path "SERMAX.spec") {
-            python -m PyInstaller --noconfirm --clean "SERMAX.spec"
-          } elseif (Test-Path "sermax_launcher.py") {
-            python -m PyInstaller --noconfirm --clean --onefile --console --name SERMAX --add-data "SERMAX_terminal;SERMAX_terminal" sermax_launcher.py
-          } else {
-            throw "Neither SERMAX.spec nor sermax_launcher.py exists."
-          }
+          python -m PyInstaller --noconfirm --clean "SERMAX.spec"
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/SERMAX.exe")) { throw "Build did not produce dist/SERMAX.exe." }
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
