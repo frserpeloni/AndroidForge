@@ -5,7 +5,7 @@ import json
 import os
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(os.environ.get("SERMAX_ROOT") or Path(__file__).resolve().parent).resolve()
 PATH = ROOT / "historico_comandos.json"
 MAX = 100
 CONTROLES = ("/historico", "/repetir", "/reiniciar", "/sair", "/ajuda")
@@ -34,6 +34,7 @@ def registrar(comando):
         return False
     d = carregar()
     itens = d["comandos"]
+    # Cada entrada é registrada uma vez; não duplica imediatamente a mesma pergunta.
     if itens and str(itens[0].get("comando", "")) == comando:
         return False
     itens.insert(0, {"comando": comando, "data": datetime.datetime.now().isoformat(timespec="seconds")})
