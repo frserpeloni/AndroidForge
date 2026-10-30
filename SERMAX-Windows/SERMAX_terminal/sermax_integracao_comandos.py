@@ -6,15 +6,17 @@ def processar(cmd,hist,core):
     low=cmd.strip().lower()
     if low=="/integracao":
         import os
+        from sermax_voz import localizar_whisper_e_modelo
         root=os.path.abspath(os.environ.get("SERMAX_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(core.__file__)))))
+        whisper, modelo_voz = localizar_whisper_e_modelo()
         lines=["SERMAX v3.1.4 — diagnóstico da instalação principal",
           "Núcleo: "+("OK" if hasattr(core,"perguntar") else "AUSENTE"),
           "Planejador: "+("OK" if hasattr(core,"sermax_planejador") else "AUSENTE"),
           "Executor: "+("OK" if hasattr(core,"sermax_executor") else "AUSENTE"),
           "Tarefas: "+("OK" if hasattr(core,"sermax_tarefas") else "AUSENTE"),
           "Memória: "+("ENCONTRADA" if os.path.isfile(getattr(core,"ARQUIVO_MEMORIA","")) else "AUSENTE"),
-          "Whisper: "+("ENCONTRADO" if os.path.isfile(os.path.join(root,"voz","whisper","Release","whisper-cli.exe")) else "AUSENTE"),
-          "Modelo de voz: "+("ENCONTRADO" if os.path.isfile(os.path.join(root,"voz","modelos","ggml-tiny.bin")) else "AUSENTE"),
+          "Whisper: "+("ENCONTRADO: "+whisper if whisper and os.path.isfile(whisper) else "AUSENTE"),
+          "Modelo de voz: "+("ENCONTRADO: "+modelo_voz if modelo_voz and os.path.isfile(modelo_voz) else "AUSENTE"),
           "Instalação ativa: C:\\SERMAX."]
         _log(hist,cmd,"\n".join(lines)); return True
     if low=="/plano" or low.startswith("/plano "):
