@@ -47,6 +47,10 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertIn('os.environ.get("SERMAX_ROOT")', core)
         self.assertIn('ARQUIVO_MEMORIA = os.path.join(BASE_DIR, "memoria_sermax.json")', core)
 
+    def test_diagnostico_usa_raiz_da_instalacao_em_executavel(self):
+        integracao = (ROOT / "SERMAX_terminal" / "sermax_integracao_comandos.py").read_text(encoding="utf-8")
+        self.assertIn('os.environ.get("SERMAX_ROOT"', integracao)
+
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
                          "Memória pessoal não deve ser versionada no pacote de fontes.")
