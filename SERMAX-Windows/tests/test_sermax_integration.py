@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -7,7 +8,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "SERMAX_terminal"))
 import sermax_launcher
+import sermax_voz
 
 
 class TestEmpacotamentoSERMAX(unittest.TestCase):
@@ -98,6 +101,23 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertEqual(os.environ.get("SERMAX_ROOT"), raiz_instalacao)
         mudar_diretorio.assert_called_once_with(raiz_instalacao)
         executar_interface.assert_called_once_with(script_interface, run_name="__main__")
+
+    def test_localizador_de_voz_prioriza_arquivos_da_instalacao(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            exe = raiz / "voz" / "whisper-cli.exe"
+            modelo = raiz / "voz" / "modelos" / "ggml-tiny.bin"
+            exe.parent.mkdir(parents=True)
+            modelo.parent.mkdir(parents=True)
+            exe.write_bytes(b"teste")
+            modelo.write_bytes(b"teste")
+
+            with patch.object(sermax_voz, "SERMAX_DIR", raiz), \
+                 patch.object(sermax_voz, "USER_DOWNLOADS", raiz / "Downloads"):
+                localizado_exe, localizado_modelo = sermax_voz.localizar_whisper_e_modelo()
+
+            self.assertEqual(localizado_exe, str(exe))
+            self.assertEqual(localizado_modelo, str(modelo))
 
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
