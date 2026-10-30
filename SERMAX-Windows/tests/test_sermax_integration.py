@@ -175,8 +175,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporario:
             audio = Path(temporario) / "teste.wav"
             self._wav_pcm_minimo(audio)
-            with patch.object(sermax_voz, "localizar_whisper_e_modelo", return_value=(None, None)), \\
-                 patch.object(sermax_voz.subprocess, "run") as executar:
+            with patch.object(sermax_voz, "localizar_whisper_e_modelo", return_value=(None, None)) as localizar, patch.object(sermax_voz.subprocess, "run") as executar:
                 with self.assertRaisesRegex(FileNotFoundError, "Whisper/modelo não localizados"):
                     sermax_voz.transcrever_arquivo(audio)
             executar.assert_not_called()
