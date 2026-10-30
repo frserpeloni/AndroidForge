@@ -119,6 +119,35 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             self.assertEqual(localizado_exe, str(exe))
             self.assertEqual(localizado_modelo, str(modelo))
 
+    def test_localizador_de_voz_retorna_vazio_quando_recursos_nao_existirem(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario) / "instalacao"
+            downloads = Path(temporario) / "Downloads"
+            raiz.mkdir()
+            downloads.mkdir()
+            with patch.object(sermax_voz, "SERMAX_DIR", raiz), \
+                 patch.object(sermax_voz, "USER_DOWNLOADS", downloads):
+                exe, modelo = sermax_voz.localizar_whisper_e_modelo()
+            self.assertIsNone(exe)
+            self.assertIsNone(modelo)
+
+    def test_localizador_de_voz_busca_recursos_em_downloads(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario) / "instalacao"
+            downloads = Path(temporario) / "Downloads"
+            raiz.mkdir()
+            pasta_voz = downloads / "whisper-build"
+            pasta_voz.mkdir(parents=True)
+            exe = pasta_voz / "whisper-cli.exe"
+            modelo = pasta_voz / "ggml-tiny.bin"
+            exe.write_bytes(b"teste")
+            modelo.write_bytes(b"teste")
+            with patch.object(sermax_voz, "SERMAX_DIR", raiz), \
+                 patch.object(sermax_voz, "USER_DOWNLOADS", downloads):
+                localizado_exe, localizado_modelo = sermax_voz.localizar_whisper_e_modelo()
+            self.assertEqual(localizado_exe, str(exe))
+            self.assertEqual(localizado_modelo, str(modelo))
+
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
                          "Memória pessoal não deve ser versionada no pacote de fontes.")
