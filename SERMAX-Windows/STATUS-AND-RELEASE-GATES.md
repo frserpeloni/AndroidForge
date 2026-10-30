@@ -2,31 +2,34 @@
 
 **Status: integração em andamento. O artefato gerado é de teste, não é release nem instalador validado.**
 
+## Atualização de 30/10/2026, CI 88
+- Run `41081941583` concluído com `success` no branch `sermax-windows-integration-20261029`, commit `8d171c99e2d5a8c52fd90cdc90c15da553271672`.
+- Foram aprovadas as etapas de verificação das fontes, marcadores da interface original, sintaxe Python, testes automatizados, compilação PyInstaller, verificação do executável e upload do artefato.
+- Artefato `SERMAX-Windows-CI-88`, ID `12989792029`, tamanho ZIP de 8.667.380 bytes, SHA-256 `1150f89d5a518546258d3332c26e424c6c77173090a94cb9edcbb8197b6047e0`. Retenção até 13/11/2026.
+- A CI não executa o `.exe` gerado e não valida a integração real com Ollama, voz, memória após reinício ou atualização segura.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41081941583
+
 ## Atualização de 30/10/2026, CI 84
 - Run `41078209745` concluído com `success` no branch `sermax-windows-integration-20261029`, commit `f57bfa84fe681a70b57bda13f16512b8ab8782af`.
 - Foram aprovados 23 testes automatizados: 9 testes de núcleo/memória e 14 testes de integração/empacotamento, incluindo validação de WAV, fallback quando faltam os recursos do Whisper, caminhos do launcher e preservação da memória.
 - Também passaram a verificação de fontes obrigatórias, marcadores da interface original, sintaxe Python, compilação PyInstaller, verificação do executável e upload do artefato.
 - Artefato `SERMAX-Windows-CI-84`, ID `12987663118`, tamanho ZIP de 8.666.192 bytes, SHA-256 do ZIP `2ef1340b568a65c316e7bb6d6b0856ad17f7affdb661d52f403de1c11111ce47`. Retenção até 13/11/2026. É artefato de CI, não instalador aprovado.
-- A correção da sintaxe do teste de fallback de voz foi validada. O CI não executa o `.exe` gerado e não valida a integração real com Ollama, o áudio local nem o atualizador.
 - Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41078209745
 
 ## Referência e integridade
 - Referência de trabalho do projeto: `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
-- Commit atual da integração Windows: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
+- Commit de restauração da interface original: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
+- Commit atual da branch de integração: `8d171c99e2d5a8c52fd90cdc90c15da553271672`.
 - Backup de referência informado: `SERMAX bkp 28 10 26.zip`.
 - A interface original foi restaurada em `SERMAX_terminal/sermax_terminal.py`, usando a fonte preservada. A verificação automatizada confirmou os marcadores do rosto ASCII, cores verdes, funções de renderização e comandos `/vozdiag`, `/reiniciar` e `/repetir`.
 
-## Validação automatizada em 30/10/2026
-- Workflow run mais recente: `41059175794`, conclusão `success`, commit `f3a386917e982e377b487bb9beec5d7af06bc15e`.
+## Validação automatizada anterior em 30/10/2026
+- Workflow run `41059175794`, conclusão `success`, commit `f3a386917e982e377b487bb9beec5d7af06bc15e`.
 - O run 49 executou 10 testes unitários e de integração, todos aprovados.
-- Também passaram verificação dos arquivos obrigatórios, marcadores da interface original, sintaxe Python, compilação PyInstaller, verificação do executável e envio do artefato.
-- Runs anteriores `41057411248` e `41057404849` também concluíram com `success` no commit de restauração da interface `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
-- Testes identificados no log: 6 testes de memória/núcleo e 4 testes de integração/empacotamento, total de 10 aprovados.
-- Os testes cobrem arquivos necessários, referências no `SERMAX.spec`, configuração do caminho da memória e ausência de memória pessoal no repositório.
+- Runs anteriores `41057411248` e `41057404849` também concluíram com `success` no commit de restauração da interface.
 - Artefato de teste do run 49: `SERMAX-Windows-CI-49`, ID `12977713565`, ZIP de 8.667.355 bytes. Não é pacote de instalação validado.
-- O artefato tem retenção limitada no GitHub Actions. Não o tratar como release.
 
-Esses resultados confirmam a restauração da interface no repositório, a aprovação dos 10 testes automatizados e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
+Esses resultados confirmam a validação automatizada e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
 
 ## Auditoria de continuidade, 30/10/2026
 - A árvore atual de `SERMAX-Windows` não contém instalador nem atualizador/rollback dedicado. A CI gera somente `SERMAX.exe`; não gera um pacote seguro de atualização para `C:\\SERMAX`.
