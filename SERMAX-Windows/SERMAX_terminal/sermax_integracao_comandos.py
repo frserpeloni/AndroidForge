@@ -6,7 +6,7 @@ def processar(cmd,hist,core):
     low=cmd.strip().lower()
     if low=="/integracao":
         import os
-        root=os.path.dirname(os.path.abspath(core.__file__))
+        root=os.path.abspath(os.environ.get("SERMAX_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(core.__file__)))))
         lines=["SERMAX v3.1.4 — diagnóstico da instalação principal",
           "Núcleo: "+("OK" if hasattr(core,"perguntar") else "AUSENTE"),
           "Planejador: "+("OK" if hasattr(core,"sermax_planejador") else "AUSENTE"),
