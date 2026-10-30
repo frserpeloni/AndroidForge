@@ -2,14 +2,13 @@
 
 **Status: integração em andamento. O artefato gerado é de teste, não é release nem instalador validado.**
 
-## Atualização de 30/10/2026, CI 55
-- Run `41060423045` concluído com `success` no branch `sermax-windows-integration-20261029`.
-- Passaram as verificações de fontes, marcadores da interface original, sintaxe, testes unitários, compilação PyInstaller, verificação do executável e upload do artefato.
-- Artefato `SERMAX-Windows-CI-55`, ID `12977819771`, tamanho ZIP de 8.667.631 bytes, SHA-256 do ZIP `8e1b2dd6e551dfa1f3bc5d9b28d039c5f0f19658b6f7a443bb6a17f07b30e12d`. Retenção de 14 dias. É artefato de CI, não instalador aprovado.
-- Correção validada pelo CI: o diagnóstico `/integracao` prioriza `SERMAX_ROOT` ao localizar os arquivos de voz, evitando depender da pasta temporária do PyInstaller.
-- Teste de regressão acrescentado para verificar o uso de `SERMAX_ROOT`. O CI concluiu com sucesso, mas a execução real do `.exe` e os testes de voz/memória no computador de destino continuam pendentes.
-- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41060423045
-
+## Atualização de 30/10/2026, CI 84
+- Run `41078209745` concluído com `success` no branch `sermax-windows-integration-20261029`, commit `f57bfa84fe681a70b57bda13f16512b8ab8782af`.
+- Foram aprovados 23 testes automatizados: 9 testes de núcleo/memória e 14 testes de integração/empacotamento, incluindo validação de WAV, fallback quando faltam os recursos do Whisper, caminhos do launcher e preservação da memória.
+- Também passaram a verificação de fontes obrigatórias, marcadores da interface original, sintaxe Python, compilação PyInstaller, verificação do executável e upload do artefato.
+- Artefato `SERMAX-Windows-CI-84`, ID `12987663118`, tamanho ZIP de 8.666.192 bytes, SHA-256 do ZIP `2ef1340b568a65c316e7bb6d6b0856ad17f7affdb661d52f403de1c11111ce47`. Retenção até 13/11/2026. É artefato de CI, não instalador aprovado.
+- A correção da sintaxe do teste de fallback de voz foi validada. O CI não executa o `.exe` gerado e não valida a integração real com Ollama, o áudio local nem o atualizador.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41078209745
 
 ## Referência e integridade
 - Referência de trabalho do projeto: `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
