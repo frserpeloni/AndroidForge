@@ -1,5 +1,7 @@
+import os
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 import sys
 
 
@@ -78,6 +80,24 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertEqual(bundle, root)
         self.assertEqual(terminal_dir, str(Path(root) / "SERMAX_terminal"))
         self.assertEqual(terminal_script, str(Path(root) / "SERMAX_terminal" / "sermax_terminal.py"))
+
+    def test_launcher_empacotado_define_raiz_e_abre_interface_do_bundle(self):
+        raiz_instalacao = r"C:\SERMAX"
+        script_interface = r"C:\Temp\_MEI12345\SERMAX_terminal\sermax_terminal.py"
+        with patch.object(sermax_launcher.sys, "frozen", True, create=True), \
+             patch.object(sermax_launcher.sys, "executable", r"C:\SERMAX\SERMAX.exe"), \
+             patch.object(sermax_launcher.sys, "_MEIPASS", r"C:\Temp\_MEI12345", create=True), \
+             patch.object(sermax_launcher, "resolver_caminhos",
+                          return_value=(raiz_instalacao, r"C:\Temp\_MEI12345",
+                                        os.path.dirname(script_interface), script_interface)), \
+             patch.object(sermax_launcher.os.path, "isfile", return_value=True), \
+             patch.object(sermax_launcher.os, "chdir") as mudar_diretorio, \
+             patch.object(sermax_launcher.runpy, "run_path") as executar_interface:
+            sermax_launcher.main()
+
+        self.assertEqual(os.environ.get("SERMAX_ROOT"), raiz_instalacao)
+        mudar_diretorio.assert_called_once_with(raiz_instalacao)
+        executar_interface.assert_called_once_with(script_interface, run_name="__main__")
 
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
