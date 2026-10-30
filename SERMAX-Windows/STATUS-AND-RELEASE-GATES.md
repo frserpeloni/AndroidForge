@@ -1,39 +1,39 @@
-# SERMAX Windows — status de integração
+# SERMAX Windows, status de integração
 
-**Status: em integração; não é uma versão instalável nem um release.**
+**Status: integração em andamento. O artefato gerado é de teste, não é release nem instalador validado.**
 
-## Objetivo da integração
-A referência de trabalho é o backup fornecido pelo mantenedor. A versão de destino planejada é SERMAX v1.8.2, partindo da base v1.8.1. A interface terminal verde/preta com rosto ASCII, memória persistente e comandos existentes devem ser preservados.
+## Referência e integridade
+- Referência de trabalho do projeto: `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
+- Commit atual da integração Windows: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
+- Backup de referência informado: `SERMAX bkp 28 10 26.zip`.
+- A interface original foi restaurada em `SERMAX_terminal/sermax_terminal.py`, usando a fonte preservada. A verificação automatizada confirmou os marcadores do rosto ASCII, cores verdes, funções de renderização e comandos `/vozdiag`, `/reiniciar` e `/repetir`.
 
-## Resultado de CI confirmado em 29/10/2026
-- Workflow run: `40957286990`.
-- Commit validado: `c71f2bb25d7fb376f6307b352100b2e2353fecc0`.
-- Checagem de fontes obrigatórias: aprovada.
-- Checagem de sintaxe: aprovada.
-- Testes unitários disponíveis: aprovados.
+## Validação automatizada em 30/10/2026
+- Workflow run: `41057411248`, conclusão `success`.
+- Workflow run duplicado: `41057404849`, conclusão `success`.
+- Commit validado: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
+- Verificação dos arquivos obrigatórios: aprovada.
+- Verificação da interface e dos comandos originais: aprovada.
+- Compilação sintática dos arquivos Python: aprovada.
+- Testes unitários existentes: aprovados.
 - Compilação PyInstaller: aprovada.
-- Verificação de `dist/SERMAX.exe`: aprovada.
-- Artefato de teste gerado: `SERMAX-Windows-CI-34` (8.662.412 bytes; retenção indicada até 12/11/2026).
+- Verificação da saída `dist/SERMAX.exe`: aprovada.
+- Artefato de teste: `SERMAX-Windows-CI-44`, executável de 8.865.683 bytes. Cabeçalho PE válido verificado após baixar o ZIP.
+- O artefato tem retenção limitada no GitHub Actions. Não o tratar como pacote de instalação.
 
-Esses resultados comprovam que a árvore atual compila no runner Windows do GitHub. Não comprovam a execução correta no computador do mantenedor, nem a integração real com Ollama, voz ou memória persistente após reinicialização.
+Esses resultados confirmam a restauração da interface no repositório e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
 
-## O que existe nesta ramificação
-Há documentação, um fluxo de CI e módulos de integração. A presença desses arquivos não significa que o projeto original esteja integralmente importado. O arquivo atual `SERMAX_terminal/sermax_terminal.py` é explicitamente um terminal de contingência e não a interface visual original.
+## O que ainda precisa ser validado
+1. Comparar o núcleo e todos os módulos da ramificação com os arquivos oficiais do backup de referência.
+2. Conferir a especificação PyInstaller e os recursos incluídos no executável contra a instalação aprovada.
+3. Testar no Windows do mantenedor a inicialização, o rosto e o layout reais, os comandos existentes e o comportamento com Ollama indisponível e disponível.
+4. Confirmar que `memoria_sermax.json` é gravada em `C:\\SERMAX`, permanece após fechar e reabrir o programa e nunca é substituída durante atualização.
+5. Testar voz com os arquivos locais reais do Whisper e o modelo de voz, sem baixar nem substituir recursos existentes.
+6. Preparar e testar um atualizador com backup e rollback, preservando memória, interface, ferramentas e backups anteriores.
+7. Registrar cada teste como APROVADO, FALHOU ou NÃO EXECUTADO. Não inferir aprovação de testes que dependem do computador do mantenedor.
 
-## Bloqueios atuais
-- O núcleo e os módulos desta ramificação ainda precisam ser comparados com os arquivos oficiais do backup.
-- A interface original `SERMAX_terminal/sermax_terminal.py`, com rosto ASCII verde e layout DOS, ainda precisa ser restaurada a partir da fonte original e conferida.
-- A especificação de compilação e os recursos precisam ser comparados com a cópia original antes de considerar o executável fiel ao projeto.
-- É necessário testar no Windows do mantenedor a persistência da memória fora da pasta temporária do PyInstaller, a inicialização, comandos, voz e conexão com Ollama.
-- O artefato de CI é temporário e **não deve ser instalado sobre** `C:\SERMAX`.
-
-## Critérios obrigatórios antes de publicar
-1. Importar e comparar os fontes oficiais do backup, sem substituir a interface por outra.
-2. Excluir memória pessoal, histórico, backups locais, modelos de IA, gravações de voz e outros dados privados do repositório público.
-3. Confirmar sintaxe e testes automatizados em Windows.
-4. Compilar o executável usando a especificação oficial revisada.
-5. Verificar que a memória é gravada fora da pasta temporária do PyInstaller e continua existindo após reiniciar.
-6. Testar comandos e interface no Windows real com Ollama; testes de CI não comprovam por si só a integração com o modelo local.
-7. Só então preparar um release versionado e instruções de atualização com backup/rollback.
-
-**Não instale nem distribua esta ramificação como uma versão final.** A instalação existente em `C:\SERMAX` não deve ser alterada até que um pacote de atualização validado esteja disponível.
+## Proteção da instalação existente
+- Não instalar o artefato de CI diretamente sobre `C:\\SERMAX`.
+- Não declarar a versão v1.8.2 concluída.
+- Não mesclar nem publicar como release até que a comparação com o backup e os testes funcionais sejam concluídos.
+- Não incluir `memoria_sermax.json`, históricos pessoais, gravações de voz ou outros dados privados no repositório.
