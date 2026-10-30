@@ -50,6 +50,27 @@ class TestMemoriaSERMAX(unittest.TestCase):
         self.assertEqual(len(recarregada), 1)
         self.assertEqual(recarregada[0]["content"], "Meu carro é um Fiat Siena 2008")
 
+    def test_falha_ao_substituir_preserva_memoria_anterior(self):
+        conteudo_anterior = '[{"role": "user", "content": "Meu nome é Fabiano"}]'
+        with open(core.ARQUIVO_MEMORIA, "w", encoding="utf-8") as f:
+            f.write(conteudo_anterior)
+        core.historico[:] = [
+            {"role": "user", "content": "Meu carro é um Fiat Siena 2008"}
+        ]
+
+        from unittest.mock import patch
+        with patch("sermax_core.os.replace", side_effect=OSError("falha simulada")):
+            with self.assertRaises(OSError):
+                core.salvar_memoria()
+
+        with open(core.ARQUIVO_MEMORIA, encoding="utf-8") as f:
+            self.assertEqual(f.read(), conteudo_anterior)
+        temporarios = [
+            nome for nome in os.listdir(self.tmp.name)
+            if nome.startswith("memoria_sermax.json.tmp_")
+        ]
+        self.assertEqual(temporarios, [])
+
     def test_memoria_corrompida_preserva_backup(self):
         with open(core.ARQUIVO_MEMORIA, "w", encoding="utf-8") as f:
             f.write("{ JSON inválido")
