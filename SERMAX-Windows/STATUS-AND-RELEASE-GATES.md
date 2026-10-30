@@ -2,6 +2,15 @@
 
 **Status: integração em andamento. O artefato gerado é de teste, não é release nem instalador validado.**
 
+## Atualização de 30/10/2026, CI 55
+- Run `41060423045` concluído com `success` no branch `sermax-windows-integration-20261029`.
+- Passaram as verificações de fontes, marcadores da interface original, sintaxe, testes unitários, compilação PyInstaller, verificação do executável e upload do artefato.
+- Artefato `SERMAX-Windows-CI-55`, ID `12977819771`, tamanho ZIP de 8.667.631 bytes, SHA-256 do ZIP `8e1b2dd6e551dfa1f3bc5d9b28d039c5f0f19658b6f7a443bb6a17f07b30e12d`. Retenção de 14 dias. É artefato de CI, não instalador aprovado.
+- Correção validada pelo CI: o diagnóstico `/integracao` prioriza `SERMAX_ROOT` ao localizar os arquivos de voz, evitando depender da pasta temporária do PyInstaller.
+- Teste de regressão acrescentado para verificar o uso de `SERMAX_ROOT`. O CI concluiu com sucesso, mas a execução real do `.exe` e os testes de voz/memória no computador de destino continuam pendentes.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41060423045
+
+
 ## Referência e integridade
 - Referência de trabalho do projeto: `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
 - Commit atual da integração Windows: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
