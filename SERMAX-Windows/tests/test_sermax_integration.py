@@ -1,8 +1,11 @@
 import unittest
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+import sermax_launcher
 
 
 class TestEmpacotamentoSERMAX(unittest.TestCase):
@@ -52,6 +55,29 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertIn('os.environ.get("SERMAX_ROOT"', integracao)
         self.assertIn("from sermax_voz import localizar_whisper_e_modelo", integracao)
         self.assertIn("whisper, modelo_voz = localizar_whisper_e_modelo()", integracao)
+
+    def test_launcher_separa_instalacao_do_bundle_temporario(self):
+        root, bundle, terminal_dir, terminal_script = sermax_launcher.resolver_caminhos(
+            True,
+            r"C:\\SERMAX\\SERMAX.exe",
+            r"C:\\fontes\\sermax_launcher.py",
+            r"C:\\Users\\Teste\\AppData\\Local\\Temp\\_MEI12345",
+        )
+        self.assertEqual(root, str(Path(r"C:\\SERMAX").resolve()))
+        self.assertEqual(bundle, r"C:\\Users\\Teste\\AppData\\Local\\Temp\\_MEI12345")
+        self.assertEqual(terminal_dir, bundle + r"\\SERMAX_terminal")
+        self.assertEqual(terminal_script, terminal_dir + r"\\sermax_terminal.py")
+
+    def test_launcher_em_codigo_fonte_usa_pasta_do_projeto(self):
+        root, bundle, terminal_dir, terminal_script = sermax_launcher.resolver_caminhos(
+            False,
+            r"C:\\Python\\python.exe",
+            r"C:\\SERMAX\\sermax_launcher.py",
+        )
+        self.assertEqual(root, str(Path(r"C:\\SERMAX").resolve()))
+        self.assertEqual(bundle, root)
+        self.assertEqual(terminal_dir, str(Path(root) / "SERMAX_terminal"))
+        self.assertEqual(terminal_script, str(Path(root) / "SERMAX_terminal" / "sermax_terminal.py"))
 
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
