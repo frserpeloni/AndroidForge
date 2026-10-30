@@ -9,19 +9,16 @@
 - A interface original foi restaurada em `SERMAX_terminal/sermax_terminal.py`, usando a fonte preservada. A verificação automatizada confirmou os marcadores do rosto ASCII, cores verdes, funções de renderização e comandos `/vozdiag`, `/reiniciar` e `/repetir`.
 
 ## Validação automatizada em 30/10/2026
-- Workflow run: `41057411248`, conclusão `success`.
-- Workflow run duplicado: `41057404849`, conclusão `success`.
-- Commit validado: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
-- Verificação dos arquivos obrigatórios: aprovada.
-- Verificação da interface e dos comandos originais: aprovada.
-- Compilação sintática dos arquivos Python: aprovada.
-- Testes unitários existentes: aprovados.
-- Compilação PyInstaller: aprovada.
-- Verificação da saída `dist/SERMAX.exe`: aprovada.
-- Artefato de teste: `SERMAX-Windows-CI-44`, executável de 8.865.683 bytes. Cabeçalho PE válido verificado após baixar o ZIP.
-- O artefato tem retenção limitada no GitHub Actions. Não o tratar como pacote de instalação.
+- Workflow run mais recente: `41059175794`, conclusão `success`, commit `f3a386917e982e377b487bb9beec5d7af06bc15e`.
+- O run 49 executou 10 testes unitários e de integração, todos aprovados.
+- Também passaram verificação dos arquivos obrigatórios, marcadores da interface original, sintaxe Python, compilação PyInstaller, verificação do executável e envio do artefato.
+- Runs anteriores `41057411248` e `41057404849` também concluíram com `success` no commit de restauração da interface `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
+- Testes identificados no log: 6 testes de memória/núcleo e 4 testes de integração/empacotamento, total de 10 aprovados.
+- Os testes cobrem arquivos necessários, referências no `SERMAX.spec`, configuração do caminho da memória e ausência de memória pessoal no repositório.
+- Artefato de teste do run 49: `SERMAX-Windows-CI-49`, ID `12977713565`, ZIP de 8.667.355 bytes. Não é pacote de instalação validado.
+- O artefato tem retenção limitada no GitHub Actions. Não o tratar como release.
 
-Esses resultados confirmam a restauração da interface no repositório e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
+Esses resultados confirmam a restauração da interface no repositório, a aprovação dos 10 testes automatizados e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
 
 ## O que ainda precisa ser validado
 1. Comparar o núcleo e todos os módulos da ramificação com os arquivos oficiais do backup de referência.
