@@ -28,6 +28,11 @@
 
 Esses resultados confirmam a restauração da interface no repositório, a aprovação dos 10 testes automatizados e a compilação no runner Windows do GitHub. Não comprovam execução funcional no computador do mantenedor nem integração real com Ollama, voz, memória persistente ou atualização segura da instalação.
 
+## Auditoria de continuidade, 30/10/2026
+- A árvore atual de `SERMAX-Windows` não contém instalador nem atualizador/rollback dedicado. A CI gera somente `SERMAX.exe`; não gera um pacote seguro de atualização para `C:\\SERMAX`.
+- A comparação completa com `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` e com `SERMAX bkp 28 10 26.zip` continua NÃO EXECUTADA: esses arquivos de referência não estão disponíveis na árvore da branch nem foram localizados na busca de arquivos disponível nesta sessão. Não substituir essa comparação por suposição.
+- Próxima tarefa técnica: localizar e obter a referência oficial, inventariar e comparar os módulos antes de alterar o núcleo; em paralelo, desenhar testes e implementação do atualizador com backup, preservação da memória/interface/ferramentas e rollback. Não publicar nem instalar o executável de CI enquanto esses gates estiverem abertos.
+
 ## O que ainda precisa ser validado
 1. Comparar o núcleo e todos os módulos da ramificação com os arquivos oficiais do backup de referência.
 2. Conferir a especificação PyInstaller e os recursos incluídos no executável contra a instalação aprovada.
