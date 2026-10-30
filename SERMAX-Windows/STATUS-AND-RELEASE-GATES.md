@@ -2,6 +2,12 @@
 
 **Status: integração em andamento. O artefato gerado é de teste, não é release nem instalador validado.**
 
+## Atualização de 30/10/2026, CI 90
+- Run `41085611109` concluído com `success` no branch `sermax-windows-integration-20261029`, commit `e1d3f7498df6f44df5ec198f4364e7829e962169`.
+- As etapas de fontes obrigatórias, marcadores da interface original, sintaxe, testes automatizados, compilação PyInstaller, verificação do executável e upload do artefato passaram.
+- Isso valida a compilação automatizada no runner Windows. Não valida a execução real do SERMAX.exe, Ollama, voz, persistência após reinício ou atualização segura no computador do mantenedor.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41085611109
+
 ## Atualização de 30/10/2026, CI 88
 - Run `41081941583` concluído com `success` no branch `sermax-windows-integration-20261029`, commit `8d171c99e2d5a8c52fd90cdc90c15da553271672`.
 - Foram aprovadas as etapas de verificação das fontes, marcadores da interface original, sintaxe Python, testes automatizados, compilação PyInstaller, verificação do executável e upload do artefato.
@@ -19,7 +25,7 @@
 ## Referência e integridade
 - Referência de trabalho do projeto: `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
 - Commit de restauração da interface original: `4ec2927d7728ff050da514ed1d07c8a74a4488fd`.
-- Commit atual da branch de integração: `8d171c99e2d5a8c52fd90cdc90c15da553271672`.
+- Commit da branch na referência anterior deste registro: `8d171c99e2d5a8c52fd90cdc90c15da553271672`. Commit atual do registro: `e1d3f7498df6f44df5ec198f4364e7829e962169`.
 - Backup de referência informado: `SERMAX bkp 28 10 26.zip`.
 - A interface original foi restaurada em `SERMAX_terminal/sermax_terminal.py`, usando a fonte preservada. A verificação automatizada confirmou os marcadores do rosto ASCII, cores verdes, funções de renderização e comandos `/vozdiag`, `/reiniciar` e `/repetir`.
 
