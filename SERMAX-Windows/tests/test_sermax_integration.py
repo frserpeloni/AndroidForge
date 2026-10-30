@@ -50,6 +50,8 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
     def test_diagnostico_usa_raiz_da_instalacao_em_executavel(self):
         integracao = (ROOT / "SERMAX_terminal" / "sermax_integracao_comandos.py").read_text(encoding="utf-8")
         self.assertIn('os.environ.get("SERMAX_ROOT"', integracao)
+        self.assertIn("from sermax_voz import localizar_whisper_e_modelo", integracao)
+        self.assertIn("whisper, modelo_voz = localizar_whisper_e_modelo()", integracao)
 
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
