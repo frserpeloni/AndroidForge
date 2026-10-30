@@ -50,6 +50,21 @@ class TestMemoriaSERMAX(unittest.TestCase):
         self.assertEqual(len(recarregada), 1)
         self.assertEqual(recarregada[0]["content"], "Meu carro é um Fiat Siena 2008")
 
+    def test_memoria_corrompida_preserva_backup(self):
+        with open(core.ARQUIVO_MEMORIA, "w", encoding="utf-8") as f:
+            f.write("{ JSON inválido")
+
+        recarregada = core.carregar_memoria()
+
+        self.assertEqual(recarregada, [])
+        backups = [
+            nome for nome in os.listdir(self.tmp.name)
+            if nome.startswith("memoria_sermax.json.corrompido_") and nome.endswith(".bak")
+        ]
+        self.assertEqual(len(backups), 1)
+        with open(os.path.join(self.tmp.name, backups[0]), encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{ JSON inválido")
+
     def test_busca_memoria_por_termo(self):
         core.historico.extend([
             {"role": "user", "content": "Meu nome é Fabiano"},
