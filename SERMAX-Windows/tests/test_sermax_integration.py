@@ -1,4 +1,5 @@
 import os
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -147,6 +148,38 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
                 localizado_exe, localizado_modelo = sermax_voz.localizar_whisper_e_modelo()
             self.assertEqual(localizado_exe, str(exe))
             self.assertEqual(localizado_modelo, str(modelo))
+
+
+    def _wav_pcm_minimo(self, caminho):
+        fmt = struct.pack("<HHIIHH", 1, 1, 16000, 32000, 2, 16)
+        dados = b"\\x00\\x00\\x01\\x00"
+        chunks = b"fmt " + struct.pack("<I", len(fmt)) + fmt
+        chunks += b"data" + struct.pack("<I", len(dados)) + dados
+        conteudo = b"WAVE" + chunks
+        caminho.write_bytes(b"RIFF" + struct.pack("<I", len(conteudo)) + conteudo)
+
+    def test_validacao_de_voz_rejeita_audio_que_nao_e_wav(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            audio = Path(temporario) / "gravacao.wav"
+            audio.write_bytes(b"arquivo M4A renomeado")
+            with self.assertRaisesRegex(ValueError, "Arquivo inválido"):
+                sermax_voz._validar_wav(audio)
+
+    def test_validacao_de_voz_aceita_wav_pcm(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            audio = Path(temporario) / "teste.wav"
+            self._wav_pcm_minimo(audio)
+            sermax_voz._validar_wav(audio)
+
+    def test_voz_sem_recursos_nao_tenta_executar_whisper(self):
+        with tempfile.TemporaryDirectory() as temporario:
+            audio = Path(temporario) / "teste.wav"
+            self._wav_pcm_minimo(audio)
+            with patch.object(sermax_voz, "localizar_whisper_e_modelo", return_value=(None, None)), \\
+                 patch.object(sermax_voz.subprocess, "run") as executar:
+                with self.assertRaisesRegex(FileNotFoundError, "Whisper/modelo não localizados"):
+                    sermax_voz.transcrever_arquivo(audio)
+            executar.assert_not_called()
 
     def test_memoria_pessoal_nao_esta_no_repositorio(self):
         self.assertFalse((ROOT / "memoria_sermax.json").exists(),
