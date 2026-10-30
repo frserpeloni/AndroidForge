@@ -42,6 +42,14 @@ class TestMemoriaSERMAX(unittest.TestCase):
         ])
         self.assertTrue(os.path.isfile(core.ARQUIVO_MEMORIA))
 
+    def test_memoria_recarrega_apos_reinicializacao(self):
+        core.historico.append({"role": "user", "content": "Meu carro é um Fiat Siena 2008"})
+        core.salvar_memoria()
+        core.historico[:] = []
+        recarregada = core.carregar_memoria()
+        self.assertEqual(len(recarregada), 1)
+        self.assertEqual(recarregada[0]["content"], "Meu carro é um Fiat Siena 2008")
+
     def test_busca_memoria_por_termo(self):
         core.historico.extend([
             {"role": "user", "content": "Meu nome é Fabiano"},
