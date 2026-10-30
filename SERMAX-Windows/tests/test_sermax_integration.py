@@ -1,3 +1,4 @@
+import importlib
 import os
 import struct
 import tempfile
@@ -12,6 +13,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "SERMAX_terminal"))
 import sermax_launcher
 import sermax_voz
+import sermax_historico_comandos
 
 
 class TestEmpacotamentoSERMAX(unittest.TestCase):
@@ -55,6 +57,29 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertIn('os.environ["SERMAX_ROOT"] = root', launcher)
         self.assertIn('os.environ.get("SERMAX_ROOT")', core)
         self.assertIn('ARQUIVO_MEMORIA = os.path.join(BASE_DIR, "memoria_sermax.json")', core)
+
+    def test_historico_persistente_usa_raiz_da_instalacao(self):
+        estado_anterior = os.environ.get("SERMAX_ROOT")
+        with tempfile.TemporaryDirectory() as temporario:
+            base = Path(temporario)
+            instalacao = base / "instalacao"
+            bundle = base / "_MEI12345"
+            instalacao.mkdir()
+            bundle.mkdir()
+            try:
+                with patch.dict(os.environ, {"SERMAX_ROOT": str(instalacao)}):
+                    importlib.reload(sermax_historico_comandos)
+                    self.assertEqual(sermax_historico_comandos.ROOT, instalacao.resolve())
+                    self.assertTrue(sermax_historico_comandos.registrar("consulta persistente de teste"))
+                    self.assertTrue((instalacao / "historico_comandos.json").is_file())
+                    self.assertFalse((bundle / "historico_comandos.json").exists())
+                    self.assertEqual(sermax_historico_comandos.obter(1), "consulta persistente de teste")
+            finally:
+                if estado_anterior is None:
+                    os.environ.pop("SERMAX_ROOT", None)
+                else:
+                    os.environ["SERMAX_ROOT"] = estado_anterior
+                importlib.reload(sermax_historico_comandos)
 
     def test_diagnostico_usa_raiz_da_instalacao_em_executavel(self):
         integracao = (ROOT / "SERMAX_terminal" / "sermax_integracao_comandos.py").read_text(encoding="utf-8")
@@ -152,7 +177,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
 
     def _wav_pcm_minimo(self, caminho):
         fmt = struct.pack("<HHIIHH", 1, 1, 16000, 32000, 2, 16)
-        dados = b"\\x00\\x00\\x01\\x00"
+        dados = b"\x00\x00\x01\x00"
         chunks = b"fmt " + struct.pack("<I", len(fmt)) + fmt
         chunks += b"data" + struct.pack("<I", len(dados)) + dados
         conteudo = b"WAVE" + chunks
