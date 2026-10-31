@@ -1,0 +1,109 @@
+name: SERMAX Windows CI
+
+on:
+  push:
+    branches:
+      - main
+      - sermax-windows-community
+      - sermax-windows-integration-20261029
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
+  pull_request:
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build tool
+        run: python -m pip install --upgrade pip pyinstaller
+      - name: Verify required SERMAX sources
+        shell: pwsh
+        run: |
+          $required = @(
+            "sermax_core.py",
+            "sermax_launcher.py",
+            "SERMAX.spec",
+            "SERMAX_terminal/sermax_terminal.py",
+            "SERMAX_terminal/sermax_voz.py",
+            "SERMAX_terminal/sermax_integracao_comandos.py",
+            "sermax_historico_comandos.py",
+            "sermax_planejador.py",
+            "sermax_executor.py",
+            "sermax_tarefas.py",
+            "ferramenta_windows.py"
+          )
+          $missing = @($required | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) {
+            Write-Error ("SERMAX source integration incomplete. Missing files: " + ($missing -join ", "))
+            exit 1
+          }
+      - name: Verify original terminal UI and commands
+        shell: pwsh
+        run: |
+          $terminal = Get-Content "SERMAX_terminal/sermax_terminal.py" -Raw
+          $requiredMarkers = @(
+            'ROSTO = r"""',
+            'GREEN = "\033[92m"',
+            'def render(conversa):',
+            'def desenhar(conversa):',
+            'if cmd == "/vozdiag":',
+            'if cmd == "/reiniciar":',
+            'if cmd == "/repetir"'
+          )
+          $missingMarkers = @($requiredMarkers | Where-Object { -not $terminal.Contains($_) })
+          if ($terminal -match "terminal de contingência" -or $missingMarkers.Count -gt 0) {
+            Write-Error ("Original terminal UI not restored. Missing markers: " + ($missingMarkers -join ", "))
+            exit 1
+          }
+      - name: Syntax check
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -Path . -Recurse -File -Filter *.py |
+            Where-Object { $_.FullName -notmatch '[\\\\](build|dist|__pycache__)[\\\\]' })
+          if ($files.Count -eq 0) { throw "No Python source files found in SERMAX-Windows." }
+          foreach ($file in $files) {
+            python -m py_compile $file.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Syntax check failed: $($file.FullName)" }
+          }
+      - name: Run unit tests when available
+        shell: pwsh
+        run: |
+          if (Test-Path "tests") {
+            python -m unittest discover -s tests -v
+            if ($LASTEXITCODE -ne 0) { throw "Unit tests failed." }
+          } else {
+            throw "Required test suite is missing."
+          }
+      - name: Build SERMAX.exe
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean "SERMAX.spec"
+      - name: Verify build output
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "dist/SERMAX.exe")) { throw "Build did not produce dist/SERMAX.exe." }
+          if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small; refusing artifact." }
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SERMAX-Windows-CI-${{ github.run_number }}
+          path: SERMAX-Windows/dist/SERMAX.exe
+          if-no-files-found: error
+          retention-days: 14
