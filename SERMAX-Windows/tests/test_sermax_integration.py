@@ -81,6 +81,46 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
                     os.environ["SERMAX_ROOT"] = estado_anterior
                 importlib.reload(sermax_historico_comandos)
 
+    def test_historico_ignora_comandos_de_controle_e_duplicata_imediata(self):
+        estado_anterior = os.environ.get("SERMAX_ROOT")
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            try:
+                with patch.dict(os.environ, {"SERMAX_ROOT": str(raiz)}):
+                    importlib.reload(sermax_historico_comandos)
+                    self.assertFalse(sermax_historico_comandos.registrar("/historico"))
+                    self.assertFalse(sermax_historico_comandos.registrar("/repetir 1"))
+                    self.assertTrue(sermax_historico_comandos.registrar("consulta de teste"))
+                    self.assertFalse(sermax_historico_comandos.registrar("consulta de teste"))
+                    dados = sermax_historico_comandos.carregar()["comandos"]
+                    self.assertEqual(len(dados), 1)
+                    self.assertEqual(dados[0]["comando"], "consulta de teste")
+            finally:
+                if estado_anterior is None:
+                    os.environ.pop("SERMAX_ROOT", None)
+                else:
+                    os.environ["SERMAX_ROOT"] = estado_anterior
+                importlib.reload(sermax_historico_comandos)
+
+    def test_historico_invalido_nao_apaga_arquivo_original_ao_carregar(self):
+        estado_anterior = os.environ.get("SERMAX_ROOT")
+        with tempfile.TemporaryDirectory() as temporario:
+            raiz = Path(temporario)
+            arquivo = raiz / "historico_comandos.json"
+            arquivo.write_text("{json inválido", encoding="utf-8")
+            original = arquivo.read_bytes()
+            try:
+                with patch.dict(os.environ, {"SERMAX_ROOT": str(raiz)}):
+                    importlib.reload(sermax_historico_comandos)
+                    self.assertEqual(sermax_historico_comandos.carregar(), {"comandos": []})
+                    self.assertEqual(arquivo.read_bytes(), original)
+            finally:
+                if estado_anterior is None:
+                    os.environ.pop("SERMAX_ROOT", None)
+                else:
+                    os.environ["SERMAX_ROOT"] = estado_anterior
+                importlib.reload(sermax_historico_comandos)
+
     def test_diagnostico_usa_raiz_da_instalacao_em_executavel(self):
         integracao = (ROOT / "SERMAX_terminal" / "sermax_integracao_comandos.py").read_text(encoding="utf-8")
         self.assertIn('os.environ.get("SERMAX_ROOT"', integracao)
