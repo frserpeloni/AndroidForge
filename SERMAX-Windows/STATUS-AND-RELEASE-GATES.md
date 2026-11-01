@@ -64,3 +64,13 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 - Artefato de CI: `SERMAX-Windows-CI-102`, ID `13085925800`, ZIP de 8.668.103 bytes, SHA-256 `bd992876a83b413cca174cff76f31c55b41d7fb57311fe7116cd0b982eff2d0d`, retenção até 15/11/2026. Artefato de teste, não instalador.
 - A revisão estática encontrou uma divergência de configuração a validar antes da liberação: `sermax_core.py` define `MODELO = "sermax"`, enquanto o painel do terminal exibe `QWEN 2.5 1.5B` e o comando `/modelo` responde `qwen2.5:1.5b`. O alias `sermax` pode ser intencional no Ollama, mas isso não foi comprovado nesta auditoria. Confirmar o modelo/alias real no Windows do mantenedor e alinhar a informação exibida sem alterar a configuração até confirmar a referência.
 - O launcher resolve a pasta persistente a partir de `sys.executable` e carrega a interface a partir de `sys._MEIPASS`; os testes automatizados verificam essa separação. Ainda falta executar o EXE no Windows real e confirmar memória, voz, Ollama, reinício e atualização/rollback.
+
+
+## Atualização de auditoria, 01/11/2026, CI 104
+- O commit `2461c69f2b1f90ec4c88ddc7a7b807344840c131` recebeu a execução `41316219916`, run `104`, conclusão `success`.
+- Todas as etapas do job `test-and-build` concluíram com sucesso: fontes obrigatórias, marcadores de interface/comandos, sintaxe, suíte de testes, build PyInstaller, verificação do executável e upload.
+- Artefato `SERMAX-Windows-CI-104`, ID `13087577168`, ZIP de 8.669.163 bytes, digest SHA-256 `e9f2aab6231d56d1cff663478f72c947000eb641e5b1f078141c7ce0f5220172`. Expira em 15/11/2026. É um executável de CI, não instalador nem atualizador.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/41316219916
+- Revisão adicional do histórico persistente confirmou que `registrar()` recusa gravação quando o JSON existente está corrompido ou não possui a estrutura `{"comandos": [...]}`; os testes dedicados comparam os bytes originais antes e depois da tentativa de gravação.
+- A revisão do núcleo confirma que a memória persistente é resolvida por `SERMAX_ROOT` quando definida, ou pela pasta do executável quando empacotado. A CI verifica o build, mas não executa o EXE nem prova a persistência no Windows do mantenedor.
+- A divergência entre `MODELO = "sermax"` e o texto de interface `QWEN 2.5 1.5B` permanece como verificação funcional pendente. Não alterar o modelo até confirmar o alias e o comportamento no Ollama instalado.
