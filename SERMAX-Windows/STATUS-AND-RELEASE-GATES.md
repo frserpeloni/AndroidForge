@@ -56,3 +56,11 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 - Não declarar a versão v1.8.2 concluída.
 - Não mesclar nem publicar como release até que a comparação com o backup e os testes funcionais sejam concluídos.
 - Não incluir `memoria_sermax.json`, históricos pessoais, gravações de voz ou outros dados privados no repositório.
+
+
+## Atualização de auditoria, 01/11/2026
+- Commit verificado: `2fde2fcac29643f3612b44913988fc9e0509742e`.
+- GitHub Actions run `41311712672`, execução `102`, conclusão `success`. Passaram todas as etapas listadas no job: verificação de fontes, marcadores do terminal, sintaxe, testes unitários, build PyInstaller, verificação do executável e upload.
+- Artefato de CI: `SERMAX-Windows-CI-102`, ID `13085925800`, ZIP de 8.668.103 bytes, SHA-256 `bd992876a83b413cca174cff76f31c55b41d7fb57311fe7116cd0b982eff2d0d`, retenção até 15/11/2026. Artefato de teste, não instalador.
+- A revisão estática encontrou uma divergência de configuração a validar antes da liberação: `sermax_core.py` define `MODELO = "sermax"`, enquanto o painel do terminal exibe `QWEN 2.5 1.5B` e o comando `/modelo` responde `qwen2.5:1.5b`. O alias `sermax` pode ser intencional no Ollama, mas isso não foi comprovado nesta auditoria. Confirmar o modelo/alias real no Windows do mantenedor e alinhar a informação exibida sem alterar a configuração até confirmar a referência.
+- O launcher resolve a pasta persistente a partir de `sys.executable` e carrega a interface a partir de `sys._MEIPASS`; os testes automatizados verificam essa separação. Ainda falta executar o EXE no Windows real e confirmar memória, voz, Ollama, reinício e atualização/rollback.
