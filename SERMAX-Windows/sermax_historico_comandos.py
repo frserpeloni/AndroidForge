@@ -28,9 +28,25 @@ def carregar():
     return {"comandos": []}
 
 
+def _arquivo_existente_valido():
+    """Impede que uma gravação substitua silenciosamente um histórico inválido."""
+    if not PATH.exists():
+        return True
+    try:
+        with PATH.open("r", encoding="utf-8") as f:
+            d = json.load(f)
+        return isinstance(d, dict) and isinstance(d.get("comandos"), list)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+
+
 def registrar(comando):
     comando = str(comando or "").strip()
     if not comando or _controle(comando):
+        return False
+    # Carregar() mantém leitura tolerante, mas gravar sobre um arquivo inválido
+    # apagaria a evidência original. Recusar a escrita preserva os bytes existentes.
+    if not _arquivo_existente_valido():
         return False
     d = carregar()
     itens = d["comandos"]
