@@ -1,5 +1,6 @@
 import json
 import atexit
+import subprocess
 import urllib.request
 import urllib.error
 import os
@@ -233,6 +234,16 @@ def responder_comando_local(mensagem):
         info=ferramenta_windows.informacoes_sistema(); disco=info.get("disco",{})
         d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
         return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
+    if comando in {"/pestinha", "pestinha"}:
+        try:
+            if getattr(sys, "frozen", False):
+                comando_pestinha = [sys.executable, "--pestinha"]
+            else:
+                comando_pestinha = [sys.executable, os.path.join(BASE_DIR, "sermax_launcher.py"), "--pestinha"]
+            subprocess.Popen(comando_pestinha, cwd=BASE_DIR, close_fds=True)
+            return "Interface complementar Pestinha iniciada em processo separado. O terminal SERMAX permanece ativo."
+        except OSError as erro:
+            return f"Não foi possível iniciar a interface Pestinha: {erro}"
     if comando in {"/cognicao", "/cog"}:
         motor = obter_motor_cognitivo()
         if motor is None:
@@ -256,7 +267,7 @@ def responder_comando_local(mensagem):
         except (TypeError, ValueError, OSError) as erro:
             return f"Não foi possível alterar a permissão: {erro}"
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /cognicao, /cog sensor CANAL on|off, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /cognicao, /cog sensor CANAL on|off, /pestinha, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def perguntar(mensagem,receber_parte=None):
