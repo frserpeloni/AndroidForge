@@ -1,4 +1,5 @@
 import json
+import atexit
 import urllib.request
 import urllib.error
 import os
@@ -8,6 +9,7 @@ import operator
 import math
 import shutil
 import sys
+from pathlib import Path
 from datetime import datetime
 
 import ferramenta_windows
@@ -38,6 +40,44 @@ MAX_MEMORIAS = 500
 KEEP_ALIVE = "10m"
 OPCOES_MODELO = {"num_ctx": 2048, "num_predict": 256}
 ultimo_diagnostico_ollama = {}
+
+_motor_cognitivo = None
+_motor_cognitivo_erro = None
+
+def obter_motor_cognitivo():
+    """Carrega o subsistema neural sob demanda, sem tocar na memória pessoal do SERMAX."""
+    global _motor_cognitivo, _motor_cognitivo_erro
+    if _motor_cognitivo is not None:
+        return _motor_cognitivo
+    if _motor_cognitivo_erro is not None:
+        return None
+    try:
+        from sermax_cognitive import SermaxCognitiveEngine
+        pasta_estado = Path(BASE_DIR) / "sermax_pestinha_state"
+        _motor_cognitivo = SermaxCognitiveEngine(pasta_estado)
+        atexit.register(_fechar_motor_cognitivo)
+    except Exception as erro:
+        _motor_cognitivo_erro = str(erro)
+        print(f"[SERMAX] Subsistema neural Pestinha indisponível: {_motor_cognitivo_erro}")
+    return _motor_cognitivo
+
+def _fechar_motor_cognitivo():
+    if _motor_cognitivo is not None:
+        try:
+            _motor_cognitivo.close()
+        except Exception as erro:
+            print(f"[SERMAX] Falha ao salvar estado neural: {erro}")
+
+def atualizar_cognicao(evento="user_request"):
+    motor = obter_motor_cognitivo()
+    if motor is None:
+        return None
+    try:
+        motor.submit_event(evento)
+        return motor.tick(100.0)
+    except Exception as erro:
+        print(f"[SERMAX] Falha no ciclo cognitivo: {erro}")
+        return None
 
 STOPWORDS = {"a","o","as","os","um","uma","de","do","da","dos","das","e","é","em","no","na","nos","nas","que","qual","quais","eu","me","meu","minha","meus","minhas","você","seu","sua","seus","suas","para","por","com","como","foi","ser","sou","sobre","isso","esse","essa","este","esta","ao","aos","às","já"}
 PALAVRAS_DE_PERGUNTA = {"qual","quais","quem","como","onde","quando","porque","porquê","quanto","quantos","quantas","posso","devo","será","tem","há"}
@@ -123,6 +163,12 @@ def buscar_memorias(pergunta,limite=4):
 def montar_contexto(pergunta):
     contexto=[{"role":"system","content":IDENTIDADE}]
     mem=buscar_memorias(pergunta,4)
+    motor = obter_motor_cognitivo()
+    if motor is not None:
+        try:
+            contexto.append({"role": "system", "content": motor.prompt_context()})
+        except Exception as erro:
+            print(f"[SERMAX] Estado cognitivo não anexado ao contexto: {erro}")
     if mem:
         txt="INFORMAÇÕES RECUPERADAS DA MEMÓRIA DO USUÁRIO. Considere a mais recente em caso de conflito; não acrescente detalhes não registrados:\n"
         txt += "".join("- "+x["content"]+"\n" for x in mem)
@@ -187,14 +233,37 @@ def responder_comando_local(mensagem):
         info=ferramenta_windows.informacoes_sistema(); disco=info.get("disco",{})
         d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
         return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
+    if comando in {"/cognicao", "/cog"}:
+        motor = obter_motor_cognitivo()
+        if motor is None:
+            return "Subsistema cognitivo indisponível. Verifique as dependências NumPy e o log do SERMAX."
+        estado = motor.snapshot()
+        return (f"Subsistema cognitivo Pestinha: {estado['network']}\\n"
+                f"Emoção operacional: {estado['emotion']}\\n"
+                f"Valência: {estado['valence']} | Ativação: {estado['arousal']}\\n"
+                f"Decisão motora atual: {estado['decision'] or 'nenhuma'}\\n"
+                f"Energia: {estado['drives']['energy']} | Estimulação: {estado['drives']['stimulation']} | Contato: {estado['drives']['contact']}")
+    if comando.startswith("/cog sensor "):
+        partes = comando.split()
+        if len(partes) != 5 or partes[4] not in {"on", "off"}:
+            return "Uso: /cog sensor CANAL on|off. Exemplo: /cog sensor SOCIAL on"
+        motor = obter_motor_cognitivo()
+        if motor is None:
+            return "Subsistema cognitivo indisponível."
+        try:
+            motor.set_sensor_permission(partes[3].upper(), partes[4] == "on")
+            return f"Permissão do sensor {partes[3].upper()}: {'ativada' if partes[4] == 'on' else 'desativada'}."
+        except (TypeError, ValueError, OSError) as erro:
+            return f"Não foi possível alterar a permissão: {erro}"
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /cognicao, /cog sensor CANAL on|off, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def perguntar(mensagem,receber_parte=None):
     global ultimo_diagnostico_ollama
     mensagem=str(mensagem).strip()
     if not mensagem: return ""
+    atualizar_cognicao("user_request")
     resposta=responder_comando_local(mensagem)
     if resposta is None: resposta=responder_calculo_local(mensagem)
     if resposta is not None:
