@@ -8,6 +8,10 @@ on:
       - "SERMAX-Windows/sermax_pestinha/**"
       - "SERMAX-Windows/sermax_cognitive.py"
       - "SERMAX-Windows/tests/test_sermax_cognitive.py"
+      - "SERMAX-Windows/sermax_core.py"
+      - "SERMAX-Windows/sermax_launcher.py"
+      - "SERMAX-Windows/sermax_pestinha_launcher.py"
+      - "SERMAX-Windows/SERMAX.spec"
       - ".github/workflows/sermax-pestinha-ci.yml"
   pull_request:
     paths:
@@ -37,8 +41,16 @@ jobs:
         run: |
           python -m compileall -q SERMAX-Windows/sermax_pestinha/pestinha
           if ($LASTEXITCODE -ne 0) { throw "Pestinha source compilation failed." }
-          python -m py_compile SERMAX-Windows/sermax_cognitive.py
-          if ($LASTEXITCODE -ne 0) { throw "SERMAX cognitive bridge compilation failed." }
+          python -m py_compile SERMAX-Windows/sermax_cognitive.py SERMAX-Windows/sermax_core.py SERMAX-Windows/sermax_launcher.py SERMAX-Windows/sermax_pestinha_launcher.py
+          if ($LASTEXITCODE -ne 0) { throw "SERMAX integration source compilation failed." }
       - name: Run cognitive integration tests
         working-directory: SERMAX-Windows
         run: python -m unittest discover -s tests -p test_sermax_cognitive.py -v
+      - name: Build integrated SERMAX executable
+        working-directory: SERMAX-Windows
+        run: python -m PyInstaller --noconfirm --clean SERMAX.spec
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "SERMAX-Windows/dist/SERMAX.exe")) { throw "Integrated SERMAX.exe was not generated." }
+          if ((Get-Item "SERMAX-Windows/dist/SERMAX.exe").Length -lt 1000000) { throw "Integrated SERMAX.exe is unexpectedly small." }
