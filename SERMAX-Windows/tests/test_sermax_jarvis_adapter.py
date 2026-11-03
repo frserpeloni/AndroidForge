@@ -1,3 +1,4 @@
+import unittest
 from sermax_jarvis_adapter import JarvisAdapter
 
 
@@ -15,30 +16,30 @@ class FakeJarvis:
         self.closed = True
 
 
-def test_jarvis_uses_simple_agent_without_tools_or_memory():
-    instances = []
+class TestJarvisAdapter(unittest.TestCase):
+    def test_uses_simple_agent_without_tools_or_memory(self):
+        instances = []
 
-    def factory(**kwargs):
-        item = FakeJarvis(**kwargs)
-        instances.append(item)
-        return item
+        def factory(**kwargs):
+            item = FakeJarvis(**kwargs)
+            instances.append(item)
+            return item
 
-    adapter = JarvisAdapter(model="sermax", sdk_factory=factory)
-    assert adapter.responder("Olá") == "Resposta local"
-    sdk = instances[0]
-    assert sdk.kwargs == {"engine_key": "ollama", "model": "sermax"}
-    assert sdk.calls[0][1]["agent"] == "simple"
-    assert sdk.calls[0][1]["tools"] == []
-    assert sdk.calls[0][1]["context"] is False
-    assert sdk.closed
+        adapter = JarvisAdapter(model="sermax", sdk_factory=factory)
+        self.assertEqual(adapter.responder("Olá"), "Resposta local")
+        sdk = instances[0]
+        self.assertEqual(sdk.kwargs, {"engine_key": "ollama", "model": "sermax"})
+        self.assertEqual(sdk.calls[0][1]["agent"], "simple")
+        self.assertEqual(sdk.calls[0][1]["tools"], [])
+        self.assertFalse(sdk.calls[0][1]["context"])
+        self.assertTrue(sdk.closed)
+
+    def test_rejects_empty_and_oversized_prompt(self):
+        adapter = JarvisAdapter(sdk_factory=lambda **kwargs: FakeJarvis(**kwargs))
+        for prompt in (" ", "x" * 4001):
+            with self.assertRaises(ValueError):
+                adapter.responder(prompt)
 
 
-def test_jarvis_rejects_empty_and_oversized_prompt():
-    adapter = JarvisAdapter(sdk_factory=lambda **kwargs: FakeJarvis(**kwargs))
-    for prompt in (" ", "x" * 4001):
-        try:
-            adapter.responder(prompt)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("prompt inválido foi aceito")
+if __name__ == "__main__":
+    unittest.main()
