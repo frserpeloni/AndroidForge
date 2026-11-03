@@ -45,7 +45,7 @@ def main(argv=None):
     paths = Paths(root=_pestinha_root())
     settings = SettingsStore(paths)
     perms = settings.perms
-    if not args.direto:
+    if not args.direto or not paths.permissions.exists():
         first_time = not paths.permissions.exists()
         if first_time:
             pet_id = config.escolher_pet(paths, perms["pet"])
