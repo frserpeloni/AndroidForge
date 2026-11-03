@@ -245,14 +245,14 @@ def responder_comando_local(mensagem):
                 f"Energia: {estado['drives']['energy']} | Estimulação: {estado['drives']['stimulation']} | Contato: {estado['drives']['contact']}")
     if comando.startswith("/cog sensor "):
         partes = comando.split()
-        if len(partes) != 5 or partes[4] not in {"on", "off"}:
+        if len(partes) != 4 or partes[3] not in {"on", "off"}:
             return "Uso: /cog sensor CANAL on|off. Exemplo: /cog sensor SOCIAL on"
         motor = obter_motor_cognitivo()
         if motor is None:
             return "Subsistema cognitivo indisponível."
         try:
-            motor.set_sensor_permission(partes[3].upper(), partes[4] == "on")
-            return f"Permissão do sensor {partes[3].upper()}: {'ativada' if partes[4] == 'on' else 'desativada'}."
+            motor.set_sensor_permission(partes[2].upper(), partes[3] == "on")
+            return (f"Permissão do sensor {partes[2].upper()}: " + ("ativada" if partes[3] == "on" else "desativada") + ".")
         except (TypeError, ValueError, OSError) as erro:
             return f"Não foi possível alterar a permissão: {erro}"
     if comando in {"/ajuda","ajuda"}:
