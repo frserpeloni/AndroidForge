@@ -30,6 +30,9 @@ def main():
     for path in (root, bundle_root, terminal_dir):
         if path not in sys.path:
             sys.path.insert(0, path)
+    if "--pestinha" in sys.argv[1:]:
+        from sermax_pestinha_launcher import main as pestinha_main
+        return pestinha_main(["--direto"])
     runpy.run_path(terminal_script, run_name="__main__")
 
 
