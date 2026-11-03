@@ -44,6 +44,16 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
         self.assertIn("STARTLE", state["motors"])
         self.assertIn("decision", state)
 
+    def test_explicit_feedback_updates_neural_and_episodic_learning(self):
+        self.engine.begin_decision("SERMAX|observando", "responder")
+        self.assertTrue(self.engine.record_feedback("usuário aprovou", 0.8))
+        self.assertEqual(
+            self.engine.choose_action(
+                "SERMAX|observando", ["responder", "planejar"], epsilon=0
+            ),
+            "responder",
+        )
+
     def test_episode_learning_is_recorded(self):
         self.engine.record_decision(
             "WORK|observando", "consultar_memoria", "resultado útil", 0.8
