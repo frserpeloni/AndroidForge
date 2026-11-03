@@ -37,8 +37,9 @@ class WidgetState:
 class WidgetStateController:
     """Traduz eventos fechados em estados visuais, sem executar ações do SO."""
 
-    def __init__(self) -> None:
+    def __init__(self, neural_adapter=None) -> None:
         self._state = WidgetState("idle")
+        self._neural_adapter = neural_adapter
 
     @property
     def state(self) -> WidgetState:
@@ -50,11 +51,26 @@ class WidgetStateController:
             self._state = WidgetState("error")
             return self._state
 
-        state = _EVENTOS_PARA_ESTADOS.get(event.strip().lower(), "error")
+        evento = event.strip().lower()
+        state = _EVENTOS_PARA_ESTADOS.get(evento, "error")
         if state not in ESTADOS_VISUAIS:
             state = "error"
-        self._state = WidgetState(state)
+        if self._neural_adapter is not None:
+            try:
+                state = self._neural_adapter.processar_evento(evento)
+            except Exception:
+                state = evento if evento in ESTADOS_VISUAIS else "error"
+        self._state = WidgetState(state if state in ESTADOS_VISUAIS else "error")
         return self._state
+
+    def salvar_estado_neural(self) -> bool:
+        """Persiste o estado neural separado da memória pessoal SERMAX."""
+        if self._neural_adapter is None:
+            return False
+        try:
+            return bool(self._neural_adapter.salvar())
+        except Exception:
+            return False
 
     def accept_neural_output(self, output: object) -> WidgetState:
         """Aceita somente um rótulo visual permitido; qualquer saída inválida vira erro.
