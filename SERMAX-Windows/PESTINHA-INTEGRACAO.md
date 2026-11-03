@@ -36,9 +36,9 @@ O núcleo SERMAX continua responsável pela conversa, planejamento e execução 
 
 A memória pessoal existente `memoria_sermax.json` permanece separada e intocada.
 
-O estado neural fica em `sermax_pestinha_state/`, com arquivos próprios para rede, necessidades, condicionamento, episódios, preferências e permissões sensoriais.
+O estado neural fica em `sermax_pestinha_state/`, com arquivos próprios para rede, necessidades, condicionamento, episódios, preferências e permissões sensoriais. O comando `/cog feedback positivo` ou `/cog feedback negativo` aplica avaliação explícita à última resposta e ao aprendizado episódico.
 
-Na interface complementar, os sensores de programa ativo, mouse/teclado, tela cheia, janelas e rotina começam desligados. Cada permissão pode ser ativada individualmente. O código não lê títulos nem conteúdo de janelas, páginas, documentos ou conversas.
+Na interface complementar, os sensores de programa ativo, mouse/teclado, tela cheia, janelas e rotina começam desligados. Cada permissão pode ser ativada individualmente. O comando `/cog sensor CANAL on|off` controla os canais do motor cognitivo do SERMAX. O código não lê títulos nem conteúdo de janelas, páginas, documentos ou conversas.
 
 A interface complementar preserva os recursos de interação do Pestinha. O terminal ASCII verde do SERMAX continua sendo a interface principal.
 
