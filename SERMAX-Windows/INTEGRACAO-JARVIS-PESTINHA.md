@@ -17,7 +17,7 @@
 
 - Repositório: https://github.com/mille-okws/pestinha
 - Commit de referência consultado: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8.
-- Licença declarada: GPL-3.0. A distribuição conjunta exige avaliação e cumprimento das obrigações da licença.
+- Licença declarada no `pyproject.toml`: GPL-3.0-or-later. A distribuição conjunta exige avaliação e cumprimento das obrigações da licença.
 - Interface concreta verificada: `LIFBrain`, `stimulate()`, `step()`, `motor_activity()`, `save()`, `load()`.
 - Ponte SERMAX: `sermax_pestinha_adapter.py`.
 - A ponte recebe somente eventos internos do ciclo do SERMAX. Não coleta teclado, mouse, janelas, conversas ou dados pessoais.
@@ -39,7 +39,7 @@
 3. Validar a configuração Ollama do Jarvis sem ativar ferramentas.
 4. Medir CPU/RAM e latência da rede LIF.
 5. Confirmar o empacotamento PyInstaller das dependências efetivamente aprovadas.
-6. Avaliar obrigações GPL-3.0 antes de distribuir um executável que inclua o Pestinha.
+6. Avaliar obrigações GPL-3.0-or-later antes de distribuir um executável que inclua o Pestinha.
 7. Testar no Windows real, preservando `C:\SERMAX`, memória pessoal e terminal original.
 
 Nenhuma versão de produção foi declarada.
