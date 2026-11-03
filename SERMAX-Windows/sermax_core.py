@@ -244,6 +244,18 @@ def responder_comando_local(mensagem):
             return "Interface complementar Pestinha iniciada em processo separado. O terminal SERMAX permanece ativo."
         except OSError as erro:
             return f"Não foi possível iniciar a interface Pestinha: {erro}"
+    if comando in {"/cog feedback positivo", "/cog feedback negativo"}:
+        motor = obter_motor_cognitivo()
+        if motor is None:
+            return "Subsistema cognitivo indisponível."
+        positivo = comando.endswith("positivo")
+        registrado = motor.record_feedback(
+            "feedback explícito positivo" if positivo else "feedback explícito negativo",
+            0.8 if positivo else -0.8,
+        )
+        if registrado:
+            return "Feedback registrado na rede neural e na memória episódica."
+        return "Reforço neural registrado. Não havia decisão pendente para memória episódica."
     if comando in {"/cognicao", "/cog"}:
         motor = obter_motor_cognitivo()
         if motor is None:
@@ -267,7 +279,7 @@ def responder_comando_local(mensagem):
         except (TypeError, ValueError, OSError) as erro:
             return f"Não foi possível alterar a permissão: {erro}"
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /cognicao, /cog sensor CANAL on|off, /pestinha, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /cognicao, /cog sensor CANAL on|off, /cog feedback positivo|negativo, /pestinha, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def perguntar(mensagem,receber_parte=None):
@@ -307,4 +319,11 @@ def perguntar(mensagem,receber_parte=None):
     except urllib.error.URLError as e:
         raise RuntimeError("Não foi possível conectar ao Ollama. Verifique se o Ollama está aberto.") from e
     sessao.append({"role":"assistant","content":resposta})
+    motor = obter_motor_cognitivo()
+    if motor is not None:
+        try:
+            estado = motor.snapshot()
+            motor.begin_decision("SERMAX|" + estado["emotion"], "responder")
+        except Exception as erro:
+            print(f"[SERMAX] Não foi possível abrir episódio de resposta: {erro}")
     return resposta.strip()
