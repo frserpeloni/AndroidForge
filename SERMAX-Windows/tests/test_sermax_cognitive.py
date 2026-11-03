@@ -51,12 +51,14 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
         self.engine.submit_event("task_started")
         self.engine.tick(100)
         self.engine.feedback(1.0, 2.0)
+        self.engine.record_decision("WORK|observando", "planejar", "plano concluído", 0.6)
         self.engine.save()
         restored = SermaxCognitiveEngine(Path(self.temp.name) / "neural")
         try:
             self.assertTrue((Path(self.temp.name) / "neural" / "nervous.json").exists())
             self.assertTrue((Path(self.temp.name) / "neural" / "drives.json").exists())
-            self.assertTrue((Path(self.temp.name) / "neural" / "episodes.jsonl").exists())
+                self.assertTrue((Path(self.temp.name) / "neural" / "sensor_permissions.json").exists())
+            self.assertTrue(restored.sensor_permissions["SOCIAL"] is False)
             self.assertEqual(restored.brain.N, self.engine.brain.N)
         finally:
             restored.close()
