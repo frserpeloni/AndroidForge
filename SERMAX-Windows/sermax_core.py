@@ -14,6 +14,7 @@ import ferramenta_windows
 import sermax_planejador
 import sermax_executor
 import sermax_tarefas
+import sermax_jarvis_adapter
 
 IDENTIDADE = """
 Você é SERMAX, o assistente pessoal de Fabiano.
@@ -170,6 +171,14 @@ def responder_comando_local(mensagem):
     if comando.startswith("/executar-plano ") or comando.startswith("/tarefas "):
         prefixo="/executar-plano " if comando.startswith("/executar-plano ") else "/tarefas "
         return sermax_tarefas.executar_plano(mensagem.strip()[len(prefixo):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
+    if comando in {"/jarvis", "jarvis"}:
+        return "Informe uma pergunta após /jarvis. Exemplo: /jarvis explique o que é aprendizado de máquina"
+    if comando.startswith("/jarvis "):
+        pergunta=mensagem.strip()[len("/jarvis "):]
+        try:
+            return sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(pergunta)
+        except Exception as e:
+            return f"OpenJarvis indisponível: {type(e).__name__}: {e}"
     if comando in {"/plano","/planejar","planejar"}: return "Informe o objetivo após /plano. Exemplo: /plano organizar minhas tarefas da semana"
     if comando.startswith("/plano ") or comando.startswith("/planejar "):
         return sermax_planejador.planejar(mensagem.split(" ",1)[1].strip(),modelo=MODELO,url=OLLAMA_URL)
@@ -188,7 +197,7 @@ def responder_comando_local(mensagem):
         d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
         return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def perguntar(mensagem,receber_parte=None):
