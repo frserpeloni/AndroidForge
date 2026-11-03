@@ -42,9 +42,12 @@ DEFAULT_PERMISSIONS = {
     "cutucar": True,
     "carinho": True,           # esfregar o mouse nele = carinho, e ele aprende com isso
     "arrastar": True,
-    "pousar_janelas": True,
+    "pousar_janelas": False,
+    "sensor_atividade": False,       # lê somente o nome do processo ativo e a categoria de atividade
+    "sensor_mouse_teclado": False,   # lê movimento/ociosidade, nunca o conteúdo digitado
+    "sensor_tela_cheia": False,      # detecta se a janela ativa ocupa o monitor
     "tela_cheia": False,       # experimental: aparecer em jogo/vídeo/apresentação
-    "rotina": True,            # grava a timeline por minuto (só categorias) para o LSTM
+    "rotina": False,           # grava a timeline por minuto (só categorias) para o LSTM
     "modo_teste": False,       # desligado por padrão: o modo teste é só para desenvolvimento
     "mostrar_emocao": False,   # só vale com modo_teste ligado
     "bolinha": True,           # a bolinha para ele brincar
@@ -70,6 +73,11 @@ PERMISSION_GROUPS = [
     ("Contexto", [
         ("tela_cheia", "Aparecer em tela cheia (experimental)",
          "Por padrão ele some em jogos, vídeos e apresentações."),
+    ]),
+    ("Sensores", [
+        ("sensor_atividade", "Ler programa ativo", "Lê somente o nome do processo em primeiro plano para classificar a atividade. Não lê título nem conteúdo."),
+        ("sensor_mouse_teclado", "Detectar atividade de mouse e teclado", "Lê movimento do cursor e tempo desde a última entrada. Não captura teclas nem texto digitado."),
+        ("sensor_tela_cheia", "Detectar tela cheia", "Verifica dimensões da janela ativa para ocultar o pet em jogos, vídeos e apresentações."),
     ]),
     ("Rotina", [
         ("rotina", "Aprender minha rotina",
