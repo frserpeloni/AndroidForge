@@ -1,9 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 # Spec portátil: scripts chamados via runpy precisam ser incluídos como dados.
 import os
+from PyInstaller.utils.hooks import collect_submodules
 
 ROOT = os.path.abspath(os.path.dirname(SPEC))
 TERMINAL = os.path.join(ROOT, "SERMAX_terminal")
+PESTINHA_MODULES = collect_submodules("sermax_pestinha.pestinha")
+PESTINHA_ASSETS = os.path.join(ROOT, "sermax_pestinha", "assets")
 
 a = Analysis(
     [os.path.join(ROOT, "sermax_launcher.py")],
@@ -13,11 +16,14 @@ a = Analysis(
         (os.path.join(TERMINAL, "sermax_terminal.py"), "SERMAX_terminal"),
         (os.path.join(TERMINAL, "sermax_voz.py"), "SERMAX_terminal"),
         (os.path.join(TERMINAL, "sermax_integracao_comandos.py"), "SERMAX_terminal"),
+        (PESTINHA_ASSETS, "sermax_pestinha/assets"),
     ],
     hiddenimports=[
         "sermax_core", "sermax_historico_comandos", "sermax_planejador",
         "sermax_executor", "sermax_tarefas", "ferramenta_windows",
         "sermax_voz", "sermax_integracao_comandos",
+        "sermax_cognitive", "sermax_pestinha_launcher",
+    ] + PESTINHA_MODULES + [
     ],
     hookspath=[],
     hooksconfig={},
