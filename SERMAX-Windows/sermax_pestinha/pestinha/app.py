@@ -309,16 +309,22 @@ class PestinhaApp(SessaoMixin, InteracaoMixin, QObject):
         """Leitura de 500 em 500 ms: programa em primeiro plano, ocioso, janelas e tela cheia."""
         if self._congelado():
             return
-        self.idle_seconds = senses.get_idle_seconds()
-        app = senses.get_active_app()
-        self.activity = senses.detect_activity(app, self.idle_seconds, self.prof["away_after"])
-        events = self.tracker.observe(app, self.activity)
-        self.senses.on_events(events)
-        for event in events:
-            if event == "APP_CHANGED":
-                self.drives.stimulate("app")
-            elif event in ("ACTIVITY_CHANGED", "USER_RETURNED"):
-                self.drives.stimulate("novelty")
+        sensor_atividade = self.perms.get("sensor_atividade", False)
+        sensor_mouse = self.perms.get("sensor_mouse_teclado", False)
+        self.idle_seconds = senses.get_idle_seconds() if (sensor_atividade or sensor_mouse) else 0.0
+        events = []
+        if sensor_atividade:
+            app = senses.get_active_app()
+            self.activity = senses.detect_activity(app, self.idle_seconds, self.prof["away_after"])
+            events = self.tracker.observe(app, self.activity)
+            self.senses.on_events(events)
+            for event in events:
+                if event == "APP_CHANGED":
+                    self.drives.stimulate("app")
+                elif event in ("ACTIVITY_CHANGED", "USER_RETURNED"):
+                    self.drives.stimulate("novelty")
+        else:
+            self.activity = "IDLE"
         if self.perms["rotina"]:
             self.timeline.observe(
                 self.activity, self.idle_seconds, events, self.tracker.session_seconds, self.keyboard_active
@@ -329,7 +335,7 @@ class PestinhaApp(SessaoMixin, InteracaoMixin, QObject):
             if rect:
                 self.behavior.look_at((rect[0] + rect[2]) / 2 / dpr, (rect[1] + rect[3]) / 2 / dpr,
                                       time.monotonic())
-        fullscreen = senses.is_fullscreen()
+        fullscreen = senses.is_fullscreen() if self.perms.get("sensor_tela_cheia", False) else False
         if fullscreen != self.fullscreen:
             self.fullscreen = fullscreen
             self.update_visibility()
@@ -346,13 +352,15 @@ class PestinhaApp(SessaoMixin, InteracaoMixin, QObject):
         caressing = self.perms["carinho"] and self.pet.isVisible() and st.caressing(now)
 
         # teclado x mouse: o sistema só dá "último input"; separamos olhando se o cursor andou
-        idle = senses.get_idle_seconds()
+        sensor_mouse = self.perms.get("sensor_mouse_teclado", False)
+        sensor_atividade = self.perms.get("sensor_atividade", False)
+        idle = senses.get_idle_seconds() if (sensor_mouse or sensor_atividade) else 0.0
         cursor = cursor_pos()
-        if abs(cursor[0] - self.last_cursor[0]) + abs(cursor[1] - self.last_cursor[1]) > 2:
+        if sensor_mouse and abs(cursor[0] - self.last_cursor[0]) + abs(cursor[1] - self.last_cursor[1]) > 2:
             self.mouse_moved_at = now
         self.last_cursor = cursor
-        mouse_moving = now - self.mouse_moved_at < MOUSE_QUIET
-        self.keyboard_active = idle < 0.3 and not mouse_moving and not caressing
+        mouse_moving = sensor_mouse and (now - self.mouse_moved_at < MOUSE_QUIET)
+        self.keyboard_active = sensor_mouse and idle < 0.3 and not mouse_moving and not caressing
 
         moving = min(1.0, abs(body.vx) / 200.0 + (0.0 if body.grounded else 1.0))
         self.drives.update(dt, self.prof, self.asleep, moving, self.emotion.arousal,
@@ -367,7 +375,7 @@ class PestinhaApp(SessaoMixin, InteracaoMixin, QObject):
         intensities = self.senses.update(self.activity, idle, self.drives.channels(), caressing, mouse_moving)
         # condicionamento: o cursor vindo rápido para ele, ou o botão apertado em cima, antecipam
         dist = math.hypot(cursor[0] - body.x, cursor[1] - body.y)
-        approaching = (self.prev_pet_dist is not None and dist < 220
+        approaching = (sensor_mouse and self.prev_pet_dist is not None and dist < 220
                        and dt > 0 and (self.prev_pet_dist - dist) / dt > 500)
         self.prev_pet_dist = dist
         self.conditioning.set_cue("PRESS", st.pressing, now)
