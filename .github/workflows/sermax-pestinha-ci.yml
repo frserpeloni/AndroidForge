@@ -35,7 +35,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install neural dependency
-        run: python -m pip install --upgrade pip numpy
+        run: python -m pip install --upgrade pip && python -m pip install -r SERMAX-Windows/sermax_pestinha/requirements.txt pyinstaller
       - name: Compile vendored Pestinha modules
         shell: pwsh
         run: |
