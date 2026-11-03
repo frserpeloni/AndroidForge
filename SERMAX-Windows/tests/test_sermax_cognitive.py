@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from sermax_cognitive import SermaxCognitiveEngine
+from sermax_pestinha.pestinha.config import DEFAULT_PERMISSIONS
 
 
 class SermaxCognitiveEngineTests(unittest.TestCase):
@@ -13,6 +14,13 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
     def tearDown(self):
         self.engine.close()
         self.temp.cleanup()
+
+    def test_system_sensors_are_off_by_default(self):
+        self.assertFalse(DEFAULT_PERMISSIONS["sensor_atividade"])
+        self.assertFalse(DEFAULT_PERMISSIONS["sensor_mouse_teclado"])
+        self.assertFalse(DEFAULT_PERMISSIONS["sensor_tela_cheia"])
+        self.assertFalse(DEFAULT_PERMISSIONS["pousar_janelas"])
+        self.assertFalse(DEFAULT_PERMISSIONS["rotina"])
 
     def test_loads_full_pestinha_network(self):
         state = self.engine.snapshot()
