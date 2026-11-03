@@ -18,6 +18,10 @@ on:
       - "SERMAX-Windows/sermax_pestinha/**"
       - "SERMAX-Windows/sermax_cognitive.py"
       - "SERMAX-Windows/tests/test_sermax_cognitive.py"
+      - "SERMAX-Windows/sermax_core.py"
+      - "SERMAX-Windows/sermax_launcher.py"
+      - "SERMAX-Windows/sermax_pestinha_launcher.py"
+      - "SERMAX-Windows/SERMAX.spec"
       - ".github/workflows/sermax-pestinha-ci.yml"
   workflow_dispatch:
 
@@ -54,3 +58,11 @@ jobs:
         run: |
           if (-not (Test-Path "SERMAX-Windows/dist/SERMAX.exe")) { throw "Integrated SERMAX.exe was not generated." }
           if ((Get-Item "SERMAX-Windows/dist/SERMAX.exe").Length -lt 1000000) { throw "Integrated SERMAX.exe is unexpectedly small." }
+
+      - name: Upload test executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SERMAX-Pestinha-Integration-CI-${{ github.run_number }}
+          path: SERMAX-Windows/dist/SERMAX.exe
+          if-no-files-found: error
+          retention-days: 14
