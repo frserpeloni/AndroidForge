@@ -17,6 +17,7 @@ a = Analysis(
     hiddenimports=[
         "sermax_core", "sermax_historico_comandos", "sermax_planejador",
         "sermax_executor", "sermax_tarefas", "ferramenta_windows",
+        "sermax_jarvis_adapter", "sermax_pestinha_adapter", "sermax_widget_state",
         "sermax_voz", "sermax_integracao_comandos",
     ],
     hookspath=[],
