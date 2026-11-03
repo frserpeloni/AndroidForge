@@ -48,6 +48,7 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
         )
 
     def test_neural_state_persists_separately(self):
+        self.engine.set_sensor_permission("SOCIAL", True)
         self.engine.submit_event("task_started")
         self.engine.tick(100)
         self.engine.feedback(1.0, 2.0)
@@ -57,8 +58,9 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
         try:
             self.assertTrue((Path(self.temp.name) / "neural" / "nervous.json").exists())
             self.assertTrue((Path(self.temp.name) / "neural" / "drives.json").exists())
-                self.assertTrue((Path(self.temp.name) / "neural" / "sensor_permissions.json").exists())
-            self.assertTrue(restored.sensor_permissions["SOCIAL"] is False)
+            self.assertTrue((Path(self.temp.name) / "neural" / "episodes.jsonl").exists())
+            self.assertTrue((Path(self.temp.name) / "neural" / "sensor_permissions.json").exists())
+            self.assertTrue(restored.sensor_permissions["SOCIAL"])
             self.assertEqual(restored.brain.N, self.engine.brain.N)
         finally:
             restored.close()
