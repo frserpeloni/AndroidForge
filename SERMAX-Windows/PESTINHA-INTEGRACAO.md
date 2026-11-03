@@ -2,8 +2,7 @@
 
 **Branch de trabalho:** `sermax-pestinha-full-integration-20261103`  
 **Referência SERMAX preservada:** `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`  
-**Estado:** integração em desenvolvimento, sem release e sem alteração da instalação local.
-
+**Estado:** integração em desenvolvimento, sem release e sem alteração da instalação local.\n**Origem do código:** `mille-okws/pestinha`, commit `1b16bd21bb5ba9dd4c460c153f865824f53d05c8` (03/11/2026), versão declarada `0.7.0`.\n**Cobertura da cópia:** 60 arquivos Python do pacote, sem arquivos binários de imagem.\n
 ## Conteúdo incorporado
 
 O código-fonte Python do Pestinha foi preservado em `sermax_pestinha/pestinha/`, com as camadas:
@@ -17,8 +16,7 @@ O código-fonte Python do Pestinha foi preservado em `sermax_pestinha/pestinha/`
 - `ui/`: configurações, bandeja, monitor neural, painéis e onboarding.
 - `controle/` e `app.py`: sessão, interação e composição do aplicativo.
 
-A entrada original `main.py` foi substituída por `sermax_pestinha_launcher.py`, que importa o pacote pelo namespace isolado do SERMAX. O comando `/pestinha` inicia essa interface em outro processo, sem fechar o terminal principal.
-
+A entrada original `main.py` foi substituída por `sermax_pestinha_launcher.py`, que importa o pacote pelo namespace isolado do SERMAX. O comando `/pestinha` inicia essa interface em outro processo, sem fechar o terminal principal. Na primeira abertura, a tela de permissões é apresentada; depois, as escolhas ficam salvas.\n
 ## Integração cognitiva
 
 `sermax_cognitive.py` conecta ao SERMAX:
