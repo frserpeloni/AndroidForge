@@ -1,9 +1,11 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from sermax_cognitive import SermaxCognitiveEngine
 from sermax_pestinha.pestinha.config import DEFAULT_PERMISSIONS
+import sermax_core
 
 
 class SermaxCognitiveEngineTests(unittest.TestCase):
@@ -53,6 +55,20 @@ class SermaxCognitiveEngineTests(unittest.TestCase):
             ),
             "responder",
         )
+
+    def test_sermax_core_sensor_and_feedback_commands(self):
+        with patch("sermax_core.obter_motor_cognitivo", return_value=self.engine):
+            sensor_reply = sermax_core.responder_comando_local("/cog sensor SOCIAL on")
+            self.assertIn("ativada", sensor_reply)
+            self.assertTrue(self.engine.sensor_permissions["SOCIAL"])
+            self.engine.begin_decision("SERMAX|observando", "responder")
+            feedback_reply = sermax_core.responder_comando_local("/cog feedback positivo")
+            self.assertIn("Feedback registrado", feedback_reply)
+
+    def test_sermax_core_includes_neural_context_for_ollama(self):
+        with patch("sermax_core.obter_motor_cognitivo", return_value=self.engine):
+            context = sermax_core.montar_contexto("pergunta de teste")
+        self.assertTrue(any("ESTADO COGNITIVO INTERNO" in item["content"] for item in context))
 
     def test_episode_learning_is_recorded(self):
         self.engine.record_decision(
