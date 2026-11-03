@@ -1,3 +1,7 @@
+import tempfile
+import unittest
+from pathlib import Path
+
 from sermax_pestinha_adapter import PestinhaAdapter
 
 
@@ -25,34 +29,40 @@ class FakeBrain:
         self.saved.append(path)
 
 
-def test_pestinha_receives_only_allowlisted_lifecycle_events(tmp_path):
-    brain = FakeBrain()
-    path = tmp_path / "sermax_neural_state.json"
-    adapter = PestinhaAdapter(str(path), brain_factory=lambda: brain)
+class TestPestinhaAdapter(unittest.TestCase):
+    def test_receives_only_allowlisted_lifecycle_events(self):
+        with tempfile.TemporaryDirectory() as folder:
+            brain = FakeBrain()
+            path = str(Path(folder) / "sermax_neural_state.json")
+            adapter = PestinhaAdapter(path, brain_factory=lambda: brain)
 
-    assert adapter.available
-    assert adapter.processar_evento("processing") == "attention"
-    assert brain.inputs == [{"WORK": 0.80, "TYPING": 0.20}]
-    assert brain.steps == [80]
-    assert adapter.processar_evento("error") == "error"
-    assert adapter.processar_evento("unknown") == "error"
+            self.assertTrue(adapter.available)
+            self.assertEqual(adapter.processar_evento("processing"), "attention")
+            self.assertEqual(brain.inputs, [{"WORK": 0.80, "TYPING": 0.20}])
+            self.assertEqual(brain.steps, [80])
+            self.assertEqual(adapter.processar_evento("error"), "error")
+            self.assertEqual(adapter.processar_evento("unknown"), "error")
+
+    def test_persistence_is_separate_and_explicit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            brain = FakeBrain()
+            path = str(Path(folder) / "sermax_neural_state.json")
+            adapter = PestinhaAdapter(path, brain_factory=lambda: brain)
+            self.assertTrue(adapter.salvar())
+            self.assertEqual(brain.saved, [path])
+
+    def test_failure_falls_back_without_crashing(self):
+        class BrokenBrain(FakeBrain):
+            def step(self, dt):
+                raise RuntimeError("neural failure")
+
+        with tempfile.TemporaryDirectory() as folder:
+            adapter = PestinhaAdapter(
+                str(Path(folder) / "state.json"), brain_factory=BrokenBrain
+            )
+            self.assertEqual(adapter.processar_evento("processing"), "processing")
+            self.assertFalse(adapter.available)
 
 
-def test_pestinha_persistence_is_separate_and_explicit(tmp_path):
-    brain = FakeBrain()
-    path = tmp_path / "sermax_neural_state.json"
-    adapter = PestinhaAdapter(str(path), brain_factory=lambda: brain)
-    assert adapter.salvar()
-    assert brain.saved == [str(path)]
-
-
-def test_pestinha_failure_falls_back_without_crashing(tmp_path):
-    class BrokenBrain(FakeBrain):
-        def step(self, dt):
-            raise RuntimeError("neural failure")
-
-    adapter = PestinhaAdapter(
-        str(tmp_path / "state.json"), brain_factory=BrokenBrain
-    )
-    assert adapter.processar_evento("processing") == "processing"
-    assert not adapter.available
+if __name__ == "__main__":
+    unittest.main()
