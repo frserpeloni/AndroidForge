@@ -33,6 +33,7 @@ DEFAULT_SENSOR_PERMISSIONS = {
     "WORK": True,
     "NOVELTY": True,
     "SOCIAL": False,
+    "PLAY": False,
     "TYPING": False,
     "MOTION": False,
     "SILENCE": False,
@@ -120,7 +121,7 @@ class SermaxCognitiveEngine:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         temp = self.permissions_path.with_suffix(".json.tmp")
         data = json.dumps(self.sensor_permissions, ensure_ascii=False, indent=2)
-        with open(temp, "w", encoding="utf-8", newline="\\n") as stream:
+        with open(temp, "w", encoding="utf-8", newline="\n") as stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
