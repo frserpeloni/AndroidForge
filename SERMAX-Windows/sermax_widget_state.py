@@ -60,7 +60,7 @@ class WidgetStateController:
                 state = self._neural_adapter.processar_evento(evento)
             except Exception:
                 state = evento if evento in ESTADOS_VISUAIS else "error"
-        self._state = WidgetState(state if state in ESTADOS_VISUAIS else "error")
+        self._state = WidgetState(state if isinstance(state, str) and state in ESTADOS_VISUAIS else "error")
         return self._state
 
     def salvar_estado_neural(self) -> bool:
