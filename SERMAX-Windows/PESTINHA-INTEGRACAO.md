@@ -59,3 +59,16 @@ A CI dedicada compila o código, executa os testes cognitivos e monta o executá
 A aprovação da CI comprova compilação e testes no runner Windows. Não comprova ainda execução manual do executável no computador do mantenedor, comportamento visual, interação real, atualização, rollback ou persistência após reinício nesse computador.
 
 A PR #2 permanece aberta em rascunho. Esta branch não foi mesclada à principal. Nenhuma alteração foi feita em `C:\\SERMAX` nem no backup oficial.
+
+## Resultado verificável da CI
+
+Na execução 16, commit `2d619f81decef693ffc88ecb316337e6f2d8faa1`:
+
+- 9 testes automatizados aprovados.
+- 60 módulos Python do Pestinha compilados.
+- Importação da interface completa aprovada.
+- Build do `SERMAX.exe` aprovado no runner Windows.
+- Artefato de teste gerado: `SERMAX-Pestinha-Integration-CI-16`, 62.057.761 bytes.
+- SHA-256: `897db6799d72aa0f669a4750d7fb8e1523aa1405cdc52a89de19502f788cc332`.
+
+O artefato é temporário de CI, com retenção até 17/11/2026. Não é release de instalação. Ainda falta executar a interface e validar teclado, mouse, bandeja, sensores, memória após reinício e atualização/rollback em um Windows real.
