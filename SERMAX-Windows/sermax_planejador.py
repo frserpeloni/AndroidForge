@@ -75,6 +75,36 @@ def _plano_organizacao(objetivo):
                    "Nenhuma ferramenta foi executada."])
     return "\n".join(linhas)
 
+def validar_resposta_plano(content, objetivo):
+    """Valida a saída não confiável do modelo e retorna etapas permitidas."""
+    if not isinstance(content, str) or len(content) > 16000:
+        raise ValueError("resposta do modelo ausente ou acima de 16 KB")
+    texto = content.strip()
+    if texto.startswith("```"):
+        texto = re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.I)
+    inicio, fim = texto.find("{"), texto.rfind("}")
+    if inicio < 0 or fim <= inicio:
+        raise ValueError("JSON ausente")
+    dados = json.loads(texto[inicio:fim + 1])
+    if not isinstance(dados, dict) or not isinstance(dados.get("etapas"), list):
+        raise ValueError("estrutura inválida")
+    if not 1 <= len(dados["etapas"]) <= 4:
+        raise ValueError("o plano deve conter de uma a quatro etapas")
+    etapas = []
+    for etapa in dados["etapas"]:
+        if not isinstance(etapa, dict):
+            raise ValueError("etapa inválida")
+        ferramenta = etapa.get("ferramenta")
+        if ferramenta not in FERRAMENTAS_PERMITIDAS:
+            raise ValueError("ferramenta não permitida")
+        titulo = _safe(etapa.get("titulo"), 160)
+        verificacao = _safe(etapa.get("verificacao"), 200)
+        if not titulo or not verificacao:
+            raise ValueError("etapa sem título ou verificação")
+        etapas.append((titulo, ferramenta, verificacao))
+    return etapas
+
+
 def planejar(objetivo, modelo=MODELO_PADRAO, url=URL_PADRAO, timeout=300):
     objetivo=_safe(objetivo,1200)
     if not objetivo: return "Informe o objetivo após /plano."
@@ -89,18 +119,8 @@ def planejar(objetivo, modelo=MODELO_PADRAO, url=URL_PADRAO, timeout=300):
     try:
         with urllib.request.urlopen(req,timeout=timeout) as r:
             result=json.loads(r.read().decode("utf-8"))
-        content=result.get("message",{}).get("content","").strip()
-        if content.startswith("```"): content=re.sub(r"^```(?:json)?\s*|\s*```$", "", content, flags=re.I)
-        a,b=content.find("{"),content.rfind("}")
-        if a<0 or b<=a: raise ValueError("JSON ausente")
-        data=json.loads(content[a:b+1])
-        if not isinstance(data,dict) or not isinstance(data.get("etapas"),list): raise ValueError("estrutura inválida")
-        etapas=[]
-        for e in data["etapas"][:4]:
-            if not isinstance(e,dict) or e.get("ferramenta") not in FERRAMENTAS_PERMITIDAS: continue
-            t,v=_safe(e.get("titulo"),160),_safe(e.get("verificacao"),200)
-            if t and v: etapas.append((t,e["ferramenta"],v))
-        if not etapas: raise ValueError("nenhuma etapa válida")
+        content=result.get("message",{}).get("content","")
+        etapas=validar_resposta_plano(content, objetivo)
         linhas=["Plano proposto (ainda não executado):","Objetivo: "+objetivo]
         for i,(t,f,v) in enumerate(etapas,1): linhas.extend([f"{i}. {t} [ferramenta: {f}]",f"   Verificação: {v}"])
         linhas.append("Nenhuma ferramenta ou comando foi executado.")
