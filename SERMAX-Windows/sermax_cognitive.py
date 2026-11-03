@@ -5,6 +5,8 @@ pessoal do SERMAX. Não executa comandos do sistema operacional.
 """
 from __future__ import annotations
 
+import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -75,7 +77,9 @@ class SermaxCognitiveEngine:
                                          rate=self.profile["cond_rate"])
         self.episodic = EpisodicMemory(self.state_dir / "episodes.jsonl",
                                        self.state_dir / "preferences.json")
+        self.permissions_path = self.state_dir / "sensor_permissions.json"
         self.sensor_permissions = dict(DEFAULT_SENSOR_PERMISSIONS)
+        self._load_sensor_permissions()
         if sensor_permissions:
             self.set_sensor_permissions(sensor_permissions)
         self._pending: dict[str, float] = {}
@@ -99,7 +103,28 @@ class SermaxCognitiveEngine:
             if type(enabled) is not bool:
                 raise TypeError(f"A permissão de {channel} deve ser booleana.")
         self.sensor_permissions.update(permissions)
+        self._save_sensor_permissions()
         return dict(self.sensor_permissions)
+
+    def _load_sensor_permissions(self) -> None:
+        try:
+            saved = json.loads(self.permissions_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError):
+            return
+        if isinstance(saved, dict):
+            for channel, enabled in saved.items():
+                if channel in self.sensor_permissions and type(enabled) is bool:
+                    self.sensor_permissions[channel] = enabled
+
+    def _save_sensor_permissions(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        temp = self.permissions_path.with_suffix(".json.tmp")
+        data = json.dumps(self.sensor_permissions, ensure_ascii=False, indent=2)
+        with open(temp, "w", encoding="utf-8", newline="\\n") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temp, self.permissions_path)
 
     def set_sensor_permission(self, channel: str, enabled: bool) -> bool:
         self.set_sensor_permissions({channel: enabled})
