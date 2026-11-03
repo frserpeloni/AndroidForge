@@ -86,6 +86,7 @@ class SermaxCognitiveEngine:
         self._pending: dict[str, float] = {}
         self._last_motor: dict[str, float] = {}
         self._last_decision = None
+        self._pending_episode = None
         self._last_tick = time.monotonic()
         self.brain.load(self.state_dir / "nervous.json")
         self.drives.load(self.state_dir / "drives.json", self.profile)
@@ -206,6 +207,29 @@ class SermaxCognitiveEngine:
             return self.episodic.choose(str(context), options,
                                         max(0.0, min(1.0, float(epsilon))))
 
+    def begin_decision(self, context: str, action: str) -> None:
+        """Abre um episódio para avaliação explícita posterior do usuário."""
+        with self._lock:
+            if self._pending_episode is not None and self._pending_episode in self.episodic.open:
+                self.episodic._resolve(
+                    self._pending_episode, "sem avaliação explícita", 0.0
+                )
+            self._pending_episode = self.episodic.start(str(context), str(action))
+
+    def record_feedback(self, result: str, reward: float, duration_s: float = 1.0) -> bool:
+        """Aplica feedback explícito à rede e ao último episódio SERMAX pendente."""
+        reward = max(-1.0, min(1.0, float(reward)))
+        duration_s = max(0.0, min(10.0, float(duration_s)))
+        with self._lock:
+            self.brain.learn(reward, duration_s, self.profile["learn_rate"])
+            episode = self._pending_episode
+            if episode is None or episode not in self.episodic.open:
+                self._pending_episode = None
+                return False
+            self.episodic._resolve(episode, str(result)[:240], reward)
+            self._pending_episode = None
+            return True
+
     def record_decision(self, context: str, action: str, result: str,
                         valence: float) -> None:
         """Registra resultado de uma decisão para aprendizado episódico contextual."""
@@ -262,4 +286,10 @@ class SermaxCognitiveEngine:
             self.episodic.save()
 
     def close(self) -> None:
+        with self._lock:
+            if self._pending_episode is not None and self._pending_episode in self.episodic.open:
+                self.episodic._resolve(
+                    self._pending_episode, "encerrado sem avaliação explícita", 0.0
+                )
+                self._pending_episode = None
         self.save()
