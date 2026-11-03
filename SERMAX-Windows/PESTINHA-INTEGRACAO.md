@@ -19,7 +19,7 @@ O código-fonte Python do Pestinha foi preservado em `sermax_pestinha/pestinha/`
 - `ui/`: configurações, bandeja, monitor neural, painéis e onboarding.
 - `controle/` e `app.py`: sessão, interação e composição do aplicativo.
 
-A entrada original `main.py` foi substituída por `sermax_pestinha_launcher.py`, que importa o pacote pelo namespace isolado do SERMAX. O comando `/pestinha` inicia essa interface em outro processo, sem fechar o terminal principal. Na primeira abertura, a tela de permissões é apresentada; depois, as escolhas ficam salvas.
+A entrada original `main.py` foi substituída por `sermax_pestinha_launcher.py`, que importa o pacote pelo namespace isolado do SERMAX. O comando `/pestinha` inicia essa interface em outro processo, sem fechar o terminal principal. Na primeira abertura, a tela de permissões é apresentada; depois, as escolhas ficam salvas. A interface visual mantém seu ciclo de simulação isolado do ciclo cognitivo do terminal, evitando dois processos gravarem simultaneamente o mesmo estado neural. O compartilhamento de estado em tempo real entre as duas interfaces fica como etapa posterior, via IPC controlado.
 
 ## Integração cognitiva
 
@@ -32,13 +32,13 @@ A entrada original `main.py` foi substituída por `sermax_pestinha_launcher.py`,
 - Reforço neural e persistência de estado.
 - Resumo cognitivo enviado ao contexto do Ollama.
 
-O núcleo SERMAX continua responsável pela conversa, planejamento e execução autorizada. O resultado neural informa o contexto e não executa comandos do sistema operacional.
+O núcleo SERMAX continua responsável pela conversa, planejamento e execução autorizada. O resultado neural informa o contexto e não executa comandos do sistema operacional. O aprendizado por avaliação da resposta exige o comando explícito `/cog feedback positivo` ou `/cog feedback negativo`; o sistema não altera pesos automaticamente a cada conversa.
 
 ## Memórias e permissões
 
 A memória pessoal existente `memoria_sermax.json` permanece separada e intocada.
 
-O estado neural fica em `sermax_pestinha_state/`, com arquivos próprios para rede, necessidades, condicionamento, episódios, preferências e permissões sensoriais. O comando `/cog feedback positivo` ou `/cog feedback negativo` aplica avaliação explícita à última resposta e ao aprendizado episódico.
+O estado neural do núcleo SERMAX fica em `sermax_pestinha_state/`, com arquivos próprios para rede, necessidades, condicionamento, episódios, preferências e permissões sensoriais. A instância visual complementar mantém o diretório de memória próprio do Pestinha para evitar gravações concorrentes. O comando `/cog feedback positivo` ou `/cog feedback negativo` aplica avaliação explícita à última resposta e ao aprendizado episódico.
 
 Na interface complementar, os sensores de programa ativo, mouse/teclado, tela cheia, janelas e rotina começam desligados. Cada permissão pode ser ativada individualmente. O comando `/cog sensor CANAL on|off` controla os canais do motor cognitivo do SERMAX. O código não lê títulos nem conteúdo de janelas, páginas, documentos ou conversas.
 
