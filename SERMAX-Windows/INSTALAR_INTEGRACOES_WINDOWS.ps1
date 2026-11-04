@@ -22,8 +22,23 @@ if (-not (Test-Path $MainPython)) {
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar pip do ambiente principal.' }
 & $MainPython -m pip install 'numpy>=2.4.6' 'pyinstaller>=6.11'
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar NumPy/PyInstaller.' }
-& $MainPython -m pip install --no-deps 'git+https://github.com/mille-okws/pestinha.git@1b16bd21bb5ba9dd4c460c153f865824f53d05c8'
-if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar o codigo Pestinha.' }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw 'Git nao encontrado. Instale o Git for Windows para preparar a dependencia Pestinha.'
+}
+$PestinhaSource = Join-Path $Root 'dependencias\pestinha-1b16bd2'
+if (-not (Test-Path (Join-Path $PestinhaSource '.git'))) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PestinhaSource) | Out-Null
+    & git clone --filter=blob:none https://github.com/mille-okws/pestinha.git $PestinhaSource
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao obter o codigo-fonte Pestinha.' }
+}
+& git -C $PestinhaSource fetch --depth 1 origin 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar a revisao fixada do Pestinha.' }
+& git -C $PestinhaSource checkout --detach 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao selecionar a revisao fixada do Pestinha.' }
+$SitePackages = & $MainPython -c "import site; print(site.getsitepackages()[0])"
+if ($LASTEXITCODE -ne 0 -or -not $SitePackages) { throw 'Nao foi possivel localizar site-packages do Python 3.14.' }
+$PthFile = Join-Path $SitePackages 'sermax_pestinha_source.pth'
+Set-Content -Path $PthFile -Value $PestinhaSource -Encoding ascii
 
 & py -3.13 --version 2>$null
 if ($LASTEXITCODE -eq 0) {
