@@ -122,8 +122,12 @@ jobs:
           $py = ".venv-integrations/Scripts/python.exe"
           & $py -m pip install --upgrade pip pyinstaller "numpy>=2.4.6"
           if ($LASTEXITCODE -ne 0) { throw "Python 3.14 dependencies failed." }
-          & $py -m pip install --no-deps "git+https://github.com/mille-okws/pestinha.git@1b16bd21bb5ba9dd4c460c153f865824f53d05c8"
-          if ($LASTEXITCODE -ne 0) { throw "Pestinha installation failed." }
+          $source = Join-Path $env:RUNNER_TEMP "pestinha-src"
+          git clone --filter=blob:none https://github.com/mille-okws/pestinha.git $source
+          if ($LASTEXITCODE -ne 0) { throw "Failed to clone Pestinha source." }
+          git -C $source checkout 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          if ($LASTEXITCODE -ne 0) { throw "Failed to checkout pinned Pestinha revision." }
+          "PYTHONPATH=$source" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set up Python 3.13 for OpenJarvis
         uses: actions/setup-python@v5
