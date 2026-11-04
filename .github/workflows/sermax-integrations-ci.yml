@@ -32,15 +32,21 @@ jobs:
         with:
           python-version: "3.14"
 
-      - name: Prepare isolated SERMAX environment and install real Pestinha
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: .deps/pestinha
+
+      - name: Prepare isolated SERMAX environment
         shell: pwsh
         run: |
           python -m venv .venv-integrations
           $py = ".venv-integrations/Scripts/python.exe"
           & $py -m pip install --upgrade pip pytest pyinstaller "numpy>=2.4.6"
           if ($LASTEXITCODE -ne 0) { throw "Failed to install Python 3.14 build dependencies." }
-          & $py -m pip install --no-deps "git+https://github.com/mille-okws/pestinha.git@1b16bd21bb5ba9dd4c460c153f865824f53d05c8"
-          if ($LASTEXITCODE -ne 0) { throw "Failed to install Pestinha source." }
+          "PYTHONPATH=$PWD/.deps/pestinha" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Set up Python 3.13 for OpenJarvis
         uses: actions/setup-python@v5
