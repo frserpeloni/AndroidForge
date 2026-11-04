@@ -197,6 +197,7 @@ def preparar_terminal():
 def painel():
 
     w = PANEL_COLS
+    diagnostico = sermax_core.diagnostico_widget()
 
     itens = [
         " SERMAX",
@@ -204,6 +205,11 @@ def painel():
         " INTELIGENCIA ARTIFICIAL",
         "",
         " [ ONLINE ]",
+        "",
+        " REDE NEURAL",
+        f" {diagnostico['neural_status']}",
+        " ESTADO",
+        f" {diagnostico['estado'].upper()}",
         "",
         " MODELO",
         " QWEN 2.5 1.5B",
@@ -643,6 +649,10 @@ def main():
         pass
 
     finally:
+        try:
+            sermax_core.encerrar_widget()
+        except Exception:
+            pass
         sys.stdout.write(
             SHOW_CURSOR +
             RESET +
