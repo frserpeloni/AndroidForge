@@ -1,0 +1,84 @@
+name: SERMAX Real Integration CI
+
+on:
+  push:
+    branches:
+      - sermax-integracao-real-python314-20261104
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-integrations-ci.yml"
+  pull_request:
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-integrations-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Prepare isolated SERMAX environment and install real Pestinha
+        shell: pwsh
+        run: |
+          python -m venv .venv-integrations
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m pip install --upgrade pip pytest pyinstaller "numpy>=2.4.6"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install Python 3.14 build dependencies." }
+          & $py -m pip install --no-deps "git+https://github.com/mille-okws/pestinha.git@1b16bd21bb5ba9dd4c460c153f865824f53d05c8"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install Pestinha source." }
+
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Prepare isolated OpenJarvis environment
+        shell: pwsh
+        run: |
+          python -m venv .venv-jarvis
+          $py = ".venv-jarvis/Scripts/python.exe"
+          & $py -m pip install --upgrade pip
+          & $py -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install OpenJarvis on Python 3.13." }
+          "SERMAX_JARVIS_PYTHON=$PWD/.venv-jarvis/Scripts/python.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SERMAX_ROOT=$PWD" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Run existing tests and real dependency smoke tests
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m compileall -q .
+          if ($LASTEXITCODE -ne 0) { throw "Python compilation failed." }
+          & $py -m pytest -q tests
+          if ($LASTEXITCODE -ne 0) { throw "SERMAX integration tests failed." }
+
+      - name: Build SERMAX.exe with Python 3.14 and Pestinha
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m PyInstaller --noconfirm --clean "SERMAX.spec"
+          if ($LASTEXITCODE -ne 0) { throw "PyInstaller build failed." }
+          if (-not (Test-Path "dist/SERMAX.exe")) { throw "SERMAX.exe was not generated." }
+          if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small." }
+
+      - name: Upload Windows integration artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SERMAX-Real-Integration-${{ github.run_number }}
+          path: SERMAX-Windows/dist/SERMAX.exe
+          if-no-files-found: error
+          retention-days: 14
