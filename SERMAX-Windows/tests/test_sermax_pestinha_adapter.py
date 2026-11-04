@@ -27,6 +27,8 @@ class FakeBrain:
 
     def save(self, path):
         self.saved.append(path)
+        with open(path, "w", encoding="utf-8") as state_file:
+            state_file.write("{}")
 
 
 class TestPestinhaAdapter(unittest.TestCase):
