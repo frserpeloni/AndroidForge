@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - sermax-integracao-real-python314-20261104
+      - sermax-windows-integration-20261029
     paths:
       - "SERMAX-Windows/**"
       - ".github/workflows/sermax-integrations-ci.yml"
