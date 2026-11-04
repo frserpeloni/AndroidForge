@@ -9,7 +9,7 @@ Esta é a área de trabalho comunitária para a edição Windows. O código prec
 ## Requisitos de execução
 
 - Windows 10/11 x64
-- Python 3.11+ para executar a partir do código (a compilação usa Python 3.11)
+- Python 3.14 para o núcleo SERMAX e o adaptador Pestinha; Python 3.13 separado para o worker OpenJarvis
 - Ollama instalado e em execução em `http://127.0.0.1:11434`
 - Um modelo local compatível configurado no Ollama
 
@@ -17,7 +17,7 @@ O SERMAX é local-first: não configure chaves de API nem envie memórias privad
 
 ## Compilação e testes
 
-O workflow **SERMAX Windows CI** executa validação de sintaxe e testes e tenta gerar `SERMAX.exe`. O executável gerado será disponibilizado como artefato de teste, não como release estável, até que os testes de integração no Windows/Ollama sejam aprovados.
+O workflow **SERMAX Windows CI** executa validação de sintaxe, testes e compilação de verificação do `SERMAX.exe`. O workflow não publica nem anexa o executável como artefato enquanto a integração e a revisão de licença GPL-3.0-or-later do Pestinha estiverem pendentes. Uma compilação bem-sucedida no CI não substitui o teste no computador do usuário nem a validação com Ollama local.
 
 ## Dados privados
 
