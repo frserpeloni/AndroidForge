@@ -26,3 +26,12 @@ Não versionar `memoria_sermax.json`, históricos de conversa, backups pessoais,
 ## Contribuir
 
 Abra uma issue descrevendo o comportamento observado, os passos para reproduzir e o resultado esperado. Propostas que alterem memória persistente, execução de comandos ou acesso a arquivos precisam incluir testes e explicar os riscos.
+
+
+## Integrações Pestinha e OpenJarvis, validação 04/11/2026
+
+- Execute `INSTALAR_INTEGRACOES_WINDOWS.ps1` para preparar os ambientes Python separados.
+- O SERMAX usa Python 3.14 e a rede LIF do Pestinha, com estado em `memoria_neural_pestinha.json`.
+- O OpenJarvis roda em processo isolado Python 3.13 através de `sermax_jarvis_worker.py`.
+- A validação automatizada está em `.github/workflows/sermax-integrations-ci.yml`.
+- A PR de integração permanece em rascunho. Não mesclar nem distribuir o executável até concluir os testes e a análise da licença GPL-3.0-or-later.
