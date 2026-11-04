@@ -32,7 +32,7 @@
 - A chamada Jarvis é sem ferramentas e sem contexto de memória.
 - Não importar nem executar os binários distribuídos pelo projeto Pestinha. A integração deve usar fonte auditada e dependências Python verificadas.
 
-## Validação automatizada adicionada em 04/11/2026\n\n- Workflow: `.github/workflows/sermax-integrations-ci.yml`.\n- Python 3.14: instala NumPy e o código Pestinha fixado no commit de referência.\n- Python 3.13: instala OpenJarvis fixado no commit de referência, em `.venv-jarvis`.\n- Testes reais: execução do `LIFBrain`, gravação/recarga do estado neural e teste de inicialização do SDK OpenJarvis através do worker.\n- O workflow compila o SERMAX.exe para verificar o empacotamento, mas não publica o executável enquanto a análise de licença GPL não estiver concluída.\n\n## Pendências para integração final
+## Validação automatizada adicionada em 04/11/2026\n\n- Workflow: `.github/workflows/sermax-integrations-ci.yml`.\n- Python 3.14: instala NumPy e o código Pestinha fixado no commit de referência.\n- Python 3.13: instala OpenJarvis fixado no commit de referência, em `.venv-jarvis`.\n- Testes reais: execução do `LIFBrain`, gravação/recarga do estado neural e teste do SDK OpenJarvis através do worker, usando servidor HTTP local que simula o protocolo Ollama. Esse teste valida o SDK e a ponte entre processos, sem depender de um daemon Ollama ou modelo baixado.\n- O workflow compila o SERMAX.exe para verificar o empacotamento, mas não publica o executável enquanto a análise de licença GPL não estiver concluída.\n\n## Pendências para integração final
 
 1. Fixar e instalar dependências em ambiente isolado de CI.
 2. Executar testes contra os módulos reais do OpenJarvis e Pestinha.
