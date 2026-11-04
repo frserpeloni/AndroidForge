@@ -36,6 +36,66 @@ else:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ARQUIVO_MEMORIA = os.path.join(BASE_DIR, "memoria_sermax.json")
 MAX_MEMORIAS = 500
+
+# Rede neural opcional Pestinha. Estado separado da memória pessoal SERMAX.
+_widget_controller = None
+_widget_adapter = None
+_widget_init_error = None
+
+
+def _obter_widget_controller():
+    global _widget_controller, _widget_adapter, _widget_init_error
+    if _widget_controller is not None:
+        return _widget_controller
+    try:
+        from sermax_widget_state import WidgetStateController
+        from sermax_pestinha_adapter import PestinhaAdapter
+        neural_path = os.path.join(BASE_DIR, "memoria_neural_pestinha.json")
+        _widget_adapter = PestinhaAdapter(neural_path)
+        _widget_controller = WidgetStateController(neural_adapter=_widget_adapter)
+        if not _widget_adapter.available:
+            _widget_init_error = "Pestinha/NumPy indisponível ou memória neural inválida"
+    except Exception as exc:
+        _widget_init_error = f"{type(exc).__name__}: {exc}"
+        try:
+            from sermax_widget_state import WidgetStateController
+            _widget_controller = WidgetStateController()
+        except Exception:
+            _widget_controller = None
+    return _widget_controller
+
+
+def atualizar_estado_widget(evento):
+    controller = _obter_widget_controller()
+    if controller is None:
+        return "error"
+    try:
+        return controller.set_event(evento).name
+    except Exception:
+        return "error"
+
+
+def diagnostico_widget():
+    controller = _obter_widget_controller()
+    neural_ativa = bool(_widget_adapter and _widget_adapter.available)
+    estado = controller.state.name if controller is not None else "error"
+    return {
+        "estado": estado,
+        "neural_ativa": neural_ativa,
+        "neural_status": "ATIVA" if neural_ativa else "OFFLINE",
+        "detalhe": _widget_init_error or ("" if neural_ativa else "Dependência neural não carregada"),
+    }
+
+
+def encerrar_widget():
+    controller = _obter_widget_controller()
+    if controller is None:
+        return False
+    try:
+        return bool(controller.salvar_estado_neural())
+    except Exception:
+        return False
+
 KEEP_ALIVE = "10m"
 OPCOES_MODELO = {"num_ctx": 2048, "num_predict": 256}
 ultimo_diagnostico_ollama = {}
@@ -200,7 +260,7 @@ def responder_comando_local(mensagem):
         return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
-def perguntar(mensagem,receber_parte=None):
+def _perguntar_impl(mensagem,receber_parte=None):
     global ultimo_diagnostico_ollama
     mensagem=str(mensagem).strip()
     if not mensagem: return ""
@@ -237,3 +297,18 @@ def perguntar(mensagem,receber_parte=None):
         raise RuntimeError("Não foi possível conectar ao Ollama. Verifique se o Ollama está aberto.") from e
     sessao.append({"role":"assistant","content":resposta})
     return resposta.strip()
+
+
+def perguntar(mensagem, receber_parte=None):
+    """Envolve cada solicitação com eventos neurais isolados e fallback seguro."""
+    atualizar_estado_widget("processing")
+    try:
+        resposta = _perguntar_impl(mensagem, receber_parte=receber_parte)
+        atualizar_estado_widget("completed")
+        return resposta
+    except Exception:
+        atualizar_estado_widget("error")
+        raise
+    finally:
+        # A persistência neural nunca escreve em memoria_sermax.json.
+        encerrar_widget()
