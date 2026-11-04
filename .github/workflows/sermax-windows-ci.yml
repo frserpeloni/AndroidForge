@@ -1,19 +1,17 @@
 name: SERMAX Windows CI
 
 on:
-  push:
+  pull_request:
     branches:
       - main
-      - sermax-windows-community
-      - sermax-windows-integration-20261029
-    paths:
-      - "SERMAX-Windows/**"
-      - ".github/workflows/sermax-windows-ci.yml"
-  pull_request:
     paths:
       - "SERMAX-Windows/**"
       - ".github/workflows/sermax-windows-ci.yml"
   workflow_dispatch:
+
+concurrency:
+  group: sermax-windows-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
