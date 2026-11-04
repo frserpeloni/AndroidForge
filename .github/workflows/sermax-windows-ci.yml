@@ -100,13 +100,6 @@ jobs:
         run: |
           if (-not (Test-Path "dist/SERMAX.exe")) { throw "Build did not produce dist/SERMAX.exe." }
           if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small; refusing artifact." }
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: SERMAX-Windows-CI-${{ github.run_number }}
-          path: SERMAX-Windows/dist/SERMAX.exe
-          if-no-files-found: error
-          retention-days: 14
 
   real-integrations:
     runs-on: windows-latest
