@@ -59,7 +59,7 @@ def parse_proposal(raw: str) -> ValidatedProposal:
             raise ProposalError("Caminho inválido.")
         if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES:
             raise ProposalError("Conteúdo de arquivo inválido ou acima do limite.")
-        normalized = path.replace("\\\\", "/").casefold()
+        normalized = path.replace("\\", "/").casefold()
         if normalized in seen:
             raise ProposalError("A proposta contém caminhos duplicados.")
         seen.add(normalized)
