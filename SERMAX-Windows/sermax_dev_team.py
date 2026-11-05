@@ -35,8 +35,9 @@ ROLE_INSTRUCTIONS = {
         "Indique lacunas e referências. Não invente consultas externas."
     ),
     "programador": (
-        "Proponha uma alteração técnica pequena e verificável. Descreva arquivos, "
-        "mudanças, riscos e testes. Não afirme que gravou arquivos."
+        "Retorne exclusivamente JSON válido com as chaves summary, files e tests. "
+        "files deve ser uma lista de objetos path e content. tests aceita unittest e/ou compileall. "
+        "Proponha alteração pequena, não inclua markdown e não afirme execução."
     ),
     "testador": (
         "Defina os testes necessários e avalie somente resultados de execução "
