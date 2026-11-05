@@ -139,3 +139,56 @@ Aceite: só declarar versão estável após todos os gates. Builds semanais inco
 ## 9. Regra de comunicação
 
 Relatórios devem separar: implementado, integrado ao fluxo principal, testado automaticamente, validado no Windows real e pendente. Nunca descrever um adaptador ou uma prova de conceito como incorporação completa.
+
+
+## 10. Inventário upstream confirmado nesta revisão
+
+### OpenJarvis
+
+Fonte consultada: repositório oficial `open-jarvis/OpenJarvis`, README e `pyproject.toml` atuais.
+
+O README upstream enumera oito agentes:
+- `morning_digest`: briefing agendado com e-mail, calendário, saúde, notícias e áudio;
+- `deep_research`: pesquisa em múltiplas etapas com citações;
+- `monitor_operative`: monitoramento contínuo com memória, compressão e recuperação;
+- `orchestrator`: raciocínio multi-turn com seleção automática de ferramentas;
+- `native_react`: ciclo ReAct;
+- `operative`: agente persistente com gestão de estado;
+- `native_openhands`: CodeAct com execução Python;
+- `simple`: conversa de turno único sem ferramentas.
+
+Também documenta catálogo de skills, instalação/sincronização, otimização de skills a partir de traces e avaliação/benchmark. O projeto se define como stack local-first com primitivas de agentes, avaliação de energia/latência/custo e ciclo de aprendizagem com traces locais.
+
+**Implicação para SERMAX:** priorizar primeiro `orchestrator`, `native_react`, `operative` e catálogo de skills, adaptados ao executor e às permissões SERMAX. Agentes de e-mail, saúde, calendário, pesquisa web e canais externos ficam desligados até existir integração, consentimento e política de dados específica. `native_openhands` não recebe shell irrestrito; qualquer execução de código deve ocorrer em workspace isolado, com limites, diff e rollback.
+
+O upstream declara Python `>=3.10,<3.14` e Apache-2.0 no manifesto consultado. A execução isolada em Python 3.13 permanece necessária no estado atual do projeto.
+
+### Pestinha
+
+Fontes consultadas: `pestinha/core/nervous_system.py`, `docs/REDE_NEURAL.md`, `docs/ARQUITETURA.md`, `PRIVACIDADE.md` e `pyproject.toml`.
+
+A documentação upstream descreve 470 neurônios LIF, 15.939 sinapses, 30 canais sensoriais, 10 populações de interneurônios e 15 populações motoras. Os mecanismos documentados incluem habituação, adaptação de limiar, inibição lateral, aprendizagem por reforço de três fatores, condicionamento Rescorla-Wagner e memória episódica contextual para decisões do personagem.
+
+A arquitetura upstream também inclui sensores de programa em primeiro plano, ociosidade, teclado/mouse e janelas. A política de privacidade declara que não lê título nem conteúdo de janelas, mas registra dados de rotina quando a opção correspondente é ativada. O estado persistente inclui rede, episódios, condicionamento, energia, preferências e estado de comportamento.
+
+**Limite técnico importante:** a rede Pestinha foi projetada para controlar o comportamento de um pet de tela. Ela não é, por si só, um modelo de linguagem, mecanismo geral de raciocínio ou substituto do núcleo cognitivo do SERMAX. Sua incorporação pode fornecer sinais de estado, atenção, adaptação e aprendizagem comportamental. A capacidade de raciocinar e conversar continua dependente do modelo/agente de linguagem e do supervisor SERMAX.
+
+**Implicação de privacidade:** não importar automaticamente os sensores de atividade do computador, leitura de janelas, histórico de rotina, interface Qt, inicialização com Windows ou mecanismos de interação física do pet. A primeira integração deve continuar com eventos sintéticos internos. Qualquer sensor adicional exige lista explícita de dados, finalidade, opção de ativação, retenção e testes de isolamento.
+
+**Licenciamento e assets:** o código declara GPL-3.0-or-later. O README upstream informa que imagens e textos em assets não estão cobertos pela licença do código. Portanto, não copiar assets, personagens, imagens, memes ou textos para o SERMAX sem licença individual verificada. A incorporação de código exige revisão de compatibilidade e cumprimento da GPL antes da distribuição.
+
+## 11. Matriz de prioridade para a integração
+
+| Capacidade | Decisão inicial |
+|---|---|
+| Jarvis orchestrator / ReAct | Adaptar ao supervisor e executor SERMAX, com permissões |
+| Jarvis operative e estado persistente | Avaliar para tarefas longas, estado separado e auditável |
+| Catálogo de skills | Integrar com allowlist, revisão de origem e permissões |
+| Deep research / web search | Opcional, atrás de política de rede e citações |
+| Morning digest, e-mail, calendário, saúde e canais | Não ativar sem conectores, consentimento e controles próprios |
+| OpenHands / execução de código | Sandbox obrigatório, sem shell livre |
+| Pestinha LIF, plasticidade e condicionamento | Adaptar como subsistema comportamental, com eventos SERMAX |
+| Sensores do Pestinha | Excluir da primeira integração |
+| Qt, pet de tela, assets e autostart | Excluir da integração do Terminal SERMAX |
+
+A matriz é uma decisão de arquitetura inicial. Cada linha ainda exige análise do código e dependências do commit efetivamente pinado antes de implementação.
