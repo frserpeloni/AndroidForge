@@ -28,6 +28,10 @@ Converse naturalmente em português do Brasil. Use contexto e memória sem inven
 
 MODELO = "sermax"
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
+# Motor principal selecionável. O padrão preserva o comportamento atual do SERMAX.
+MOTOR_RESPOSTA = os.environ.get("SERMAX_MOTOR", "ollama").strip().lower()
+if MOTOR_RESPOSTA not in {"ollama", "jarvis"}:
+    MOTOR_RESPOSTA = "ollama"
 if os.environ.get("SERMAX_ROOT"):
     BASE_DIR = os.path.abspath(os.environ["SERMAX_ROOT"])
 elif getattr(sys, "frozen", False):
@@ -231,6 +235,12 @@ def responder_comando_local(mensagem):
     if comando.startswith("/executar-plano ") or comando.startswith("/tarefas "):
         prefixo="/executar-plano " if comando.startswith("/executar-plano ") else "/tarefas "
         return sermax_tarefas.executar_plano(mensagem.strip()[len(prefixo):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
+    global MOTOR_RESPOSTA
+    if comando in {"/motor", "/motor status"}:
+        return f"Motor de resposta atual: {MOTOR_RESPOSTA.upper()}. Use /motor ollama ou /motor jarvis para alternar nesta sessão."
+    if comando in {"/motor ollama", "/motor jarvis"}:
+        MOTOR_RESPOSTA = comando.split()[-1]
+        return f"Motor de resposta alterado para {MOTOR_RESPOSTA.upper()} nesta sessão."
     if comando in {"/jarvis", "jarvis"}:
         return "Informe uma pergunta após /jarvis. Exemplo: /jarvis explique o que é aprendizado de máquina"
     if comando.startswith("/jarvis "):
@@ -257,7 +267,7 @@ def responder_comando_local(mensagem):
         d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
         return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /motor status, /motor ollama, /motor jarvis, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def _perguntar_impl(mensagem,receber_parte=None):
@@ -276,6 +286,18 @@ def _perguntar_impl(mensagem,receber_parte=None):
         sessao.append({"role":"assistant","content":ferramenta})
         if receber_parte: receber_parte(ferramenta)
         return ferramenta
+    if MOTOR_RESPOSTA == "jarvis":
+        # O SERMAX fornece identidade, memória recuperada e contexto da sessão.
+        # OpenJarvis permanece sem ferramentas e sem memória própria.
+        mensagens = montar_contexto(mensagem)
+        prompt = "\\n\\n".join(
+            f"{item['role'].upper()}: {item['content']}" for item in mensagens
+        )
+        prompt = prompt[-3900:]
+        resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
+        sessao.append({"role":"assistant","content":resposta})
+        if receber_parte: receber_parte(resposta)
+        return resposta
     ultimo_diagnostico_ollama={}
     dados={"model":MODELO,"messages":montar_contexto(mensagem),"stream":True,"keep_alive":KEEP_ALIVE,"options":OPCOES_MODELO}
     pedido=urllib.request.Request(OLLAMA_URL,data=json.dumps(dados,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
