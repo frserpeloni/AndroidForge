@@ -43,3 +43,14 @@
 7. Testar no Windows real, preservando `C:\SERMAX`, memória pessoal e terminal original.
 
 Nenhuma versão de produção foi declarada.
+
+
+## Diretriz posterior do mantenedor: sistema unificado
+
+A especificação `ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md` passa a definir o objetivo final. Os itens abaixo descrevem a etapa técnica anterior, não o desenho final.
+
+- O usuário não deve precisar acionar `/jarvis`, `/pestinha` ou `/motor`.
+- O adaptador OpenJarvis atual, limitado a `ask()`, agente `simple`, sem ferramentas e sem contexto próprio, é uma ponte inicial. Não representa a incorporação de todas as tecnologias OpenJarvis.
+- O adaptador Pestinha atual, limitado à rede LIF e eventos sintéticos, ainda não incorpora toda a arquitetura neural, mecanismos de aprendizagem ou demais capacidades upstream.
+- O comando de seleção manual de motor é provisório e deve ser substituído por coordenação automática do núcleo SERMAX após inventário e implementação testável.
+- Não remover abruptamente os caminhos atuais antes de existir substituição funcional e testes de regressão. Preservar compatibilidade, memória pessoal, Terminal e fallback.
