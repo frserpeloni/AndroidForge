@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
+from sermax_dev_proposal import apply_proposal, parse_proposal, preview_proposal
+
 ROLES = {"analista", "pesquisador", "programador", "testador"}
 STATUSES = {
     "queued", "running", "completed", "blocked", "failed"
@@ -60,10 +62,16 @@ class DevelopmentTeam:
         model_call: Callable[[str, str], str] | None = None,
         *,
         max_attempts: int = 1,
+        workspace_adapter=None,
+        test_runner=None,
     ):
         self.database = str(database)
         self.model_call = model_call
         self.max_attempts = max(1, min(int(max_attempts), 3))
+        self.workspace_adapter = workspace_adapter
+        self.test_runner = test_runner
+        if (workspace_adapter is None) != (test_runner is None):
+            raise ValueError("Workspace e TestRunner devem ser configurados juntos.")
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -199,6 +207,21 @@ class DevelopmentTeam:
                 if not isinstance(answer, str) or not answer.strip():
                     raise ValueError(f"O papel {role} retornou resposta vazia.")
                 answer = answer[:MAX_RESULT_CHARS]
+                if role == "programador" and self.workspace_adapter is not None:
+                    proposal = parse_proposal(answer)
+                    previews = preview_proposal(self.workspace_adapter, proposal)
+                    with self._connect() as db:
+                        self._event(db, task_id, role, "proposal_validated",
+                                    json.dumps({"summary": proposal.summary,
+                                                "files": [item["path"] for item in previews]},
+                                               ensure_ascii=False))
+                    written = apply_proposal(self.workspace_adapter, proposal)
+                    test_results = [self.test_runner.run(suite) for suite in proposal.tests]
+                    answer = json.dumps({"summary": proposal.summary,
+                                         "written_files": written,
+                                         "tests": test_results}, ensure_ascii=False)
+                    if any(result.get("status") != "passed" for result in test_results):
+                        raise RuntimeError("Testes da proposta falharam; tarefa não será concluída.")
                 transcript.append(f"[{role}]\n{answer}")
                 with self._connect() as db:
                     self._event(db, task_id, role, "completed", answer)
