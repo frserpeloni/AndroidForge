@@ -24,7 +24,7 @@ class DevelopmentTeamTests(unittest.TestCase):
             self.assertEqual([role for role, _ in calls],
                              ["analista", "programador", "testador"])
             self.assertTrue(all("Corrigir teste" in prompt for _, prompt in calls))
-            self.assertEqual(len(team.events(task_id)), 5)
+            self.assertEqual(len(team.events(task_id)), 6)
 
     def test_queue_survives_restart(self):
         with tempfile.TemporaryDirectory() as folder:
