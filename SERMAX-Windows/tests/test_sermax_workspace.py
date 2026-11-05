@@ -26,7 +26,7 @@ class WorkspaceAdapterTests(unittest.TestCase):
     def test_blocks_protected_and_traversal_paths(self):
         with tempfile.TemporaryDirectory() as folder:
             ws = WorkspaceAdapter(folder)
-            for name in ("../outside.txt", "..\\\\outside.txt", "memoria_sermax.json",
+            for name in ("../outside.txt", "..\\outside.txt", "memoria_sermax.json",
                          "memoria_neural_pestinha.json", ".git/config"):
                 with self.subTest(name=name), self.assertRaises(WorkspaceError):
                     ws.read_text(name)
@@ -75,6 +75,11 @@ class WorkspaceAdapterTests(unittest.TestCase):
             ws = WorkspaceAdapter(root)
             with self.assertRaises(WorkspaceError):
                 ws.write_text("file.txt", "new")
+
+    def test_windows_install_path_is_rejected_by_path_guard(self):
+        self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))
+        self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX\\workspace"))
+        self.assertFalse(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX_DEV"))
 
 if __name__ == "__main__":
     unittest.main()
