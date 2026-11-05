@@ -35,3 +35,13 @@ Abra uma issue descrevendo o comportamento observado, os passos para reproduzir 
 - O OpenJarvis roda em processo isolado Python 3.13 através de `sermax_jarvis_worker.py`.
 - A validação automatizada está em `.github/workflows/sermax-integrations-ci.yml`.
 - A PR de integração permanece em rascunho. Não mesclar nem distribuir o executável até concluir os testes e a análise da licença GPL-3.0-or-later.
+
+
+## Estado provisório dos motores, 05/11/2026
+
+- O motor padrão continua sendo Ollama.
+- Nesta etapa de desenvolvimento, a sessão aceita `/motor status`, `/motor jarvis` e `/motor ollama`. A seleção é manual e não persiste após reiniciar.
+- O caminho Jarvis chama o agente `simple`, sem ferramentas do SDK e sem contexto próprio do SDK. O SERMAX prepara identidade, memória recuperada e contexto recente antes de enviar o prompt.
+- Esses comandos são provisórios. O objetivo final é o SERMAX selecionar e coordenar automaticamente as capacidades internas, sem exigir que o usuário escolha motor ou agente.
+- Consulte `ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md` para o plano de incorporação completa e os limites de segurança.
+- A documentação descreve o estado do código; não declara testes recentes aprovados. O último CI aprovado citado no histórico é anterior à integração do comando `/motor`.
