@@ -290,7 +290,7 @@ def _perguntar_impl(mensagem,receber_parte=None):
         # O SERMAX fornece identidade, memória recuperada e contexto da sessão.
         # OpenJarvis permanece sem ferramentas e sem memória própria.
         mensagens = montar_contexto(mensagem)
-        prompt = "\\n\\n".join(
+        prompt = "\n\n".join(
             f"{item['role'].upper()}: {item['content']}" for item in mensagens
         )
         prompt = prompt[-3900:]
