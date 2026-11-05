@@ -172,16 +172,19 @@ class TestRunner:
                         status = "timeout"
                         break
                     time.sleep(0.05)
+                output_size = os.fstat(output_file.fileno()).st_size
+                if status == "failed" and output_size > MAX_OUTPUT_BYTES:
+                    status = "output_limit"
                 returncode = process.returncode
                 if status == "failed" and returncode == 0:
                     status = "passed"
-                output_file.seek(max(0, os.fstat(output_file.fileno()).st_size - MAX_OUTPUT_BYTES))
+                output_file.seek(max(0, output_size - MAX_OUTPUT_BYTES))
                 raw = output_file.read(MAX_OUTPUT_BYTES)
                 output = raw.decode("utf-8", errors="replace")[-MAX_OUTPUT_CHARS:]
                 return {
                     "suite": suite, "status": status, "returncode": returncode,
                     "output": output,
-                    "truncated": os.fstat(output_file.fileno()).st_size > MAX_OUTPUT_BYTES,
+                    "truncated": output_size > MAX_OUTPUT_BYTES,
                 }
             except OSError as exc:
                 return {
