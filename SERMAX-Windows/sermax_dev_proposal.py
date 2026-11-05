@@ -6,6 +6,8 @@ estruturado, limitada e validada antes de chegar ao WorkspaceAdapter.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from typing import Any
 
@@ -86,3 +88,55 @@ def apply_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> 
         workspace.write_text(item.path, item.content)
         written.append(item.path)
     return written
+
+
+def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal, test_runner):
+    """Aplica proposta e testes como transação: falha restaura todos os arquivos."""
+    preview_proposal(workspace, proposal)
+    snapshots = {}
+    backup_root = workspace.backup_root
+    for item in proposal.files:
+        target = workspace._resolve(item.path, allow_missing=True)
+        existed = target.is_file()
+        snapshots[item.path] = (
+            existed,
+            target.read_bytes() if existed else None,
+        )
+    backup_snapshots = {}
+    for item in proposal.files:
+        backup = backup_root / item.path
+        backup_snapshots[item.path] = (
+            backup.is_file(),
+            backup.read_bytes() if backup.is_file() else None,
+        )
+    try:
+        written = apply_proposal(workspace, proposal)
+        results = [test_runner.run(suite) for suite in proposal.tests]
+        if any(result.get("status") != "passed" for result in results):
+            raise RuntimeError("Testes da proposta falharam.")
+        return written, results
+    except Exception:
+        for relative, (existed, content) in snapshots.items():
+            target = workspace._resolve(relative, allow_missing=True)
+            if existed:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                fd, temp_name = tempfile.mkstemp(prefix=".sermax-rollback-", dir=str(target.parent))
+                try:
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(content)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temp_name, target)
+                finally:
+                    if os.path.exists(temp_name):
+                        os.unlink(temp_name)
+            elif target.exists():
+                target.unlink()
+        for relative, (existed, content) in backup_snapshots.items():
+            backup = backup_root / relative
+            if existed:
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                backup.write_bytes(content)
+            elif backup.exists():
+                backup.unlink()
+        raise
