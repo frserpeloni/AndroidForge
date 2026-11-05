@@ -10,6 +10,19 @@ from sermax_jarvis_adapter import JarvisAdapter
 
 
 class OllamaMockHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/api/tags":
+            self.send_error(404)
+            return
+        body = json.dumps({
+            "models": [{"name": "sermax", "model": "sermax"}]
+        }).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_POST(self):
         length = int(self.headers.get("Content-Length", "0"))
         request = json.loads(self.rfile.read(length) or b"{}")
