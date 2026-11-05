@@ -5,7 +5,7 @@ from pathlib import Path
 
 from sermax_workspace import WorkspaceAdapter
 from sermax_dev_proposal import (
-    ProposalError, apply_proposal, parse_proposal, preview_proposal,
+    ProposalError, apply_proposal, apply_and_test_proposal, parse_proposal, preview_proposal,
 )
 
 
@@ -59,6 +59,28 @@ class DevelopmentProposalTests(unittest.TestCase):
             with self.assertRaises(ProposalError):
                 apply_proposal(workspace, blocked)
             self.assertFalse((Path(folder).parent / "outside.py").exists())
+
+
+    def test_apply_and_test_rolls_back_when_tests_fail(self):
+        class FailedRunner:
+            def run(self, suite):
+                return {"suite": suite, "status": "failed", "returncode": 1, "output": "failure"}
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "module.py").write_text("ORIGINAL = True\\n", encoding="utf-8")
+            workspace = WorkspaceAdapter(root)
+            proposal = parse_proposal(json.dumps({
+                "summary": "Atualização com teste falho",
+                "files": [
+                    {"path": "module.py", "content": "BROKEN = True\\n"},
+                    {"path": "new_module.py", "content": "NEW = True\\n"},
+                ],
+                "tests": ["unittest"],
+            }))
+            with self.assertRaises(RuntimeError):
+                apply_and_test_proposal(workspace, proposal, FailedRunner())
+            self.assertEqual(workspace.read_text("module.py"), "ORIGINAL = True\\n")
+            self.assertFalse((root / "new_module.py").exists())
 
 
 if __name__ == "__main__":
