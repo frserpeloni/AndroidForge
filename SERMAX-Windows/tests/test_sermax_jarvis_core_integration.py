@@ -20,15 +20,19 @@ class TestJarvisCoreIntegration(unittest.TestCase):
             {"role": "system", "content": "MEMORIA: carro Siena"},
             {"role": "user", "content": "Qual óleo devo usar?"},
         ]
-        with patch.object(core, "responder_comando_local", return_value=None), \\
-             patch.object(core, "responder_calculo_local", return_value=None), \\
-             patch.object(core, "registrar_memoria"), \\
-             patch.object(core, "montar_contexto", return_value=contexto), \\
-             patch.object(core.sermax_jarvis_adapter, "JarvisAdapter") as adapter:
+        with (
+            patch.object(core, "responder_comando_local", return_value=None),
+            patch.object(core, "responder_calculo_local", return_value=None),
+            patch.object(core, "registrar_memoria"),
+            patch.object(core, "montar_contexto", return_value=contexto),
+            patch.object(core.sermax_jarvis_adapter, "JarvisAdapter") as adapter,
+        ):
             adapter.return_value.responder.return_value = "Resposta do Jarvis"
             core.MOTOR_RESPOSTA = "jarvis"
             partes = []
-            resposta = core._perguntar_impl("Qual óleo devo usar?", receber_parte=partes.append)
+            resposta = core._perguntar_impl(
+                "Qual óleo devo usar?", receber_parte=partes.append
+            )
 
         prompt = adapter.return_value.responder.call_args.args[0]
         self.assertIn("IDENTIDADE SERMAX", prompt)
@@ -42,7 +46,12 @@ class TestJarvisCoreIntegration(unittest.TestCase):
         resposta = core.responder_comando_local("/motor jarvis")
         self.assertEqual(core.MOTOR_RESPOSTA, "jarvis")
         self.assertIn("JARVIS", resposta)
-        self.assertEqual(core.responder_comando_local("/motor status").startswith("Motor de resposta atual: JARVIS"), True)
+        self.assertEqual(
+            core.responder_comando_local("/motor status").startswith(
+                "Motor de resposta atual: JARVIS"
+            ),
+            True,
+        )
         resposta = core.responder_comando_local("/motor ollama")
         self.assertEqual(core.MOTOR_RESPOSTA, "ollama")
         self.assertIn("OLLAMA", resposta)
