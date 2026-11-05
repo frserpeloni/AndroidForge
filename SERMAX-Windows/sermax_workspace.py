@@ -37,6 +37,8 @@ class WorkspaceAdapter:
             raise WorkspaceError("A raiz do workspace precisa ser uma pasta existente.")
         if candidate == Path(candidate.anchor):
             raise WorkspaceError("A raiz do workspace não pode ser a raiz do disco.")
+        if str(candidate).casefold() == "c:\\sermax":
+            raise WorkspaceError("A instalação C:\\SERMAX está fora do escopo de desenvolvimento.")
         self.root = candidate
         self.backup_root = self.root / ".sermax_dev_backups"
 
@@ -122,7 +124,14 @@ class TestRunner:
                 errors="replace",
                 timeout=self.timeout_seconds,
                 check=False,
-                env={"PATH": os.environ.get("PATH", ""), "PYTHONIOENCODING": "utf-8"},
+                env={
+                    key: value for key, value in os.environ.items()
+                    if key in {
+                        "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
+                        "HOME", "USERPROFILE", "PYTHONPATH",
+                        "SERMAX_JARVIS_PYTHON", "SERMAX_ROOT",
+                    }
+                } | {"PYTHONIOENCODING": "utf-8"},
             )
             output = result.stdout[-MAX_OUTPUT_CHARS:]
             return {
