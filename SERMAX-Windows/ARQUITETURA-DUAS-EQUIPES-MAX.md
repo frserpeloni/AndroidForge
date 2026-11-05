@@ -1,3 +1,5 @@
+> **HISTÓRICO SUPERADO:** esta proposta de duas equipes foi substituída pela diretriz de equipe única coordenada pelo MAX. Consulte `ARQUITETURA-EQUIPE-UNICA-MAX.md`. O conteúdo abaixo foi preservado como histórico de decisões e não deve orientar novas implementações.
+
 # SERMAX: arquitetura de duas equipes coordenadas pelo MAX
 
 **Estado:** decisão arquitetural aprovada pelo mantenedor; especificação e plano de implementação.  
