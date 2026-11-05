@@ -77,7 +77,7 @@ def main():
         if not isinstance(response, str) or not response.strip():
             raise RuntimeError("OpenJarvis retornou resposta vazia.")
         json.dump({"response": response.strip()}, sys.stdout, ensure_ascii=False)
-        sys.stdout.write("\\n")
+        sys.stdout.write("\n")
         return 0
     except Exception as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
