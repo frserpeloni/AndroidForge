@@ -55,7 +55,7 @@ class DevelopmentTeamTests(unittest.TestCase):
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_generated.py").write_text(
-                "import unittest\\nclass GeneratedTests(unittest.TestCase):\\n    def test_value(self):\\n        self.assertEqual(2 + 2, 4)\\n",
+                "import unittest\nclass GeneratedTests(unittest.TestCase):\n    def test_value(self):\n        self.assertEqual(2 + 2, 4)\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
@@ -68,7 +68,7 @@ class DevelopmentTeamTests(unittest.TestCase):
             task_id = team.enqueue("Criar módulo", roles=("analista", "programador", "testador"))
             team.run_next()
             self.assertEqual(team.get_task(task_id)["status"], "completed")
-            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\\n")
+            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\n")
             self.assertTrue(any(event["status"] == "proposal_validated" for event in team.events(task_id)))
 
     def test_workspace_and_runner_must_be_configured_together(self):
