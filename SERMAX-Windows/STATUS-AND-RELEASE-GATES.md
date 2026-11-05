@@ -74,3 +74,15 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 - Revisão adicional do histórico persistente confirmou que `registrar()` recusa gravação quando o JSON existente está corrompido ou não possui a estrutura `{"comandos": [...]}`; os testes dedicados comparam os bytes originais antes e depois da tentativa de gravação.
 - A revisão do núcleo confirma que a memória persistente é resolvida por `SERMAX_ROOT` quando definida, ou pela pasta do executável quando empacotado. A CI verifica o build, mas não executa o EXE nem prova a persistência no Windows do mantenedor.
 - A divergência entre `MODELO = "sermax"` e o texto de interface `QWEN 2.5 1.5B` permanece como verificação funcional pendente. Não alterar o modelo até confirmar o alias e o comportamento no Ollama instalado.
+
+
+## Atualização de integração Jarvis, 05/11/2026
+
+- O OpenJarvis agora também está ligado ao fluxo principal de respostas do SERMAX, por seleção explícita do motor.
+- Comandos: `/motor status`, `/motor jarvis` e `/motor ollama`. A seleção vale para a sessão atual. O padrão permanece Ollama nativo para preservar a inicialização existente em computadores sem Python 3.13.
+- Ao selecionar Jarvis, o SERMAX envia identidade, memórias recuperadas e contexto recente como prompt. O SDK OpenJarvis continua com `tools=[]` e `context=False`; não ganha acesso à memória ou ferramentas por conta própria.
+- Pestinha permanece ligado ao ciclo de solicitações por eventos fechados e saída limitada aos estados visuais permitidos. A persistência neural continua em `memoria_neural_pestinha.json`.
+- Adicionados testes para a seleção do motor e o encaminhamento de identidade/memória/contexto ao Jarvis.
+- Commits desta etapa: `5462aec4c551ada5d564acb2f571c4714a23dfac`, `952f284dd42ce3acb60736dbb99ccd76faabfc2d`, `548842bd0286f4c972a19ea0e6d1aa563ff9b3e2`.
+- **Validação pendente:** os novos testes ainda precisam executar na CI Windows. A integração real com Ollama no computador do mantenedor, instalação do ambiente Python 3.13, teste de resposta Jarvis com modelo local e persistência neural após reinício continuam não executados.
+- Não há release nem instalador aprovado. A revisão GPL-3.0-or-later, a correção final do empacotamento Pestinha e o atualizador com backup/rollback continuam como gates de distribuição.
