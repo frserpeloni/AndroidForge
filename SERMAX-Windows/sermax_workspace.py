@@ -35,7 +35,7 @@ class WorkspaceError(ValueError):
 
 def _is_inside_windows_install(path: str) -> bool:
     candidate = ntpath.normcase(ntpath.abspath(path))
-    protected = ntpath.normcase(ntpath.abspath(r"C:\\SERMAX"))
+    protected = ntpath.normcase(ntpath.abspath(r"C:\SERMAX"))
     try:
         return ntpath.commonpath((candidate, protected)) == protected
     except ValueError:
@@ -64,7 +64,7 @@ class WorkspaceAdapter:
         if (rel.is_absolute() or ntpath.isabs(raw) or not rel.parts
                 or any(p in {"", ".", ".."} for p in rel.parts)
                 or any(p in PROTECTED_NAMES for p in (part.lower() for part in rel.parts))
-                or any(p in PROTECTED_NAMES for p in (part.lower() for part in Path(win).parts))):
+                or any(p.lower() in PROTECTED_NAMES or p in {".", ".."} for p in win.replace("\\\\", "/").split("/"))):
             raise WorkspaceError("Caminho relativo inválido ou protegido.")
         target = self.root.joinpath(rel)
         resolved = target.resolve(strict=not allow_missing)
