@@ -86,3 +86,27 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 - Commits desta etapa: `5462aec4c551ada5d564acb2f571c4714a23dfac`, `952f284dd42ce3acb60736dbb99ccd76faabfc2d`, `548842bd0286f4c972a19ea0e6d1aa563ff9b3e2`.
 - **Validação pendente:** os novos testes ainda precisam executar na CI Windows. A integração real com Ollama no computador do mantenedor, instalação do ambiente Python 3.13, teste de resposta Jarvis com modelo local e persistência neural após reinício continuam não executados.
 - Não há release nem instalador aprovado. A revisão GPL-3.0-or-later, a correção final do empacotamento Pestinha e o atualizador com backup/rollback continuam como gates de distribuição.
+
+
+## Revisão de arquitetura e fontes upstream, 05/11/2026
+
+- Criado `ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md`, com o desenho final de coordenação automática sob identidade SERMAX.
+- Consultados os repositórios oficiais OpenJarvis e Pestinha, incluindo README, manifesto de dependências, núcleo LIF e documentação de arquitetura, rede e privacidade.
+- OpenJarvis documenta oito agentes, catálogo de skills e fluxos de avaliação/aprendizagem. A integração atual do SERMAX continua limitada ao agente `simple`, sem ferramentas e sem contexto próprio do SDK. Não declarar incorporação ampla.
+- Pestinha documenta rede de 470 neurônios LIF, 15.939 sinapses, 30 canais sensoriais, 10 populações de interneurônios e 15 populações motoras, com habituação, plasticidade, condicionamento e memória episódica. O adaptador SERMAX atual utiliza somente eventos sintéticos e a interface LIF. Não declarar incorporação de toda a arquitetura.
+- A rede Pestinha é um sistema comportamental para um pet de tela. Não é, por si só, um modelo geral de linguagem ou raciocínio humano. No SERMAX, deve atuar como subsistema comportamental/atencional, sob supervisão do núcleo.
+- Sensores do computador, rotina, interface Qt, autostart e assets do Pestinha ficam fora da primeira integração. O código é GPL-3.0-or-later e assets têm licenças distintas; revisar antes de distribuição.
+- README atualizado para documentar `/motor` como seleção manual provisória e registrar o objetivo de roteamento automático.
+- Commits desta sequência: `4b8dc68efb72338ae25071e6f12e6b4b8ee86317`, `ee6768e738fa854805ab106a9c3032502a0badc9`, `b0546d5c636b48f4abf01679c46ee41966c9d554`, `90b98686e2c29b894b13f3f4b6abbffffdd096be`.
+- Consulta de workflows para o commit `b0546d5c636b48f4abf01679c46ee41966c9d554` retornou lista vazia. Não há CI nova comprovada para esta sequência.
+- A PR nº 2 permanece aberta e em rascunho. Nenhuma alteração foi feita em `main`.
+
+### Próximas tarefas técnicas
+1. Fixar e auditar os commits upstream exatos usados pelo instalador, comparando-os com os commits atualmente consultados.
+2. Mapear os contratos públicos do OpenJarvis para orquestrador, ReAct, operative, skills, traces e avaliação. Selecionar primeiro o conjunto compatível com as permissões SERMAX.
+3. Mapear os mecanismos internos Pestinha e separar o que é lógica neural reutilizável da infraestrutura de pet/sensores.
+4. Desenhar e implementar o supervisor SERMAX com roteamento automático, estado auditável, limites e fallback. Manter os comandos manuais como compatibilidade temporária.
+5. Criar testes de integração de ponta a ponta e disparar CI em commit atualizado.
+6. Só depois iniciar testes com modelo Ollama real e validação no Windows do mantenedor.
+
+**Não executado nesta revisão:** testes locais da nova sequência, CI dos commits recentes, execução com modelo real, teste físico Windows, medição de recursos, atualizador/rollback e revisão jurídica de licença.
