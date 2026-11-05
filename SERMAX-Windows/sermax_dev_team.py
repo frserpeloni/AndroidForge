@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from sermax_dev_proposal import apply_proposal, parse_proposal, preview_proposal
+from sermax_dev_proposal import apply_and_test_proposal, parse_proposal, preview_proposal
 
 ROLES = {"analista", "pesquisador", "programador", "testador"}
 STATUSES = {
@@ -216,13 +216,12 @@ class DevelopmentTeam:
                                     json.dumps({"summary": proposal.summary,
                                                 "files": [item["path"] for item in previews]},
                                                ensure_ascii=False))
-                    written = apply_proposal(self.workspace_adapter, proposal)
-                    test_results = [self.test_runner.run(suite) for suite in proposal.tests]
+                    written, test_results = apply_and_test_proposal(
+                        self.workspace_adapter, proposal, self.test_runner
+                    )
                     answer = json.dumps({"summary": proposal.summary,
                                          "written_files": written,
                                          "tests": test_results}, ensure_ascii=False)
-                    if any(result.get("status") != "passed" for result in test_results):
-                        raise RuntimeError("Testes da proposta falharam; tarefa não será concluída.")
                 transcript.append(f"[{role}]\n{answer}")
                 with self._connect() as db:
                     self._event(db, task_id, role, "completed", answer)
