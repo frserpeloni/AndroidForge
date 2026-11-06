@@ -93,7 +93,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add SERMAX-Windows
-          git reset -q -- SERMAX-Windows/.sermax_dev_backups || true
+          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps || true
           if git diff --cached --quiet; then
             echo "Nenhuma alteração para registrar."
             exit 0
