@@ -43,13 +43,22 @@ class WorkspaceAdapterTests(unittest.TestCase):
     def test_test_runner_allowlist(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / "tests").mkdir()
+            tests_dir = root / "tests"
+            tests_dir.mkdir()
+            (tests_dir / "test_smoke.py").write_text(
+                "import unittest\\n"
+                "class SmokeTests(unittest.TestCase):\\n"
+                "    def test_runner_executes_discovered_tests(self):\\n"
+                "        self.assertTrue(True)\\n",
+                encoding="utf-8",
+            )
             ws = WorkspaceAdapter(root)
             runner = TestRunner(ws)
             with self.assertRaises(WorkspaceError):
                 runner.run("arbitrary-shell")
             result = runner.run("unittest")
-            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["status"], "passed", result["output"])
+            self.assertIn("Ran 1 test", result["output"])
 
 
     def test_test_runner_enforces_output_limit_during_execution(self):
