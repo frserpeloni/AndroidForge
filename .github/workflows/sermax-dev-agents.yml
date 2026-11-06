@@ -19,7 +19,7 @@ jobs:
   develop:
     if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - name: Validate target branch
         shell: bash
@@ -35,10 +35,40 @@ jobs:
           ref: ${{ github.ref }}
           persist-credentials: false
 
-      - name: Set up Python
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install OpenJarvis in isolated Python 3.13 environment
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m venv .venv-jarvis
+          .venv-jarvis/bin/python -m pip install --upgrade pip
+          .venv-jarvis/bin/python -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          echo "SERMAX_JARVIS_PYTHON=$GITHUB_WORKSPACE/SERMAX-Windows/.venv-jarvis/bin/python" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
         uses: actions/setup-python@v5
         with:
           python-version: "3.14"
+
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: SERMAX-Windows/.deps/pestinha
+
+      - name: Install Python 3.14 dependencies
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.4.6"
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
+          echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
 
       - name: Run the SERMAX development team
         working-directory: SERMAX-Windows
