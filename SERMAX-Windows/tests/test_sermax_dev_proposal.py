@@ -34,6 +34,9 @@ class DevelopmentProposalTests(unittest.TestCase):
         for raw in ("not-json", "{}", json.dumps({
             "summary": "x", "files": [{"path": "a.py", "content": "x"}],
             "tests": ["powershell"],
+        }), json.dumps({
+            "summary": "x", "files": [{"path": "a.py", "content": "x"}],
+            "tests": ["compileall"],
         })):
             with self.subTest(raw=raw), self.assertRaises(ProposalError):
                 parse_proposal(raw)
@@ -50,13 +53,9 @@ class DevelopmentProposalTests(unittest.TestCase):
         with self.assertRaises(ProposalError):
             parse_proposal(duplicate)
         for protected in (
-            ".github/workflows/ci.yml",
-            "sermax_github_agent_runner.py",
-            "sermax_groq_backend.py",
-            "sermax_dev_team.py",
-            "memoria_sermax.json",
-            "settings.json",
-            "setup.ps1",
+            ".github/workflows/ci.yml", "sermax_github_agent_runner.py",
+            "sermax_groq_backend.py", "sermax_dev_team.py",
+            "memoria_sermax.json", "settings.json", "setup.ps1", "../outside.py",
         ):
             with self.subTest(path=protected), self.assertRaises(ProposalError):
                 parse_proposal(json.dumps({
@@ -64,14 +63,6 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "files": [{"path": protected, "content": "x"}],
                     "tests": ["unittest"],
                 }))
-        with tempfile.TemporaryDirectory() as folder:
-            workspace = WorkspaceAdapter(folder)
-            blocked = parse_proposal(json.dumps({
-                "summary": "x",
-                "files": [{"path": "../outside.py", "content": "x"}],
-                "tests": ["unittest"],
-            })) if False else None
-            self.assertIsNone(blocked)
 
     def test_apply_and_test_rolls_back_when_tests_fail(self):
         class FailedRunner:
