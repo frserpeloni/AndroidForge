@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 import threading
 import time
 import uuid
@@ -78,8 +79,18 @@ class DevelopmentTeam:
         connection.row_factory = sqlite3.Row
         return connection
 
+    @contextmanager
+    def _connection(self):
+        """Garante commit/rollback e fechamento do handle SQLite, inclusive no Windows."""
+        connection = self._connect()
+        try:
+            with connection:
+                yield connection
+        finally:
+            connection.close()
+
     def _initialize(self):
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute("""
                 CREATE TABLE IF NOT EXISTS development_tasks (
                     id TEXT PRIMARY KEY, objective TEXT NOT NULL, evidence TEXT NOT NULL,
@@ -115,7 +126,7 @@ class DevelopmentTeam:
         ]:
             raise ValueError("Execução autônoma exige os quatro papéis na ordem oficial.")
         task_id, now = uuid.uuid4().hex, _utc_now()
-        with self._connect() as db:
+        with self._connection() as db:
             db.execute(
                 """INSERT INTO development_tasks
                 (id, objective, evidence, roles, status, created_at, updated_at)
@@ -134,7 +145,7 @@ class DevelopmentTeam:
         )
 
     def get_task(self, task_id: str) -> dict:
-        with self._connect() as db:
+        with self._connection() as db:
             row = db.execute("SELECT * FROM development_tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(task_id)
@@ -143,7 +154,7 @@ class DevelopmentTeam:
             return item
 
     def events(self, task_id: str) -> list[dict]:
-        with self._connect() as db:
+        with self._connection() as db:
             rows = db.execute(
                 """SELECT role, status, detail, created_at FROM development_events
                 WHERE task_id=? ORDER BY id""", (task_id,)
@@ -153,7 +164,7 @@ class DevelopmentTeam:
     def run_next(self) -> str | None:
         if self.model_call is None:
             raise RuntimeError("Backend de modelo compartilhado não configurado.")
-        with self._lock, self._connect() as db:
+        with self._lock, self._connection() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
                 "SELECT * FROM development_tasks WHERE status='queued' ORDER BY created_at, id LIMIT 1"
@@ -185,7 +196,7 @@ class DevelopmentTeam:
                 if role == "programador" and self.workspace_adapter is not None:
                     proposal = parse_proposal(answer)
                     previews = preview_proposal(self.workspace_adapter, proposal)
-                    with self._connect() as db:
+                    with self._connection() as db:
                         self._event(
                             db, task_id, role, "proposal_validated",
                             json.dumps({"summary": proposal.summary,
@@ -214,10 +225,10 @@ class DevelopmentTeam:
                     ):
                         raise RuntimeError("Testador não aprovou com evidência válida.")
                 transcript.append(f"[{role}]\n{answer}")
-                with self._connect() as db:
+                with self._connection() as db:
                     self._event(db, task_id, role, "completed", answer)
             result = "\n\n".join(transcript)
-            with self._connect() as db:
+            with self._connection() as db:
                 db.execute(
                     "UPDATE development_tasks SET status='completed', result=?, updated_at=? WHERE id=?",
                     (result, _utc_now(), task_id),
@@ -228,7 +239,7 @@ class DevelopmentTeam:
                 )
             return task_id
         except Exception as exc:
-            with self._connect() as db:
+            with self._connection() as db:
                 db.execute(
                     "UPDATE development_tasks SET status='failed', error=?, updated_at=? WHERE id=?",
                     (f"{type(exc).__name__}: {exc}"[:2000], _utc_now(), task_id),
