@@ -27,7 +27,7 @@ class GroqChatBackend:
     ):
         self.api_key = (api_key or os.environ.get("GROQ_API_KEY", "")).strip()
         self.model = (model or os.environ.get(
-            "GROQ_MODEL", "llama-3.3-70b-versatile"
+            "GROQ_MODEL", "openai/gpt-oss-20b"
         )).strip()
         self.timeout_seconds = max(10, min(int(timeout_seconds), 180))
         self.max_tokens = max(256, min(int(max_tokens), 8192))
