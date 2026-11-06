@@ -47,7 +47,7 @@ def main() -> int:
 
     project_root = Path(__file__).resolve().parent
     workspace = WorkspaceAdapter(project_root)
-    test_runner = TestRunner(workspace, timeout_seconds=300)
+    test_runner = TestRunner(workspace, timeout_seconds=300, isolate_as_nobody=True)
     backend = GroqChatBackend()
     code_context = collect_code_context(project_root)
     evidence = (
