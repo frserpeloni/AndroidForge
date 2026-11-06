@@ -31,13 +31,19 @@ class DevelopmentProposalTests(unittest.TestCase):
             )
 
     def test_rejects_invalid_json_schema_and_test_command(self):
-        for raw in ("not-json", "{}", json.dumps({
-            "summary": "x", "files": [{"path": "a.py", "content": "x"}],
-            "tests": ["powershell"],
-        }), json.dumps({
-            "summary": "x", "files": [{"path": "a.py", "content": "x"}],
-            "tests": ["compileall"],
-        })):
+        invalid = (
+            "not-json",
+            "{}",
+            json.dumps({
+                "summary": "x", "files": [{"path": "a.py", "content": "x"}],
+                "tests": ["powershell"],
+            }),
+            json.dumps({
+                "summary": "x", "files": [{"path": "a.py", "content": "x"}],
+                "tests": ["compileall"],
+            }),
+        )
+        for raw in invalid:
             with self.subTest(raw=raw), self.assertRaises(ProposalError):
                 parse_proposal(raw)
 
@@ -52,11 +58,18 @@ class DevelopmentProposalTests(unittest.TestCase):
         })
         with self.assertRaises(ProposalError):
             parse_proposal(duplicate)
-        for protected in (
-            ".github/workflows/ci.yml", "sermax_github_agent_runner.py",
-            "sermax_groq_backend.py", "sermax_dev_team.py",
-            "memoria_sermax.json", "settings.json", "setup.ps1", "../outside.py",\n            "SERMAX_terminal/sermax_terminal.py",
-        ):
+        protected_paths = (
+            ".github/workflows/ci.yml",
+            "sermax_github_agent_runner.py",
+            "sermax_groq_backend.py",
+            "sermax_dev_team.py",
+            "memoria_sermax.json",
+            "settings.json",
+            "setup.ps1",
+            "../outside.py",
+            "SERMAX_terminal/sermax_terminal.py",
+        )
+        for protected in protected_paths:
             with self.subTest(path=protected), self.assertRaises(ProposalError):
                 parse_proposal(json.dumps({
                     "summary": "x",
@@ -68,6 +81,7 @@ class DevelopmentProposalTests(unittest.TestCase):
         class FailedRunner:
             def run(self, suite):
                 return {"suite": suite, "status": "failed", "returncode": 1, "output": "failure"}
+
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "module.py").write_text("ORIGINAL = True\n", encoding="utf-8")
