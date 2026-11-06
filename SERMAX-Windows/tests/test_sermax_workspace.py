@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import sys
+from unittest.mock import patch
 
 import sermax_workspace
 from pathlib import Path
@@ -75,6 +76,29 @@ class WorkspaceAdapterTests(unittest.TestCase):
             ws = WorkspaceAdapter(root)
             with self.assertRaises(WorkspaceError):
                 ws.write_text("file.txt", "new")
+
+
+    def test_isolated_workspace_copy_excludes_credentials_and_build_artifacts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "workspace"
+            root.mkdir()
+            (root / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (root / ".venv-jarvis").mkdir()
+            (root / ".venv-jarvis" / "secretless-runtime.txt").write_text("runtime")
+            (root / ".deps" / "pestinha").mkdir(parents=True)
+            (root / ".deps" / "pestinha" / "brain.py").write_text("VALUE = 2")
+            (root / ".sermax_dev_backups").mkdir()
+            (root / ".sermax_dev_backups" / "old.py").write_text("OLD = 1")
+            workspace = WorkspaceAdapter(root)
+            runner = TestRunner(workspace, isolate_as_nobody=True)
+            with tempfile.TemporaryDirectory() as temporary:
+                with patch("sermax_workspace.subprocess.run") as mocked:
+                    sandbox = runner._prepare_isolated_workspace(temporary)
+                self.assertTrue((sandbox / "module.py").is_file())
+                self.assertTrue((sandbox / ".deps" / "pestinha" / "brain.py").is_file())
+                self.assertFalse((sandbox / ".venv-jarvis").exists())
+                self.assertFalse((sandbox / ".sermax_dev_backups").exists())
+                self.assertEqual(mocked.call_count, 2)
 
     def test_windows_install_path_is_rejected_by_path_guard(self):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))
