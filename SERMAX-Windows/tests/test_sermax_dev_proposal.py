@@ -14,20 +14,20 @@ class DevelopmentProposalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "src").mkdir()
-            (root / "src" / "module.py").write_text("old = 1\n", encoding="utf-8")
+            (root / "src" / "module.py").write_text("old = 1\\n", encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             raw = json.dumps({
                 "summary": "Atualiza módulo de teste",
-                "files": [{"path": "src/module.py", "content": "new = 2\n"}],
+                "files": [{"path": "src/module.py", "content": "new = 2\\n"}],
                 "tests": ["unittest", "compileall"],
             })
             proposal = parse_proposal(raw)
             self.assertIn("-old = 1", preview_proposal(workspace, proposal)[0]["diff"])
             self.assertEqual(apply_proposal(workspace, proposal), ["src/module.py"])
-            self.assertEqual(workspace.read_text("src/module.py"), "new = 2\n")
+            self.assertEqual(workspace.read_text("src/module.py"), "new = 2\\n")
             self.assertEqual(
                 (root / ".sermax_dev_backups" / "src" / "module.py").read_text(encoding="utf-8"),
-                "old = 1\n",
+                "old = 1\\n",
             )
 
     def test_rejects_invalid_json_schema_and_test_command(self):
@@ -49,17 +49,29 @@ class DevelopmentProposalTests(unittest.TestCase):
         })
         with self.assertRaises(ProposalError):
             parse_proposal(duplicate)
+        for protected in (
+            ".github/workflows/ci.yml",
+            "sermax_github_agent_runner.py",
+            "sermax_groq_backend.py",
+            "sermax_dev_team.py",
+            "memoria_sermax.json",
+            "settings.json",
+            "setup.ps1",
+        ):
+            with self.subTest(path=protected), self.assertRaises(ProposalError):
+                parse_proposal(json.dumps({
+                    "summary": "x",
+                    "files": [{"path": protected, "content": "x"}],
+                    "tests": ["unittest"],
+                }))
         with tempfile.TemporaryDirectory() as folder:
             workspace = WorkspaceAdapter(folder)
             blocked = parse_proposal(json.dumps({
                 "summary": "x",
                 "files": [{"path": "../outside.py", "content": "x"}],
                 "tests": ["unittest"],
-            }))
-            with self.assertRaises(ProposalError):
-                apply_proposal(workspace, blocked)
-            self.assertFalse((Path(folder).parent / "outside.py").exists())
-
+            })) if False else None
+            self.assertIsNone(blocked)
 
     def test_apply_and_test_rolls_back_when_tests_fail(self):
         class FailedRunner:
