@@ -149,6 +149,7 @@ class TestRunner:
 
     def _prepare_isolated_workspace(self, parent: str) -> Path:
         """Copia o workspace para sandbox temporário sem acesso de escrita ao checkout."""
+        os.chmod(parent, 0o755)
         sandbox = Path(parent) / "workspace"
         shutil.copytree(
             self.workspace.root,
