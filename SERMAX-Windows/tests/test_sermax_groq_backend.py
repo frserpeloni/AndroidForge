@@ -1,6 +1,7 @@
 import io
 import json
 import unittest
+import urllib.error
 from email.message import Message
 from unittest.mock import patch
 
@@ -51,7 +52,7 @@ class GroqBackendTests(unittest.TestCase):
     def test_retries_rate_limit_using_retry_after_header(self, mocked_open, mocked_sleep):
         headers = Message()
         headers["Retry-After"] = "3"
-        rate_limit = __import__("urllib.error").error.HTTPError(
+        rate_limit = urllib.error.HTTPError(
             "https://api.groq.com/openai/v1/chat/completions",
             429,
             "Too Many Requests",
