@@ -165,6 +165,14 @@ class TestRunner:
             stderr=subprocess.PIPE,
             timeout=30,
         )
+        subprocess.run(
+            ["sudo", "-n", "chmod", "-R", "a+rwX", str(sandbox)],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
         return sandbox
 
     def run(self, suite: str) -> dict:
