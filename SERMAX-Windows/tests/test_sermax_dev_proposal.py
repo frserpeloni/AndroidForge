@@ -55,7 +55,7 @@ class DevelopmentProposalTests(unittest.TestCase):
         for protected in (
             ".github/workflows/ci.yml", "sermax_github_agent_runner.py",
             "sermax_groq_backend.py", "sermax_dev_team.py",
-            "memoria_sermax.json", "settings.json", "setup.ps1", "../outside.py",
+            "memoria_sermax.json", "settings.json", "setup.ps1", "../outside.py",\n            "SERMAX_terminal/sermax_terminal.py",
         ):
             with self.subTest(path=protected), self.assertRaises(ProposalError):
                 parse_proposal(json.dumps({
