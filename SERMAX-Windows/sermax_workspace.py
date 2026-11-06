@@ -201,9 +201,12 @@ class TestRunner:
                     }
                 command = ["sudo", "-n", "-u", "nobody", "--", *command]
                 env["HOME"] = "/tmp"
-                env.pop("PYTHONPATH", None)
-                env.pop("SERMAX_ROOT", None)
-                env.pop("SERMAX_JARVIS_PYTHON", None)
+                pestinha_path = cwd / ".deps" / "pestinha"
+                if pestinha_path.is_dir():
+                    env["PYTHONPATH"] = str(pestinha_path)
+                else:
+                    env.pop("PYTHONPATH", None)
+                env["SERMAX_ROOT"] = str(cwd)
 
             with tempfile.TemporaryFile() as output_file:
                 try:
