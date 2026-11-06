@@ -3,12 +3,40 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from sermax_dev_team import DevelopmentTeam
 from sermax_groq_backend import GroqChatBackend
 from sermax_workspace import TestRunner, WorkspaceAdapter
+
+CONTEXT_FILES = (
+    "sermax_core.py",
+    "sermax_jarvis_adapter.py",
+    "sermax_pestinha_adapter.py",
+    "sermax_dev_team.py",
+    "sermax_workspace.py",
+    "sermax_dev_proposal.py",
+)
+
+
+def collect_code_context(project_root: Path) -> str:
+    """Anexa trechos reais e limitados dos arquivos relevantes ao contexto dos papéis."""
+    sections = []
+    remaining = 10_000
+    for relative in CONTEXT_FILES:
+        path = project_root / relative
+        if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        excerpt = content[: min(1800, remaining)]
+        section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
+        sections.append(section)
+        remaining -= len(section)
+    return "\n".join(sections)
 
 
 def main() -> int:
@@ -21,24 +49,24 @@ def main() -> int:
     workspace = WorkspaceAdapter(project_root)
     test_runner = TestRunner(workspace, timeout_seconds=300)
     backend = GroqChatBackend()
+    code_context = collect_code_context(project_root)
+    evidence = (
+        "Ambiente: GitHub Actions. Workspace isolado: SERMAX-Windows. "
+        "Não altere memórias, infraestrutura dos agentes, workflows, credenciais, "
+        "configurações de permissões ou arquivos fora do escopo. "
+        "Propostas aceitas: somente .py e .md do produto. Toda proposta exige unittest. "
+        "O Programador terá a proposta validada antes de ser aplicada. "
+        "O executor roda os testes e faz rollback se algum falhar. "
+        "O Testador deve emitir JSON PASS/FAIL com evidência real.\n"
+        "CONTEXTO DE CÓDIGO REAL:\n" + code_context
+    )
     team = DevelopmentTeam(
         Path(tempfile.gettempdir()) / "sermax-development-team.sqlite3",
         model_call=backend,
         workspace_adapter=workspace,
         test_runner=test_runner,
     )
-    task_id = team.enqueue(
-        objective,
-        evidence=(
-            "Ambiente: GitHub Actions. Repositório SERMAX-Windows. "
-            "A equipe trabalha somente neste workspace isolado. "
-            "Não altere memórias pessoais, arquivos de instalação, segredos, "
-            "workflows, configurações de permissões ou arquivos fora do escopo. "
-            "O Programador deve propor arquivos relativos a esta pasta. "
-            "O Testador deve avaliar os resultados reais fornecidos pelo executor."
-        ),
-        roles=("analista", "pesquisador", "programador", "testador"),
-    )
+    task_id = team.enqueue(objective, evidence=evidence)
     print(f"Tarefa SERMAX registrada: {task_id}")
     team.run_next()
     result = team.get_task(task_id)
