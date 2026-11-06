@@ -154,7 +154,7 @@ class TestRunner:
         shutil.copytree(
             self.workspace.root,
             sandbox,
-            ignore=shutil.ignore_patterns(".sermax_dev_backups", "__pycache__", ".git"),
+            ignore=shutil.ignore_patterns(".sermax_dev_backups", "__pycache__", ".git", ".venv-jarvis", "build", "dist"),
         )
         # O processo de testes roda como nobody, sem acesso ao ambiente/arquivos do runner.
         subprocess.run(
