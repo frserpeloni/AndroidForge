@@ -49,27 +49,55 @@ class DevelopmentTeamTests(unittest.TestCase):
                 team.run_next()
             self.assertEqual(team.get_task(task_id)["status"], "queued")
 
-
-    def test_programmer_proposal_is_applied_and_tests_are_run(self):
+    def test_programmer_proposal_is_applied_and_testador_must_approve(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_generated.py").write_text(
-                "import unittest\nclass GeneratedTests(unittest.TestCase):\n    def test_value(self):\n        self.assertEqual(2 + 2, 4)\n",
+                "import unittest\\nclass GeneratedTests(unittest.TestCase):\\n"
+                "    def test_value(self):\\n        self.assertEqual(2 + 2, 4)\\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             def model_call(role, prompt):
                 if role == "programador":
-                    return '{"summary":"Gera módulo","files":[{"path":"generated.py","content":"VALUE = 42\\n"}],"tests":["unittest"]}'
+                    return '{"summary":"Gera módulo","files":[{"path":"generated.py",'
+                    '"content":"VALUE = 42\\\\n"}],"tests":["unittest"]}'
+                if role == "testador":
+                    self.assertIn('"status": "passed"', prompt)
+                    return '{"verdict":"PASS","evidence":"unittest retornou passed"}'
                 return f"resultado-{role}"
             team = DevelopmentTeam(Path(folder) / "team.sqlite3", model_call,
                                    workspace_adapter=workspace, test_runner=runner)
-            task_id = team.enqueue("Criar módulo", roles=("analista", "programador", "testador"))
+            task_id = team.enqueue("Criar módulo")
             team.run_next()
             self.assertEqual(team.get_task(task_id)["status"], "completed")
-            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\n")
-            self.assertTrue(any(event["status"] == "proposal_validated" for event in team.events(task_id)))
+            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\\n")
+            self.assertTrue(any(event["role"] == "testador" for event in team.events(task_id)))
+
+    def test_testador_rejection_fails_autonomous_task(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_ok.py").write_text(
+                "import unittest\\nclass T(unittest.TestCase):\\n"
+                "    def test_ok(self): self.assertTrue(True)\\n",
+                encoding="utf-8")
+            workspace = WorkspaceAdapter(root)
+            runner = TestRunner(workspace)
+            def model_call(role, prompt):
+                if role == "programador":
+                    return '{"summary":"gera","files":[{"path":"created.py",'
+                    '"content":"OK = True\\\\n"}],"tests":["unittest"]}'
+                if role == "testador":
+                    return '{"verdict":"FAIL","evidence":"revisão reprovada"}'
+                return "análise"
+            team = DevelopmentTeam(Path(folder) / "team.sqlite3", model_call,
+                                   workspace_adapter=workspace, test_runner=runner)
+            task_id = team.enqueue("Criar arquivo")
+            with self.assertRaises(RuntimeError):
+                team.run_next()
+            self.assertEqual(team.get_task(task_id)["status"], "failed")
 
     def test_workspace_and_runner_must_be_configured_together(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -77,6 +105,7 @@ class DevelopmentTeamTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 DevelopmentTeam(Path(folder) / "team.sqlite3", lambda r, p: "ok",
                                 workspace_adapter=workspace)
+
 
 if __name__ == "__main__":
     unittest.main()
