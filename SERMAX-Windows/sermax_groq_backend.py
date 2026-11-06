@@ -33,7 +33,10 @@ class GroqChatBackend:
             "GROQ_MODEL", "openai/gpt-oss-20b"
         )).strip()
         self.timeout_seconds = max(10, min(int(timeout_seconds), 180))
-        configured_tokens = max_tokens if max_tokens is not None else os.environ.get("GROQ_MAX_TOKENS", "1024")
+        configured_tokens = (
+            max_tokens if max_tokens is not None
+            else os.environ.get("GROQ_MAX_TOKENS", "1024")
+        )
         self.max_tokens = max(256, min(int(configured_tokens), 4096))
         self.max_retries = max(0, min(int(max_retries), 5))
         if not self.api_key:
@@ -90,7 +93,10 @@ class GroqChatBackend:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", detail, re.I)
                     try:
-                        delay = float(retry_after) if retry_after else (float(match.group(1)) if match else 20.0)
+                        delay = (
+                            float(retry_after) if retry_after
+                            else float(match.group(1)) if match else 20.0
+                        )
                     except (TypeError, ValueError):
                         delay = 20.0
                     time.sleep(max(1.0, min(delay + 1.0, 90.0)))
@@ -103,11 +109,3 @@ class GroqChatBackend:
                     f"Resposta da Groq fora do formato esperado: {type(exc).__name__}"
                 ) from None
         raise GroqAPIError("A Groq excedeu o limite de requisições após novas tentativas.")
-        except urllib.error.URLError as exc:
-            raise GroqAPIError(
-                f"Falha de conexão com a Groq: {exc.reason}"
-            ) from None
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise GroqAPIError(
-                f"Resposta da Groq fora do formato esperado: {type(exc).__name__}"
-            ) from None
