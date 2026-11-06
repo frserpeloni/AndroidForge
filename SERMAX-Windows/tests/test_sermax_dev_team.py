@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -61,8 +62,9 @@ class DevelopmentTeamTests(unittest.TestCase):
             runner = TestRunner(workspace)
             def model_call(role, prompt):
                 if role == "programador":
-                    return '{"summary":"Gera módulo","files":[{"path":"generated.py",'
-                    '"content":"VALUE = 42\\n"}],"tests":["unittest"]}'
+                    return json.dumps({"summary": "Gera módulo", "files": [
+                        {"path": "generated.py", "content": "VALUE = 42\n"}
+                    ], "tests": ["unittest"]}, ensure_ascii=False)
                 if role == "testador":
                     self.assertIn('"status": "passed"', prompt)
                     return '{"verdict":"PASS","evidence":"unittest retornou passed"}'
@@ -87,8 +89,9 @@ class DevelopmentTeamTests(unittest.TestCase):
             runner = TestRunner(workspace)
             def model_call(role, prompt):
                 if role == "programador":
-                    return '{"summary":"gera","files":[{"path":"created.py",'
-                    '"content":"OK = True\\n"}],"tests":["unittest"]}'
+                    return json.dumps({"summary": "gera", "files": [
+                        {"path": "created.py", "content": "OK = True\n"}
+                    ], "tests": ["unittest"]}, ensure_ascii=False)
                 if role == "testador":
                     return '{"verdict":"FAIL","evidence":"revisão reprovada"}'
                 return "análise"
