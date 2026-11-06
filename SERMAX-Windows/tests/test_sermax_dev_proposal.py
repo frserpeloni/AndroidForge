@@ -14,20 +14,20 @@ class DevelopmentProposalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "src").mkdir()
-            (root / "src" / "module.py").write_text("old = 1\\n", encoding="utf-8")
+            (root / "src" / "module.py").write_text("old = 1\n", encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             raw = json.dumps({
                 "summary": "Atualiza módulo de teste",
-                "files": [{"path": "src/module.py", "content": "new = 2\\n"}],
+                "files": [{"path": "src/module.py", "content": "new = 2\n"}],
                 "tests": ["unittest", "compileall"],
             })
             proposal = parse_proposal(raw)
             self.assertIn("-old = 1", preview_proposal(workspace, proposal)[0]["diff"])
             self.assertEqual(apply_proposal(workspace, proposal), ["src/module.py"])
-            self.assertEqual(workspace.read_text("src/module.py"), "new = 2\\n")
+            self.assertEqual(workspace.read_text("src/module.py"), "new = 2\n")
             self.assertEqual(
                 (root / ".sermax_dev_backups" / "src" / "module.py").read_text(encoding="utf-8"),
-                "old = 1\\n",
+                "old = 1\n",
             )
 
     def test_rejects_invalid_json_schema_and_test_command(self):
@@ -70,19 +70,19 @@ class DevelopmentProposalTests(unittest.TestCase):
                 return {"suite": suite, "status": "failed", "returncode": 1, "output": "failure"}
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / "module.py").write_text("ORIGINAL = True\\n", encoding="utf-8")
+            (root / "module.py").write_text("ORIGINAL = True\n", encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             proposal = parse_proposal(json.dumps({
                 "summary": "Atualização com teste falho",
                 "files": [
-                    {"path": "module.py", "content": "BROKEN = True\\n"},
-                    {"path": "new_module.py", "content": "NEW = True\\n"},
+                    {"path": "module.py", "content": "BROKEN = True\n"},
+                    {"path": "new_module.py", "content": "NEW = True\n"},
                 ],
                 "tests": ["unittest"],
             }))
             with self.assertRaises(RuntimeError):
                 apply_and_test_proposal(workspace, proposal, FailedRunner())
-            self.assertEqual(workspace.read_text("module.py"), "ORIGINAL = True\\n")
+            self.assertEqual(workspace.read_text("module.py"), "ORIGINAL = True\n")
             self.assertFalse((root / "new_module.py").exists())
 
 
