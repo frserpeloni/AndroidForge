@@ -234,7 +234,7 @@ class DevelopmentTeam:
                 )
                 self._event(
                     db, task_id, "supervisor", "completed",
-                    "Papéis concluídos. Nenhuma edição de código foi executada por este módulo.",
+                    "Papéis concluídos. Propostas aplicadas no workspace isolado e testes aprovados.",
                 )
             return task_id
         except Exception as exc:
