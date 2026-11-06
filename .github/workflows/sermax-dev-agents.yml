@@ -29,11 +29,11 @@ jobs:
             exit 1
           fi
 
-      - name: Checkout selected development branch
+      - name: Checkout selected development branch without persisted credentials
         uses: actions/checkout@v4
         with:
           ref: ${{ github.ref }}
-          persist-credentials: true
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -46,14 +46,15 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: llama-3.3-70b-versatile
           SERMAX_DEV_TASK: ${{ inputs.task }}
-        run: |
-          python sermax_github_agent_runner.py
+        run: python sermax_github_agent_runner.py
 
       - name: Review patch format
         run: git diff --check
 
       - name: Commit tested changes to the selected development branch
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "${GITHUB_REF_NAME}" = "main" ]; then
             echo "Push para main bloqueado."
@@ -67,4 +68,5 @@ jobs:
             exit 0
           fi
           git commit -m "SERMAX agents: implement tested development task"
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin "HEAD:${GITHUB_REF_NAME}"
