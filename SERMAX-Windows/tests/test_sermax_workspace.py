@@ -46,10 +46,10 @@ class WorkspaceAdapterTests(unittest.TestCase):
             tests_dir = root / "tests"
             tests_dir.mkdir()
             (tests_dir / "test_smoke.py").write_text(
-                "import unittest\\n"
-                "class SmokeTests(unittest.TestCase):\\n"
-                "    def test_runner_executes_discovered_tests(self):\\n"
-                "        self.assertTrue(True)\\n",
+                "import unittest\n"
+                "class SmokeTests(unittest.TestCase):\n"
+                "    def test_runner_executes_discovered_tests(self):\n"
+                "        self.assertTrue(True)\n",
                 encoding="utf-8",
             )
             ws = WorkspaceAdapter(root)
