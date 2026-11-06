@@ -54,15 +54,15 @@ class DevelopmentTeamTests(unittest.TestCase):
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_generated.py").write_text(
-                "import unittest\\nclass GeneratedTests(unittest.TestCase):\\n"
-                "    def test_value(self):\\n        self.assertEqual(2 + 2, 4)\\n",
+                "import unittest\nclass GeneratedTests(unittest.TestCase):\n"
+                "    def test_value(self):\n        self.assertEqual(2 + 2, 4)\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             def model_call(role, prompt):
                 if role == "programador":
                     return '{"summary":"Gera módulo","files":[{"path":"generated.py",'
-                    '"content":"VALUE = 42\\\\n"}],"tests":["unittest"]}'
+                    '"content":"VALUE = 42\\n"}],"tests":["unittest"]}'
                 if role == "testador":
                     self.assertIn('"status": "passed"', prompt)
                     return '{"verdict":"PASS","evidence":"unittest retornou passed"}'
@@ -72,7 +72,7 @@ class DevelopmentTeamTests(unittest.TestCase):
             task_id = team.enqueue("Criar módulo")
             team.run_next()
             self.assertEqual(team.get_task(task_id)["status"], "completed")
-            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\\n")
+            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\n")
             self.assertTrue(any(event["role"] == "testador" for event in team.events(task_id)))
 
     def test_testador_rejection_fails_autonomous_task(self):
@@ -80,15 +80,15 @@ class DevelopmentTeamTests(unittest.TestCase):
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_ok.py").write_text(
-                "import unittest\\nclass T(unittest.TestCase):\\n"
-                "    def test_ok(self): self.assertTrue(True)\\n",
+                "import unittest\nclass T(unittest.TestCase):\n"
+                "    def test_ok(self): self.assertTrue(True)\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             def model_call(role, prompt):
                 if role == "programador":
                     return '{"summary":"gera","files":[{"path":"created.py",'
-                    '"content":"OK = True\\\\n"}],"tests":["unittest"]}'
+                    '"content":"OK = True\\n"}],"tests":["unittest"]}'
                 if role == "testador":
                     return '{"verdict":"FAIL","evidence":"revisão reprovada"}'
                 return "análise"
