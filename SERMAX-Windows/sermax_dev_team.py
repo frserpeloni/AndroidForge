@@ -1,10 +1,4 @@
-"""Equipe única de desenvolvimento do SERMAX.
-
-Este módulo é um supervisor externo ao executável SERMAX. Mantém uma fila SQLite
-persistente e aciona papéis sob demanda, sempre com o mesmo backend de modelo.
-Não concede acesso ao filesystem, Git ou shell: essas ferramentas exigem adaptadores
-de workspace isolado, ainda não conectados.
-"""
+"""Equipe única de desenvolvimento do SERMAX, externa ao executável."""
 from __future__ import annotations
 
 import json
@@ -19,29 +13,33 @@ from typing import Callable, Iterable
 from sermax_dev_proposal import apply_and_test_proposal, parse_proposal, preview_proposal
 
 ROLES = {"analista", "pesquisador", "programador", "testador"}
-STATUSES = {
-    "queued", "running", "completed", "blocked", "failed"
-}
+STATUSES = {"queued", "running", "completed", "blocked", "failed"}
 MAX_PROMPT_CHARS = 12_000
 MAX_RESULT_CHARS = 20_000
 
 ROLE_INSTRUCTIONS = {
     "analista": (
-        "Analise a tarefa e as evidências fornecidas. Separe fatos, hipóteses, "
-        "riscos e critérios de aceitação. Não afirme que executou ações."
+        "Analise objetivo, código e evidências anexadas. Separe fatos, hipóteses, "
+        "riscos e critérios de aceitação. Cite os caminhos dos arquivos examinados. "
+        "Não afirme que executou ações."
     ),
     "pesquisador": (
-        "Pesquise somente nas fontes e evidências disponibilizadas no contexto. "
-        "Indique lacunas e referências. Não invente consultas externas."
+        "Pesquise nas fontes e no contexto fornecidos. Indique documentação relevante, "
+        "lacunas e referências. Não invente consultas externas nem fatos."
     ),
     "programador": (
         "Retorne exclusivamente JSON válido com as chaves summary, files e tests. "
-        "files deve ser uma lista de objetos path e content. tests aceita unittest e/ou compileall. "
-        "Proponha alteração pequena, não inclua markdown e não afirme execução."
+        "files é lista de objetos path e content. tests deve incluir unittest e "
+        "pode incluir compileall. Altere somente código/testes/documentação do produto. "
+        "Não altere infraestrutura da equipe, workflows, credenciais ou memórias. "
+        "Não inclua markdown e não afirme execução."
     ),
     "testador": (
-        "Defina os testes necessários e avalie somente resultados de execução "
-        "fornecidos no contexto. Sem logs, marque como NÃO EXECUTADO."
+        "Avalie os resultados reais de execução presentes no contexto. Retorne "
+        "exclusivamente JSON válido: {\"verdict\":\"PASS\" ou \"FAIL\","
+        "\"evidence\":\"justificativa curta\"}. PASS somente se todos os testes "
+        "executados estiverem com status passed e os arquivos propostos estiverem "
+        "listados como aplicados. Sem evidência completa, use FAIL."
     ),
 }
 
@@ -51,11 +49,7 @@ def _utc_now() -> str:
 
 
 class DevelopmentTeam:
-    """Fila persistente e execução sequencial de papéis sob demanda.
-
-    model_call(role, prompt) deve chamar um único modelo compartilhado.
-    Nenhum agente recebe uma instância de modelo própria.
-    """
+    """Fila persistente e papéis sequenciais com um único backend compartilhado."""
 
     def __init__(
         self,
@@ -88,52 +82,39 @@ class DevelopmentTeam:
         with self._connect() as db:
             db.execute("""
                 CREATE TABLE IF NOT EXISTS development_tasks (
-                    id TEXT PRIMARY KEY,
-                    objective TEXT NOT NULL,
-                    evidence TEXT NOT NULL,
-                    roles TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    result TEXT NOT NULL DEFAULT '',
-                    error TEXT NOT NULL DEFAULT '',
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
+                    id TEXT PRIMARY KEY, objective TEXT NOT NULL, evidence TEXT NOT NULL,
+                    roles TEXT NOT NULL, status TEXT NOT NULL,
+                    attempts INTEGER NOT NULL DEFAULT 0, result TEXT NOT NULL DEFAULT '',
+                    error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
                 )
             """)
             db.execute("""
                 CREATE TABLE IF NOT EXISTS development_events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    task_id TEXT NOT NULL,
-                    role TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    detail TEXT NOT NULL,
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL,
+                    role TEXT NOT NULL, status TEXT NOT NULL, detail TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     FOREIGN KEY(task_id) REFERENCES development_tasks(id)
                 )
             """)
-            db.execute("""
-                UPDATE development_tasks
-                SET status='queued', updated_at=?
-                WHERE status='running'
-            """, (_utc_now(),))
+            db.execute(
+                "UPDATE development_tasks SET status='queued', updated_at=? WHERE status='running'",
+                (_utc_now(),),
+            )
 
-    def enqueue(
-        self,
-        objective: str,
-        evidence: str = "",
-        roles: Iterable[str] | None = None,
-    ) -> str:
-        objective = str(objective).strip()
-        evidence = str(evidence).strip()
-        selected = list(dict.fromkeys(roles or ("analista", "programador", "testador")))
+    def enqueue(self, objective: str, evidence: str = "", roles: Iterable[str] | None = None) -> str:
+        objective, evidence = str(objective).strip(), str(evidence).strip()
+        selected = list(dict.fromkeys(roles or ("analista", "pesquisador", "programador", "testador")))
         if not objective or len(objective) > MAX_PROMPT_CHARS:
             raise ValueError("Objetivo vazio ou acima do limite.")
         if len(evidence) > MAX_PROMPT_CHARS:
             raise ValueError("Evidências acima do limite.")
         if not selected or any(role not in ROLES for role in selected):
             raise ValueError("Papel inválido ou lista de papéis vazia.")
-        task_id = uuid.uuid4().hex
-        now = _utc_now()
+        if self.workspace_adapter is not None and selected != [
+            "analista", "pesquisador", "programador", "testador"
+        ]:
+            raise ValueError("Execução autônoma exige os quatro papéis na ordem oficial.")
+        task_id, now = uuid.uuid4().hex, _utc_now()
         with self._connect() as db:
             db.execute(
                 """INSERT INTO development_tasks
@@ -148,16 +129,13 @@ class DevelopmentTeam:
     def _event(db, task_id, role, status, detail):
         db.execute(
             """INSERT INTO development_events
-            (task_id, role, status, detail, created_at)
-            VALUES (?, ?, ?, ?, ?)""",
+            (task_id, role, status, detail, created_at) VALUES (?, ?, ?, ?, ?)""",
             (task_id, role, status, str(detail)[:MAX_RESULT_CHARS], _utc_now()),
         )
 
     def get_task(self, task_id: str) -> dict:
         with self._connect() as db:
-            row = db.execute(
-                "SELECT * FROM development_tasks WHERE id=?", (task_id,)
-            ).fetchone()
+            row = db.execute("SELECT * FROM development_tasks WHERE id=?", (task_id,)).fetchone()
             if row is None:
                 raise KeyError(task_id)
             item = dict(row)
@@ -167,28 +145,24 @@ class DevelopmentTeam:
     def events(self, task_id: str) -> list[dict]:
         with self._connect() as db:
             rows = db.execute(
-                """SELECT role, status, detail, created_at
-                FROM development_events WHERE task_id=? ORDER BY id""",
-                (task_id,),
+                """SELECT role, status, detail, created_at FROM development_events
+                WHERE task_id=? ORDER BY id""", (task_id,)
             ).fetchall()
             return [dict(row) for row in rows]
 
     def run_next(self) -> str | None:
-        """Executa uma tarefa da fila. Papéis são ativados sequencialmente."""
         if self.model_call is None:
             raise RuntimeError("Backend de modelo compartilhado não configurado.")
         with self._lock, self._connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute(
-                """SELECT * FROM development_tasks
-                WHERE status='queued' ORDER BY created_at, id LIMIT 1"""
+                "SELECT * FROM development_tasks WHERE status='queued' ORDER BY created_at, id LIMIT 1"
             ).fetchone()
             if row is None:
                 return None
             task_id = row["id"]
             db.execute(
-                """UPDATE development_tasks SET status='running',
-                attempts=attempts+1, updated_at=? WHERE id=?""",
+                "UPDATE development_tasks SET status='running', attempts=attempts+1, updated_at=? WHERE id=?",
                 (_utc_now(), task_id),
             )
             self._event(db, task_id, "supervisor", "running", "Execução sequencial iniciada.")
@@ -199,7 +173,7 @@ class DevelopmentTeam:
                 prior = "\n\n".join(transcript)[-MAX_PROMPT_CHARS:]
                 prompt = (
                     f"OBJETIVO:\n{task['objective']}\n\n"
-                    f"EVIDÊNCIAS DISPONÍVEIS:\n{task['evidence'] or 'Nenhuma evidência anexada.'}\n\n"
+                    f"EVIDÊNCIAS E CONTEXTO DE CÓDIGO:\n{task['evidence'] or 'Nenhuma evidência anexada.'}\n\n"
                     f"RESULTADOS DOS PAPÉIS ANTERIORES:\n{prior or 'Nenhum.'}\n\n"
                     f"INSTRUÇÃO DO PAPEL ({role}):\n{ROLE_INSTRUCTIONS[role]}\n\n"
                     "Responda em português. Diferencie proposta de execução comprovada."
@@ -212,43 +186,57 @@ class DevelopmentTeam:
                     proposal = parse_proposal(answer)
                     previews = preview_proposal(self.workspace_adapter, proposal)
                     with self._connect() as db:
-                        self._event(db, task_id, role, "proposal_validated",
-                                    json.dumps({"summary": proposal.summary,
-                                                "files": [item["path"] for item in previews]},
-                                               ensure_ascii=False))
+                        self._event(
+                            db, task_id, role, "proposal_validated",
+                            json.dumps({"summary": proposal.summary,
+                                        "files": [item["path"] for item in previews]},
+                                       ensure_ascii=False),
+                        )
                     written, test_results = apply_and_test_proposal(
                         self.workspace_adapter, proposal, self.test_runner
                     )
-                    answer = json.dumps({"summary": proposal.summary,
-                                         "written_files": written,
-                                         "tests": test_results}, ensure_ascii=False)
+                    answer = json.dumps({
+                        "summary": proposal.summary,
+                        "written_files": written,
+                        "tests": test_results,
+                    }, ensure_ascii=False)
+                elif role == "testador" and self.workspace_adapter is not None:
+                    try:
+                        verdict = json.loads(answer)
+                    except json.JSONDecodeError as exc:
+                        raise RuntimeError("Testador não retornou JSON de avaliação válido.") from exc
+                    if (
+                        not isinstance(verdict, dict)
+                        or set(verdict) != {"verdict", "evidence"}
+                        or verdict.get("verdict") != "PASS"
+                        or not isinstance(verdict.get("evidence"), str)
+                        or not verdict["evidence"].strip()
+                    ):
+                        raise RuntimeError("Testador não aprovou com evidência válida.")
                 transcript.append(f"[{role}]\n{answer}")
                 with self._connect() as db:
                     self._event(db, task_id, role, "completed", answer)
             result = "\n\n".join(transcript)
             with self._connect() as db:
                 db.execute(
-                    """UPDATE development_tasks SET status='completed',
-                    result=?, updated_at=? WHERE id=?""",
+                    "UPDATE development_tasks SET status='completed', result=?, updated_at=? WHERE id=?",
                     (result, _utc_now(), task_id),
                 )
                 self._event(
                     db, task_id, "supervisor", "completed",
-                    "Papéis concluídos. Propostas aplicadas no workspace isolado e testes aprovados.",
+                    "Quatro papéis concluídos; proposta aplicada e Testador aprovou com evidência.",
                 )
             return task_id
         except Exception as exc:
             with self._connect() as db:
                 db.execute(
-                    """UPDATE development_tasks SET status='failed',
-                    error=?, updated_at=? WHERE id=?""",
+                    "UPDATE development_tasks SET status='failed', error=?, updated_at=? WHERE id=?",
                     (f"{type(exc).__name__}: {exc}"[:2000], _utc_now(), task_id),
                 )
                 self._event(db, task_id, "supervisor", "failed", str(exc))
             raise
 
     def start_background(self, poll_seconds: float = 2.0):
-        """Inicia um único worker em segundo plano; não cria modelos por papel."""
         if self.model_call is None:
             raise RuntimeError("Backend de modelo compartilhado não configurado.")
         if self._thread and self._thread.is_alive():
