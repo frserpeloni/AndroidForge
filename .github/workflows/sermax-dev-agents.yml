@@ -1,0 +1,70 @@
+name: SERMAX Development Agents
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Tarefa técnica para a equipe SERMAX"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sermax-dev-agents-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Validate target branch
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "A equipe não está autorizada a trabalhar na main."
+            exit 1
+          fi
+
+      - name: Checkout selected development branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Run the SERMAX development team
+        working-directory: SERMAX-Windows
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: llama-3.3-70b-versatile
+          SERMAX_DEV_TASK: ${{ inputs.task }}
+        run: |
+          python sermax_github_agent_runner.py
+
+      - name: Review patch format
+        run: git diff --check
+
+      - name: Commit tested changes to the selected development branch
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Push para main bloqueado."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SERMAX-Windows
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração para registrar."
+            exit 0
+          fi
+          git commit -m "SERMAX agents: implement tested development task"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
