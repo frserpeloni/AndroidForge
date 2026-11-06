@@ -1,0 +1,104 @@
+
+name: SERMAX Development Agents
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Tarefa técnica para a equipe SERMAX"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sermax-dev-agents-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate target branch
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "A equipe não está autorizada a trabalhar na main."
+            exit 1
+          fi
+
+      - name: Checkout selected development branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install OpenJarvis in isolated Python 3.13 environment
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m venv .venv-jarvis
+          .venv-jarvis/bin/python -m pip install --upgrade pip
+          .venv-jarvis/bin/python -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          echo "SERMAX_JARVIS_PYTHON=$GITHUB_WORKSPACE/SERMAX-Windows/.venv-jarvis/bin/python" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: SERMAX-Windows/.deps/pestinha
+
+      - name: Install Python 3.14 dependencies
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.4.6"
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
+          echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
+
+      - name: Run the SERMAX development team
+        working-directory: SERMAX-Windows
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: llama-3.3-70b-versatile
+          SERMAX_DEV_TASK: ${{ inputs.task }}
+        run: python sermax_github_agent_runner.py
+
+      - name: Review patch format
+        run: git diff --check
+
+      - name: Commit tested changes to the selected development branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Push para main bloqueado."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SERMAX-Windows
+          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps || true
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração para registrar."
+            exit 0
+          fi
+          git commit -m "SERMAX agents: implement tested development task"
+          AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin "HEAD:${GITHUB_REF_NAME}"
