@@ -44,7 +44,7 @@ def _validate_development_path(path: str) -> None:
         normalized.startswith("/")
         or any(not part or part in {".", ".."} for part in parts)
         or any(part.startswith(".") for part in parts)
-        or any(part in {".github", ".git", ".sermax_dev_backups"} for part in lowered)
+        or any(part in {".github", ".git", ".sermax_dev_backups", "sermax_terminal"} for part in lowered)
         or lowered[-1] in PROTECTED_BASENAMES
         or not lowered[-1].endswith((".py", ".md"))
     ):
