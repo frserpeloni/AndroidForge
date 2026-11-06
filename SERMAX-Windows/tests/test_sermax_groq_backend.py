@@ -71,7 +71,7 @@ class GroqBackendTests(unittest.TestCase):
     @patch("sermax_groq_backend.time.sleep")
     @patch("sermax_groq_backend.urllib.request.urlopen")
     def test_stops_after_retry_limit(self, mocked_open, mocked_sleep):
-        error = __import__("urllib.error").error.HTTPError(
+        error = urllib.error.HTTPError(
             "https://api.groq.com/openai/v1/chat/completions",
             429,
             "Too Many Requests",
