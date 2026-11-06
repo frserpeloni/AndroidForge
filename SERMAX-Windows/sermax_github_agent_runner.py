@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+import tempfile
 
 from sermax_dev_team import DevelopmentTeam
 from sermax_groq_backend import GroqChatBackend
@@ -21,7 +22,7 @@ def main() -> int:
     test_runner = TestRunner(workspace, timeout_seconds=300)
     backend = GroqChatBackend()
     team = DevelopmentTeam(
-        project_root / ".sermax_dev_state" / "team.sqlite3",
+        Path(tempfile.gettempdir()) / "sermax-development-team.sqlite3",
         model_call=backend,
         workspace_adapter=workspace,
         test_runner=test_runner,
