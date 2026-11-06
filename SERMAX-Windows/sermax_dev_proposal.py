@@ -12,19 +12,10 @@ from sermax_workspace import MAX_FILE_BYTES, WorkspaceAdapter, WorkspaceError
 MAX_PROPOSAL_BYTES = 2_000_000
 MAX_FILES = 10
 MAX_PATH_CHARS = 240
-
-# A equipe autônoma altera código e testes do produto no workspace isolado.
-# A própria infraestrutura que controla credenciais, execução e permissões
-# permanece fora do alcance das propostas geradas pelo modelo.
 PROTECTED_BASENAMES = {
-    "sermax_github_agent_runner.py",
-    "sermax_groq_backend.py",
-    "sermax_dev_team.py",
-    "sermax_dev_proposal.py",
-    "sermax_workspace.py",
-    "sermax.spec",
-    "memoria_sermax.json",
-    "memoria_neural_pestinha.json",
+    "sermax_github_agent_runner.py", "sermax_groq_backend.py",
+    "sermax_dev_team.py", "sermax_dev_proposal.py", "sermax_workspace.py",
+    "sermax.spec", "memoria_sermax.json", "memoria_neural_pestinha.json",
 }
 
 
@@ -58,8 +49,8 @@ def _validate_development_path(path: str) -> None:
         or not lowered[-1].endswith((".py", ".md"))
     ):
         raise ProposalError(
-            "Caminho fora do escopo: são aceitos arquivos .py e .md do produto; "
-            "infraestrutura, segredos e workflows são protegidos."
+            "Caminho fora do escopo: somente arquivos .py e .md do produto; "
+            "infraestrutura, workflows, credenciais e memórias são protegidos."
         )
 
 
@@ -77,12 +68,14 @@ def parse_proposal(raw: str) -> ValidatedProposal:
         raise ProposalError("Resumo inválido.")
     if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES:
         raise ProposalError("A proposta deve conter de 1 a 10 arquivos.")
-    if not isinstance(tests, list) or not tests or any(
-        test not in {"unittest", "compileall"} for test in tests
+    if (
+        not isinstance(tests, list)
+        or not tests
+        or any(test not in {"unittest", "compileall"} for test in tests)
+        or "unittest" not in tests
     ):
-        raise ProposalError("A proposta precisa indicar testes autorizados.")
-    parsed = []
-    seen = set()
+        raise ProposalError("A proposta precisa incluir a suíte unittest autorizada.")
+    parsed, seen = [], set()
     for item in files:
         if not isinstance(item, dict) or set(item) != {"path", "content"}:
             raise ProposalError("Cada arquivo exige path e content.")
@@ -123,14 +116,12 @@ def apply_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> 
 def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal, test_runner):
     """Aplica proposta e testes como transação: falha restaura todos os arquivos."""
     preview_proposal(workspace, proposal)
-    snapshots = {}
+    snapshots, backup_snapshots = {}, {}
     backup_root = workspace.backup_root
     for item in proposal.files:
         target = workspace._resolve(item.path, allow_missing=True)
         existed = target.is_file()
         snapshots[item.path] = (existed, target.read_bytes() if existed else None)
-    backup_snapshots = {}
-    for item in proposal.files:
         backup = backup_root / item.path
         backup_snapshots[item.path] = (
             backup.is_file(), backup.read_bytes() if backup.is_file() else None
@@ -146,9 +137,7 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
             target = workspace._resolve(relative, allow_missing=True)
             if existed:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                fd, temp_name = tempfile.mkstemp(
-                    prefix=".sermax-rollback-", dir=str(target.parent)
-                )
+                fd, temp_name = tempfile.mkstemp(prefix=".sermax-rollback-", dir=str(target.parent))
                 try:
                     with os.fdopen(fd, "wb") as stream:
                         stream.write(content)
