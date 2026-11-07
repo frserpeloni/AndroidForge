@@ -1,6 +1,12 @@
 name: SERMAX Windows CI
 
 on:
+  push:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
   pull_request:
     branches:
       - main
