@@ -20,7 +20,7 @@ if (-not (Test-Path $MainPython)) {
 }
 & $MainPython -m pip install --upgrade pip
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar pip do ambiente principal.' }
-& $MainPython -m pip install 'numpy>=2.4.6' 'pyinstaller>=6.11'
+& $MainPython -m pip install 'numpy>=2.4.6' 'psutil>=7.2.2' 'pywin32>=305' 'pyinstaller>=6.11'
 if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar NumPy/PyInstaller.' }
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw 'Git nao encontrado. Instale o Git for Windows para preparar a dependencia Pestinha.'
