@@ -3,14 +3,9 @@
 import os
 from PyInstaller.utils.hooks import collect_all
 
-extra_datas, extra_binaries, extra_hiddenimports = [], [], []
-try:
-    package_datas, package_binaries, package_hidden = collect_all('pestinha')
-    extra_datas += package_datas
-    extra_binaries += package_binaries
-    extra_hiddenimports += package_hidden
-except (ImportError, ModuleNotFoundError):
-    pass
+# Pestinha é uma integração prevista no pacote SERMAX. Falhas de coleta
+# devem interromper o build, nunca gerar um executável silenciosamente parcial.
+extra_datas, extra_binaries, extra_hiddenimports = collect_all("pestinha")
 
 ROOT = os.path.abspath(os.path.dirname(SPEC))
 TERMINAL = os.path.join(ROOT, "SERMAX_terminal")
