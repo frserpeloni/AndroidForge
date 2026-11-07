@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import stat
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
@@ -17,6 +19,10 @@ PROTECTED_FILES = frozenset({
 })
 
 REPARSE_POINT_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+_WINDOWS_RESERVED = re.compile(
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$",
+    re.IGNORECASE,
+)
 
 
 class InventoryError(RuntimeError):
@@ -46,8 +52,17 @@ def _normalize_relative(value: str) -> str:
     parts = normalized.split("/")
     if normalized.startswith("/") or any(part in {"", ".", ".."} for part in parts):
         raise InventoryError(f"Caminho relativo inseguro: {value!r}")
-    if ":" in parts[0]:
-        raise InventoryError(f"Caminho com unidade/stream não permitido: {value!r}")
+
+    for part in parts:
+        if ":" in part or any(ord(char) < 32 for char in part):
+            raise InventoryError(f"Caminho com caractere reservado: {value!r}")
+        if part.endswith((" ", ".")):
+            raise InventoryError(f"Componente com ponto/espaço final: {value!r}")
+        if unicodedata.normalize("NFC", part) != part:
+            raise InventoryError(f"Componente Unicode não normalizado: {value!r}")
+        if _WINDOWS_RESERVED.fullmatch(part):
+            raise InventoryError(f"Nome reservado do Windows: {value!r}")
+
     return "/".join(parts)
 
 
@@ -90,6 +105,9 @@ def inventory_directory(
                 info = entry.stat(follow_symlinks=False)
             except OSError as exc:
                 raise InventoryError(f"Falha ao inspecionar entrada {relative!r}: {exc}") from exc
+
+            # Rejeita nomes ambíguos para destinos Windows antes de classificá-los.
+            _normalize_relative(relative)
 
             if stat.S_ISLNK(info.st_mode) or _is_reparse_point(info):
                 records.append({
