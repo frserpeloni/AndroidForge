@@ -115,8 +115,8 @@ class DevelopmentTeamTests(unittest.TestCase):
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_generated.py").write_text(
-                "import unittest\\nclass GeneratedTests(unittest.TestCase):\\n"
-                "    def test_value(self): self.assertEqual(1 + 1, 2)\\n",
+                "import unittest\nclass GeneratedTests(unittest.TestCase):\n"
+                "    def test_value(self): self.assertEqual(1 + 1, 2)\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
@@ -127,12 +127,12 @@ class DevelopmentTeamTests(unittest.TestCase):
                     programmer_calls.append(prompt)
                     if len(programmer_calls) == 1:
                         return json.dumps({"summary": "gera", "files": [
-                            {"path": "generated.py", "content": "VALUE = 42\\n"}
+                            {"path": "generated.py", "content": "VALUE = 42\n"}
                         ], "tests": ["compileall"]})
                     self.assertIn("unittest", prompt)
                     self.assertIn("rejeitada pelo validador", prompt)
                     return json.dumps({"summary": "gera", "files": [
-                        {"path": "generated.py", "content": "VALUE = 42\\n"}
+                        {"path": "generated.py", "content": "VALUE = 42\n"}
                     ], "tests": ["unittest"]})
                 if role == "testador":
                     return '{"verdict":"PASS","evidence":"unittest aprovado"}'
@@ -149,15 +149,15 @@ class DevelopmentTeamTests(unittest.TestCase):
             self.assertTrue(any(
                 event["status"] == "proposal_rejected" for event in team.events(task_id)
             ))
-            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\\n")
+            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\n")
 
     def test_programmer_invalid_proposal_stops_at_attempt_limit_without_writes(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "tests").mkdir()
             (root / "tests" / "test_ok.py").write_text(
-                "import unittest\\nclass T(unittest.TestCase):\\n"
-                "    def test_ok(self): self.assertTrue(True)\\n",
+                "import unittest\nclass T(unittest.TestCase):\n"
+                "    def test_ok(self): self.assertTrue(True)\n",
                 encoding="utf-8")
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
@@ -167,7 +167,7 @@ class DevelopmentTeamTests(unittest.TestCase):
                 if role == "programador":
                     calls.append(prompt)
                     return json.dumps({"summary": "inválida", "files": [
-                        {"path": "must_not_exist.py", "content": "VALUE = 1\\n"}
+                        {"path": "must_not_exist.py", "content": "VALUE = 1\n"}
                     ], "tests": ["compileall"]})
                 return "análise"
 
