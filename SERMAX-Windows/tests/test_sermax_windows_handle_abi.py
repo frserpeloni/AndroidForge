@@ -35,6 +35,19 @@ class WindowsHandleAbiLayoutTests(unittest.TestCase):
         self.assertEqual(abi.FILE_STANDARD_INFO.DeletePending.offset, 20)
         self.assertEqual(abi.FILE_STANDARD_INFO.Directory.offset, 21)
 
+    @unittest.skipUnless(
+        __import__("os").name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
+        "A carga dos símbolos nativos exige Windows x64.",
+    )
+    def test_native_api_exports_load_with_expected_prototypes(self):
+        nt_create_file, get_file_information = abi.load_native_apis()
+        self.assertTrue(callable(nt_create_file))
+        self.assertTrue(callable(get_file_information))
+        self.assertEqual(len(nt_create_file.argtypes), 11)
+        self.assertEqual(len(get_file_information.argtypes), 4)
+        self.assertEqual(ctypes.sizeof(nt_create_file.restype), 4)
+        self.assertEqual(ctypes.sizeof(get_file_information.restype), 4)
+
     def test_constants_match_documented_file_information_classes(self):
         self.assertEqual(abi.FILE_ATTRIBUTE_TAG_INFO_CLASS, 9)
         self.assertEqual(abi.FILE_ID_BOTH_DIRECTORY_INFO_CLASS, 10)
