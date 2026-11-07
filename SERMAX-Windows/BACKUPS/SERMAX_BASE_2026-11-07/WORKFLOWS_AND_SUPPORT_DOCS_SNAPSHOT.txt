@@ -1,0 +1,876 @@
+===== FILE: .github/workflows/sermax-dev-agents.yml =====
+===== GIT_BLOB_SHA: c2dcec11c8a108454e5614c1b4d737bad4448ca5 =====
+name: SERMAX Development Agents
+
+on:
+  push:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - ".github/workflows/sermax-dev-agents.yml"
+  workflow_dispatch:
+    inputs:
+      task:
+        description: "Tarefa técnica para a equipe SERMAX"
+        required: false
+        default: "Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Identifique uma falha reproduzível ou uma lacuna objetiva de segurança/correção. Se encontrar, implemente uma correção pequena com teste unittest; se não encontrar, acrescente um teste de regressão para comportamento existente ainda sem cobertura. Não altere infraestrutura, workflows, integrações Jarvis/Pestinha, memórias ou arquivos protegidos."
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sermax-dev-agents-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  develop:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate target branch
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "A equipe não está autorizada a trabalhar na main."
+            exit 1
+          fi
+
+      - name: Checkout selected development branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          persist-credentials: false
+
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install OpenJarvis in isolated Python 3.13 environment
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m venv .venv-jarvis
+          .venv-jarvis/bin/python -m pip install --upgrade pip
+          .venv-jarvis/bin/python -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          echo "SERMAX_JARVIS_PYTHON=$GITHUB_WORKSPACE/SERMAX-Windows/.venv-jarvis/bin/python" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: SERMAX-Windows/.deps/pestinha
+
+      - name: Install Python 3.14 dependencies
+        shell: bash
+        working-directory: SERMAX-Windows
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install "numpy>=2.4.6"
+          echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
+          echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
+
+      - name: Run the SERMAX development team
+        working-directory: SERMAX-Windows
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GROQ_MODEL: openai/gpt-oss-20b
+          GROQ_MAX_TOKENS: "2048"
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Corrija uma falha objetiva ou acrescente um teste de regressão com unittest.' }}
+        run: python sermax_github_agent_runner.py
+
+      - name: Review patch format
+        run: git diff --check
+
+      - name: Commit tested changes to the selected development branch
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "Push para main bloqueado."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add SERMAX-Windows
+          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps || true
+          if git diff --cached --quiet; then
+            echo "Nenhuma alteração para registrar."
+            exit 0
+          fi
+          git commit -m "SERMAX agents: implement tested development task"
+          AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin "HEAD:${GITHUB_REF_NAME}"
+
+
+===== FILE: .github/workflows/sermax-windows-ci.yml =====
+===== GIT_BLOB_SHA: 2a983b5bb3d036a14d935f54b65e8683e650c7a1 =====
+name: SERMAX Windows CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: sermax-windows-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required SERMAX sources and original terminal
+        shell: pwsh
+        run: |
+          $required = @(
+            "sermax_core.py",
+            "sermax_launcher.py",
+            "SERMAX.spec",
+            "SERMAX_terminal/sermax_terminal.py",
+            "SERMAX_terminal/sermax_voz.py",
+            "SERMAX_terminal/sermax_integracao_comandos.py",
+            "sermax_historico_comandos.py",
+            "sermax_planejador.py",
+            "sermax_executor.py",
+            "sermax_tarefas.py",
+            "ferramenta_windows.py"
+          )
+          $missing = @($required | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) { throw ("Missing SERMAX files: " + ($missing -join ", ")) }
+          $terminal = Get-Content "SERMAX_terminal/sermax_terminal.py" -Raw
+          $markers = @('ROSTO = r"""','GREEN = "\033[92m"','def render(conversa):','def desenhar(conversa):','if cmd == "/vozdiag":','if cmd == "/reiniciar":','if cmd == "/repetir"')
+          $missingMarkers = @($markers | Where-Object { -not $terminal.Contains($_) })
+          if ($terminal -match "terminal de contingência" -or $missingMarkers.Count -gt 0) {
+            throw ("Original terminal markers missing: " + ($missingMarkers -join ", "))
+          }
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: SERMAX-Windows/.deps/pestinha
+
+      - name: Prepare Python 3.14 environment for SERMAX and Pestinha
+        shell: pwsh
+        run: |
+          python -m venv .venv-integrations
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m pip install --upgrade pip pyinstaller "numpy>=2.4.6"
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 dependencies failed." }
+          "PYTHONPATH=$PWD/.deps/pestinha" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install OpenJarvis in isolated Python 3.13 environment
+        shell: pwsh
+        run: |
+          python -m venv .venv-jarvis
+          $py = ".venv-jarvis/Scripts/python.exe"
+          & $py -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.13 pip setup failed." }
+          & $py -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          if ($LASTEXITCODE -ne 0) { throw "OpenJarvis installation failed." }
+          "SERMAX_JARVIS_PYTHON=$PWD/.venv-jarvis/Scripts/python.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SERMAX_ROOT=$PWD" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Compile sources and run SERMAX integration tests
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m compileall -q .
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 source compilation failed." }
+          & $py -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw "SERMAX/Pestinha/OpenJarvis integration tests failed." }
+
+      - name: Build SERMAX.exe with Python 3.14
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m PyInstaller --noconfirm --clean "SERMAX.spec"
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 PyInstaller build failed." }
+          if (-not (Test-Path "dist/SERMAX.exe")) { throw "SERMAX.exe was not generated." }
+          if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small." }
+
+      - name: Publish SERMAX executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SERMAX-Windows-executable
+          path: SERMAX-Windows/dist/SERMAX.exe
+          if-no-files-found: error
+          retention-days: 14
+
+
+===== FILE: SERMAX-Windows/INSTALAR_INTEGRACOES_WINDOWS.ps1 =====
+===== GIT_BLOB_SHA: 6fffe18e01bf0947e199fc8fb5c9b0cbea373611 =====
+$ErrorActionPreference = 'Stop'
+$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$MainVenv = Join-Path $Root '.venv-integracoes'
+$MainPython = Join-Path $MainVenv 'Scripts\python.exe'
+$JarvisVenv = Join-Path $Root '.venv-jarvis'
+$JarvisPython = Join-Path $JarvisVenv 'Scripts\python.exe'
+
+Write-Host 'SERMAX | Preparacao isolada das integracoes' -ForegroundColor Green
+if (-not (Get-Command py -ErrorAction SilentlyContinue)) {
+    throw 'Python Launcher (py) nao encontrado. Nenhum arquivo funcional foi substituido.'
+}
+& py -3.14 --version
+if ($LASTEXITCODE -ne 0) {
+    throw 'Python 3.14 nao encontrado. O ambiente principal nao sera alterado.'
+}
+
+if (-not (Test-Path $MainPython)) {
+    & py -3.14 -m venv $MainVenv
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar ambiente Python 3.14.' }
+}
+& $MainPython -m pip install --upgrade pip
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar pip do ambiente principal.' }
+& $MainPython -m pip install 'numpy>=2.4.6' 'pyinstaller>=6.11'
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar NumPy/PyInstaller.' }
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    throw 'Git nao encontrado. Instale o Git for Windows para preparar a dependencia Pestinha.'
+}
+$PestinhaSource = Join-Path $Root 'dependencias\pestinha-1b16bd2'
+if (-not (Test-Path (Join-Path $PestinhaSource '.git'))) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PestinhaSource) | Out-Null
+    & git clone --filter=blob:none https://github.com/mille-okws/pestinha.git $PestinhaSource
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao obter o codigo-fonte Pestinha.' }
+}
+& git -C $PestinhaSource fetch --depth 1 origin 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao atualizar a revisao fixada do Pestinha.' }
+& git -C $PestinhaSource checkout --detach 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+if ($LASTEXITCODE -ne 0) { throw 'Falha ao selecionar a revisao fixada do Pestinha.' }
+$SitePackages = & $MainPython -c "import site; print(site.getsitepackages()[0])"
+if ($LASTEXITCODE -ne 0 -or -not $SitePackages) { throw 'Nao foi possivel localizar site-packages do Python 3.14.' }
+$PthFile = Join-Path $SitePackages 'sermax_pestinha_source.pth'
+Set-Content -Path $PthFile -Value $PestinhaSource -Encoding ascii
+
+& py -3.13 --version 2>$null
+if ($LASTEXITCODE -eq 0) {
+    if (-not (Test-Path $JarvisPython)) {
+        & py -3.13 -m venv $JarvisVenv
+        if ($LASTEXITCODE -ne 0) { throw 'Falha ao criar ambiente Python 3.13 do OpenJarvis.' }
+    }
+    & $JarvisPython -m pip install --upgrade pip
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao preparar pip do OpenJarvis.' }
+    & $JarvisPython -m pip install 'git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f'
+    if ($LASTEXITCODE -ne 0) { throw 'Falha ao instalar OpenJarvis.' }
+    Write-Host 'OpenJarvis instalado em ambiente Python 3.13 separado.' -ForegroundColor Green
+} else {
+    Write-Host 'Python 3.13 ausente. Pestinha fica preparado; OpenJarvis permanece opcional.' -ForegroundColor Yellow
+}
+
+Write-Host 'Ambientes isolados preparados. Nenhum arquivo de memoria ou executavel foi substituido.' -ForegroundColor Green
+
+
+===== FILE: SERMAX-Windows/SERMAX-NIVEL-2-ENGENHEIRO-AUTONOMO.md =====
+===== GIT_BLOB_SHA: c73509ce2ad70f0fd1d999893d63136d85ed8675 =====
+# SERMAX Nível 2: Engenheiro de Software Autônomo
+
+**Estado:** especificação técnica inicial. Não é implementação concluída nem autorização para release.
+**Base de continuidade:** `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`.
+**Branch de trabalho:** `sermax-windows-integration-20261029`.
+
+## Objetivo
+
+Dar ao SERMAX capacidade de atuar como engenheiro de software autônomo: inspecionar o próprio projeto, identificar problemas, propor soluções, escrever alterações isoladas, executar testes, analisar falhas, corrigir o código e apresentar evidências. O ciclo deve reduzir a necessidade de intervenção humana em tarefas técnicas rotineiras, sem comprometer a instalação funcional.
+
+"Programador de alto nível" é uma meta de engenharia, não uma alegação de que o sistema já possui capacidade equivalente à de um especialista humano. Cada competência será implementada e validada separadamente.
+
+## Auditoria inicial do código existente
+
+A inspeção estática dos módulos atuais mostra:
+
+- `sermax_planejador.py`: consulta o Ollama e gera planos curtos em JSON. As instruções proíbem execução, comandos de terminal, scripts, alterações de arquivos e instalações.
+- `sermax_executor.py`: aceita somente três ações locais: diagnóstico do sistema, consulta à memória e cálculo. Não oferece shell nem escrita de arquivos.
+- `sermax_tarefas.py`: executa sequencialmente até cinco consultas/cálculos permitidos e interrompe na primeira falha de verificação.
+- `sermax_core.py`: integra esses módulos, mantém memória pessoal em `memoria_sermax.json) e chama o Ollama. A memória pessoal não deve ser usada como banco de aprendizado de programação.
+- A CI atual verifica fontes, interface, sintaxe, testes unitários e build do executável. Isso não prova funcionamento completo no Windows do mantenedor.
+
+Conclusão: há componentes úteis de planejamento e execução restrita, mas ainda não existe um ciclo autônomo de engenharia de software. O planejador atual explicitamente não executa alterações.
+
+## Arquitetura proposta
+
+### 1. Observador do projeto
+
+Responsabilidades:
+- mapear arquivos, módulos, dependências, testes e configurações;
+- consultar estado do Git, branch, commits e diferenças;
+- identificar falhas de CI, testes quebrados, dependências ausentes e documentação desatualizada;
+- registrar evidências com caminho, linha, hash e origem.
+
+Restrições:
+- leitura por padrão;
+- não alterar arquivos durante a fase de inspeção;
+- não ler `memoria_sermax.json`, credenciais ou dados pessoais como material de treinamento.
+
+### 2. Diagnóstico e definição de objetivos
+
+Cada problema identificado vira um registro estruturado:
+- identificador;
+- sintoma observado;
+- evidência reproduzível;
+- impacto e prioridade;
+- hipótese de causa;
+- objetivo técnico mensurável;
+- critério de aceitação;
+- risco e permissões necessárias.
+
+O agente deve separar fatos, hipóteses e sugestões. Não pode declarar uma causa como confirmada sem teste.
+
+### 3. Planejador de engenharia
+
+O planejador divide o objetivo em tarefas pequenas, ordenadas e verificáveis. Cada tarefa informa:
+- arquivos que pretende ler ou alterar;
+- justificativa;
+- mudança esperada;
+- testes necessários;
+- risco;
+- plano de reversão.
+
+Antes de editar, verifica se os arquivos mudaram desde a inspeção. Se houver divergência, interrompe e reavalia.
+
+### 4. Ambiente isolado de desenvolvimento
+
+O agente trabalha em uma cópia de trabalho ou worktree vinculada à branch autorizada. Nunca programa diretamente sobre a instalação ativa `C:\SERMAX`.
+
+Requisitos:
+- preservar o backup original;
+- não alterar a candidata de referência;
+- registrar diff antes e depois;
+- limitar caminhos graváveis ao workspace;
+- bloquear caminhos fora do repositório;
+- manter dependências e artefatos identificados;
+- permitir descarte integral da tentativa sem afetar a instalação.
+
+### 5. Executor de engenharia com permissões
+
+Separar ferramentas por nível:
+
+- **Leitura automática:** listar e ler fontes, pesquisar símbolos, consultar Git e resultados de CI.
+- **Escrita isolada automática:** editar arquivos no workspace autorizado, criar testes e documentação, desde que o diff passe pelas políticas.
+- **Execução automática restrita:** formatadores, análise estática, compilação e testes previamente permitidos, sem acesso irrestrito à rede ou ao sistema.
+- **Aprovação humana:** instalar dependências não aprovadas, acessar dados sensíveis, alterar instalação ativa, modificar memória pessoal, publicar releases, mesclar PR, apagar dados, executar comandos privilegiados ou realizar ações externas irreversíveis.
+
+Não implementar um executor genérico de shell como atalho para autonomia. Cada ferramenta deve ter contrato, parâmetros validados, diretórios permitidos, timeout e limites de recursos.
+
+### 6. Verificador independente
+
+O agente não deve aprovar o próprio trabalho por autodeclaração. Um verificador separado confere:
+- testes unitários e de integração;
+- análise estática e sintaxe;
+- build;
+- integridade dos arquivos protegidos;
+- ausência de alterações fora do escopo;
+- diff e critérios de aceitação;
+- resultados de CI associados ao commit exato.
+
+Falha, resultado inconclusivo ou ausência de evidência bloqueia a conclusão. O sistema deve informar o teste que falhou e preservar logs.
+
+### 7. Aprendizado técnico separado
+
+Manter um repositório técnico próprio, separado da memória pessoal e do histórico de conversa. Registrar:
+- problemas encontrados;
+- soluções testadas;
+- soluções rejeitadas e motivo;
+- resultados dos testes;
+- dependências e versões;
+- decisões arquiteturais;
+- regressões conhecidas.
+
+O agente pode atualizar esse registro após verificação. Não deve treinar ou alterar pesos de rede neural automaticamente nesta primeira etapa.
+
+### 8. Ciclo autônomo
+
+1. Observar o estado do projeto.
+2. Detectar uma oportunidade ou falha.
+3. Reunir evidências.
+4. Definir objetivo e critérios de aceitação.
+5. Planejar uma alteração pequena.
+6. Verificar permissões e escopo.
+7. Implementar em ambiente isolado.
+8. Executar testes permitidos.
+9. Analisar falhas e corrigir, com limite de tentativas.
+10. Executar toda a suíte relevante novamente.
+11. Solicitar revisão humana para operações protegidas.
+12. Registrar resultado e preparar relatório.
+
+O ciclo deve ter limites de tempo, tentativas, CPU, RAM, tamanho de diff e quantidade de arquivos alterados. Ao atingir um limite, parar e reportar.
+
+## Fases de implementação
+
+### Fase A: inventário e proteção
+- inventário verificável do repositório e da candidata de referência;
+- manifesto de arquivos protegidos e hashes;
+- identificação de testes e comandos seguros;
+- testes para impedir escrita fora do workspace.
+
+### Fase B: supervisor de autonomia
+- fila de eventos técnicos;
+- classificação de eventos;
+- criação de objetivos mensuráveis;
+- máquina de estados: observado, diagnosticado, planejado, aguardando aprovação, executando, verificando, concluído ou bloqueado;
+- trilha de auditoria.
+
+### Fase C: programador isolado
+- leitura e busca de código;
+- edição controlada no workspace;
+- criação e execução de testes;
+- limite de tentativas;
+- rollback do workspace;
+- diff obrigatório.
+
+### Fase D: verificação independente
+- avaliador separado;
+- execução de CI;
+- comparação com baseline;
+- bloqueio automático diante de regressões;
+- relatório com evidências.
+
+### Fase E: iniciativa contínua controlada
+- monitoramento de CI e mudanças no repositório;
+- detecção de pendências;
+- priorização técnica;
+- propostas e execução de tarefas seguras;
+- relatório periódico de progresso.
+
+## Critérios de aceite para considerar o Nível 2 funcional
+
+- Detecta uma falha real a partir de um evento observável.
+- Produz diagnóstico com evidências e distingue hipótese de fato.
+- Cria plano com critérios de aceitação.
+- Implementa correção somente no workspace autorizado.
+- Cria ou ajusta testes relacionados.
+- Executa testes e reage a falhas sem esconder resultados.
+- Bloqueia alterações fora do escopo e ações que exigem aprovação.
+- Preserva memória pessoal, terminal original e arquivos protegidos.
+- Registra diff, hashes, logs e resultado reproduzível.
+- Consegue parar com segurança e retomar sem perder o estado da tarefa.
+
+## Limites operacionais
+
+Autonomia para programar não significa autonomia irrestrita sobre o computador. O SERMAX não recebe permissão automática para apagar arquivos, alterar a instalação ativa, acessar credenciais, gastar dinheiro, publicar, mesclar ou executar comandos privilegiados. Essas operações exigem aprovação explícita.
+
+## Estado atual e pendências
+
+- Planejador existente: planejamento sem execução.
+- Executor existente: consultas e cálculos locais restritos.
+- Executor de tarefas existente: sequência limitada de consultas/cálculos.
+- Supervisor autônomo: ainda não implementado.
+- Ambiente isolado de edição: ainda não implementado.
+- Verificador independente de alterações: ainda não implementado.
+- Aprendizado técnico separado: ainda não implementado.
+- CI: validações automatizadas existentes, sem equivalência a testes completos na máquina Windows do mantenedor.
+
+Nenhuma versão é declarada concluída por este documento. Não mesclar a PR nem publicar release com base nesta especificação.
+
+
+===== FILE: SERMAX-Windows/WIDGET-ARQUITETURA-PROPOSTA.md =====
+===== GIT_BLOB_SHA: d6b8ee67c1710db11e5b25e1e189177f65920ae8 =====
+# SERMAX Widget: arquitetura proposta
+
+**Estado:** contrato de estados implementado e validado pelo CI; widget visual e rede neural ainda não integrados. Não aprovado para release.  
+**Referências obrigatórias:** `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` e backup `SERMAX bkp 28 10 26.zip`.
+
+## Objetivo
+
+Adicionar um widget animado do SERMAX na área de trabalho do Windows sem substituir o terminal original, o núcleo, a memória persistente, a voz ou a integração com Ollama.
+
+## Decisões de segurança
+
+1. O widget será um módulo independente. O terminal atual permanece como interface principal e não deve ser reescrito para introduzir o widget.
+2. O contrato de estados está implementado em `sermax_widget_state.py`. Ele não inicia rede neural e não lê conversas.
+3. Não copiar código, personagens, imagens, memes ou outros recursos do Pestinha nesta etapa. A licença do código é GPL-3.0; a documentação de assets exige que imagens redistribuídas tenham licença compatível. Fazer uma revisão jurídica e de compatibilidade antes de qualquer reutilização.
+4. Não tocar em `memoria_sermax.json` nem nos arquivos de memória existentes.
+5. Não executar atualização automática nem substituir arquivos da instalação `C:\\SERMAX` nesta etapa.
+6. Não publicar release nem mesclar a PR com base apenas em CI.
+
+## Implementação registrada
+
+- `sermax_widget_state.py`: controlador independente que converte eventos conhecidos em cinco estados visuais permitidos: `idle`, `attention`, `processing`, `completed` e `error`.
+- `tests/test_sermax_widget_state.py`: testes para estado inicial, eventos permitidos, entradas inválidas e rejeição de saídas que não sejam estados visuais.
+- O método `accept_neural_output` define uma fronteira restritiva para uma futura rede. Ele não conecta nem executa a rede neural do Pestinha.
+- O módulo não importa o núcleo SERMAX, não lê o histórico e não acessa arquivos de memória.
+
+## Arquitetura pretendida
+
+- **Processo do widget:** módulo visual separado, preferencialmente usando Tkinter, que faz parte da distribuição padrão do Python. A escolha final depende do teste de transparência, arraste, foco, múltiplos monitores e empacotamento no Windows.
+- **Terminal e núcleo:** continuam sendo responsáveis por comandos, Ollama, memória e execução de tarefas.
+- **Contrato de estado:** estados permitidos listados acima. O widget não deve inferir o estado lendo o texto completo das conversas.
+- **Comunicação local:** avaliar arquivo JSON de estado com escrita atômica versus IPC local. Não armazenar prompts, respostas, dados pessoais ou conteúdo da memória nesse canal.
+- **Controles:** abrir terminal, ocultar/mostrar widget, mover pela tela e encerrar o widget sem encerrar o núcleo ou apagar a memória.
+- **Recursos visuais:** desenhados para o SERMAX ou licenciados de forma verificável. Preservar o rosto encapuzado verde já existente no terminal.
+
+## Testes obrigatórios antes da integração
+
+### Automatizados
+- validação e rejeição de estados inválidos;
+- leitura de arquivo ausente, vazio, truncado e versão desconhecida, caso seja adotado protocolo por arquivo;
+- atualização atômica do estado, caso seja adotado protocolo por arquivo;
+- nenhuma gravação na memória persistente;
+- controles de mostrar, ocultar e abrir terminal sem iniciar ou encerrar o núcleo por engano;
+- inclusão do módulo e dos recursos no build PyInstaller.
+
+### No Windows do mantenedor
+- aparência e transparência reais;
+- arrastar, reposicionar e comportamento em múltiplos monitores;
+- abrir/ocultar terminal;
+- funcionamento com Ollama disponível e indisponível;
+- memória e comandos preservados após reinício;
+- consumo medido de RAM e CPU durante repouso e animação;
+- fechamento do widget sem perda de memória nem encerramento indevido do SERMAX.
+
+## Bloqueios conhecidos
+
+- A comparação integral com a candidata de referência continua pendente. O ZIP disponível contém uma cópia principal do terminal idêntica à branch, mas uma cópia histórica diferente dentro de `BACKUPS/SERMAX_v3.3.0_REV4/20261027_181900/`. Não tratar a cópia histórica como fonte aprovada sem confirmar a referência.
+- A CI passou para o commit que inclui o contrato e seus testes. Isso valida sintaxe, testes automatizados e build do executável no ambiente do GitHub, mas não substitui os testes funcionais no computador do mantenedor.
+- O widget visual ainda não foi implementado. A rede neural do Pestinha não foi executada nem integrada.
+
+## Próxima etapa
+
+Implementar o widget visual mínimo usando o contrato de estados, mantendo-o fora do fluxo de inicialização padrão até os testes passarem. Em paralelo, definir uma via de execução isolada para avaliar a rede real do Pestinha, após revisar as dependências e a compatibilidade da licença. A integração só deve ocorrer depois de medir consumo e confirmar que falhas não afetam terminal, Ollama ou memória.
+
+
+===== FILE: SERMAX-Windows/README.md =====
+===== GIT_BLOB_SHA: 1b93c781b4a4eb92b41b129a09272ce1472840e1 =====
+# SERMAX para Windows — colaboração comunitária
+
+Este diretório contém a área comunitária da versão Windows do SERMAX, um assistente local em português do Brasil. A interface de terminal preta e verde com rosto ASCII é parte importante do projeto e deve ser preservada.
+
+## Estado desta publicação
+
+Esta é a área de trabalho comunitária para a edição Windows. O código precisa ser validado antes de qualquer pacote ser considerado estável. Não instale artefatos de CI diretamente sobre sua instalação existente sem backup.
+
+## Requisitos de execução
+
+- Windows 10/11 x64
+- Python 3.14 para o núcleo SERMAX e o adaptador Pestinha; Python 3.13 separado para o worker OpenJarvis
+- Ollama instalado e em execução em `http://127.0.0.1:11434`
+- Um modelo local compatível configurado no Ollama
+
+O SERMAX é local-first: não configure chaves de API nem envie memórias privadas a serviços externos.
+
+## Compilação e testes
+
+O workflow **SERMAX Windows CI** executa validação de sintaxe, testes e compilação de verificação do `SERMAX.exe`. O workflow não publica nem anexa o executável como artefato enquanto a integração e a revisão de licença GPL-3.0-or-later do Pestinha estiverem pendentes. Uma compilação bem-sucedida no CI não substitui o teste no computador do usuário nem a validação com Ollama local.
+
+## Dados privados
+
+Não versionar `memoria_sermax.json`, históricos de conversa, backups pessoais, chaves, logs locais, modelos de linguagem, executáveis locais ou arquivos de áudio de teste. Use `.gitignore` para mantê-los fora do repositório.
+
+## Contribuir
+
+Abra uma issue descrevendo o comportamento observado, os passos para reproduzir e o resultado esperado. Propostas que alterem memória persistente, execução de comandos ou acesso a arquivos precisam incluir testes e explicar os riscos.
+
+
+## Integrações Pestinha e OpenJarvis, validação 04/11/2026
+
+- Execute `INSTALAR_INTEGRACOES_WINDOWS.ps1` para preparar os ambientes Python separados.
+- O SERMAX usa Python 3.14 e a rede LIF do Pestinha, com estado em `memoria_neural_pestinha.json`.
+- O OpenJarvis roda em processo isolado Python 3.13 através de `sermax_jarvis_worker.py`.
+- A validação automatizada está em `.github/workflows/sermax-integrations-ci.yml`.
+- A PR de integração permanece em rascunho. Não mesclar nem distribuir o executável até concluir os testes e a análise da licença GPL-3.0-or-later.
+
+
+## Estado provisório dos motores, 05/11/2026
+
+- O motor padrão continua sendo Ollama.
+- Nesta etapa de desenvolvimento, a sessão aceita `/motor status`, `/motor jarvis` e `/motor ollama`. A seleção é manual e não persiste após reiniciar.
+- O caminho Jarvis chama o agente `simple`, sem ferramentas do SDK e sem contexto próprio do SDK. O SERMAX prepara identidade, memória recuperada e contexto recente antes de enviar o prompt.
+- Esses comandos são provisórios. O objetivo final é o SERMAX selecionar e coordenar automaticamente as capacidades internas, sem exigir que o usuário escolha motor ou agente.
+- Consulte `ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md` para o plano de incorporação completa e os limites de segurança.
+- A documentação descreve o estado do código; não declara testes recentes aprovados. O último CI aprovado citado no histórico é anterior à integração do comando `/motor`.
+
+
+===== FILE: SERMAX-Windows/AUDITORIA-COMPARACAO-BACKUP-2026-11-02.md =====
+===== GIT_BLOB_SHA: b7af4ef26174230d0090c4dbd5063dff0a22074b =====
+# Auditoria de comparação do backup SERMAX
+
+**Data da auditoria:** 02/11/2026  
+**Branch analisada:** `sermax-windows-integration-20261029`  
+**Commit da branch no início desta comparação:** `b65e83685f6be871f1848f8ac0298743073982e2`  
+**Backup analisado:** `SERMAX bkp  28 10 26.zip`, arquivo local de 209 entradas.  
+**Integridade ZIP:** `testzip()` retornou `None`. Isso verifica a integridade do arquivo compactado, não o funcionamento dos arquivos.
+
+## Resultado objetivo
+
+A cópia do terminal na raiz do backup é idêntica ao terminal na branch: o Git blob SHA de ambos é `9077ce5062d1541130ede8db519613d4d2ec8dfc`.
+
+A cópia histórica em `SERMAX/BACKUPS/SERMAX_v3.3.0_REV4/20261027_181900/` é diferente. Não deve ser usada como substituição automática.
+
+O núcleo, launcher, especificação e módulos de voz/comandos da raiz do ZIP têm hashes diferentes dos arquivos correspondentes na branch. Logo, não se deve copiar o backup inteiro por cima da branch, nem o contrário, sem comparação de conteúdo e de comportamento.
+
+## Git blob SHA dos arquivos principais
+
+| Arquivo | ZIP, raiz `SERMAX/` | Branch GitHub | Igual? |
+|---|---|---|---|
+| `sermax_core.py` | `e5f7081bb4db0e3ffda6166270dc9ae9a76c835a` | `c9039b5314520016fdc877cbcf3d99cb2a76f1f1` | Não |
+| `sermax_launcher.py` | `594893328f474e1a95ba7cd96f1d3c9d1a6cc402` | `2b3267e50894f517e57fc8bea8c3eb10dbbb8c2d` | Não |
+| `SERMAX.spec` | `9ce2853e43313d2ca3ef2045532829346390ca4a` | `483a6fd1d5c4fe8e20a89854dfc35a58af43f590` | Não |
+| `SERMAX_terminal/sermax_terminal.py` | `9077ce5062d1541130ede8db519613d4d2ec8dfc` | `9077ce5062d1541130ede8db519613d4d2ec8dfc` | Sim |
+| `SERMAX_terminal/sermax_integracao_comandos.py` | `dc675f3c466d5007b44d4d4520f5640967a70b39` | `4eda3f14e3633c27907674d5cd6533c939924efc` | Não |
+| `SERMAX_terminal/sermax_voz.py` | `c27dbaf1eded27237f2610832fad0866f7effb2c` | `68ee5860ddf4f039005f76448940f7e982920d19` | Não |
+
+Os hashes são identificadores de conteúdo Git, não avaliações de qualidade. Divergência não significa, por si só, que um arquivo esteja errado.
+
+## Cópia histórica em BACKUPS
+
+A cópia histórica `SERMAX/BACKUPS/SERMAX_v3.3.0_REV4/20261027_181900/` também diverge da branch nos arquivos verificados:
+
+| Arquivo histórico | Git blob SHA calculado no ZIP |
+|---|---|
+| `sermax_core.py` | `1eeeeb88977f3057d9302343421921a86e7562da` |
+| `sermax_launcher.py` | `df83e389ceae85218d46c44a5afb2321a9968982` |
+| `SERMAX.spec` | `6438cb011bd1d9cb3c9be4bd0e6c8a4fceacc7c3` |
+| `SERMAX_terminal/sermax_terminal.py` | `ead219c4a13601aa8f50275ee9ab5c697bac6c60` |
+| `SERMAX_terminal/sermax_voz.py` | `f2d9aa8114ae91f3611d4d5cffd5a5af6214dad5` |
+
+## Limite da conclusão
+
+O ZIP analisado não tem uma pasta com o nome exato `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026`. Portanto, esta auditoria compara a raiz do backup e uma cópia histórica interna, mas não comprova equivalência integral com a candidata nominal de referência.
+
+## Próximas ações seguras
+
+1. Obter o pacote exato da candidata nominal, ou uma lista oficial de hashes dela.
+2. Comparar conteúdo linha a linha dos módulos divergentes, especialmente núcleo, launcher, especificação, voz e integração de comandos.
+3. Registrar para cada diferença se deve ser preservada, reconciliada ou descartada, com justificativa e testes.
+4. Manter o widget isolado até concluir a comparação e testar o protocolo.
+5. Não instalar o artefato de CI sobre `C:\\SERMAX`; não mesclar a PR nem declarar release final nesta fase.
+
+
+===== FILE: SERMAX-Windows/ARQUITETURA-DUAS-EQUIPES-MAX.md =====
+===== GIT_BLOB_SHA: 721cf340a4f4ce2ca557e988cc3b7bd386000b71 =====
+> **HISTÓRICO SUPERADO:** esta proposta de duas equipes foi substituída pela diretriz de equipe única coordenada pelo MAX. Consulte `ARQUITETURA-EQUIPE-UNICA-MAX.md`. O conteúdo abaixo foi preservado como histórico de decisões e não deve orientar novas implementações.
+
+# SERMAX: arquitetura de duas equipes coordenadas pelo MAX
+
+**Estado:** decisão arquitetural aprovada pelo mantenedor; especificação e plano de implementação.  
+**Branch de trabalho:** `sermax-windows-integration-20261029`.  
+**Proteções:** `main`, instalação `C:\\SERMAX`, interface original e memórias existentes permanecem fora do escopo de escrita desta etapa.
+
+## 1. Decisão estrutural
+
+O SERMAX terá duas estruturas distintas:
+
+1. **SERMAX DEVELOPMENT TEAM:** equipe de engenharia que trabalha no código-fonte do SERMAX, no ambiente de desenvolvimento e em branch autorizada.
+2. **SERMAX INTELLIGENCE TEAM:** equipe interna do produto SERMAX, que atende o usuário e executa tarefas autorizadas durante o funcionamento normal.
+
+O MAX é o coordenador geral e o ponto de entrada. Cada equipe terá supervisor, fila, estado, ferramentas, permissões e registros próprios. Uma equipe não recebe permissões da outra por herança.
+
+A existência de agentes na Intelligence Team não comprova autonomia de desenvolvimento. A Development Team só será considerada autônoma após demonstrar o ciclo completo de inspeção, edição de código, execução de testes, avaliação independente, correção e registro de progresso.
+
+## 2. Fronteiras e permissões
+
+| Área | Development Team | Intelligence Team |
+|---|---|---|
+| Objetivo | Evoluir o código-fonte do SERMAX | Atender o usuário e executar tarefas solicitadas |
+| Ambiente | Workspace/worktree isolado | Runtime instalado do SERMAX |
+| Git | Branch de desenvolvimento autorizada | Sem escrita no repositório por padrão |
+| Arquivos | Fontes, testes e docs do workspace | Arquivos explicitamente autorizados pelo usuário |
+| Testes | Testes do produto e CI | Testes de tarefas do usuário, dentro do escopo |
+| Memória | Registro técnico próprio | Memória pessoal SERMAX existente e contexto operacional segregado |
+| Deploy/merge | Exige aprovação humana | Sem permissão |
+| C:\\SERMAX | Sem acesso de escrita | Preservação; alterações só por fluxo de atualização aprovado |
+| Credenciais/segredos | Negado por padrão | Negado por padrão |
+
+Ações como merge, release, publicação, instalação, exclusão, alteração da memória pessoal, acesso a credenciais e mudanças fora do workspace exigem aprovação explícita.
+
+## 3. SERMAX DEVELOPMENT TEAM
+
+### Papéis
+
+- **Development Supervisor:** recebe objetivos técnicos, mantém fila e estados, aplica limites e coordena os agentes.
+- **Researcher:** consulta documentação, dependências, APIs, licenças e histórico técnico.
+- **Architect:** define desenho, contratos, riscos e critérios de aceitação.
+- **Programmer:** edita fontes e testes somente no workspace autorizado.
+- **Test Engineer:** executa testes permitidos, coleta logs e reproduz falhas.
+- **Reviewer:** avalia diff, segurança, regressões e critérios de aceitação sem depender da autodeclaração do programador.
+- **Integrator:** prepara commits e atualiza PR na branch autorizada, sem fazer merge.
+
+### Ciclo exigido
+
+1. Observar estado do repositório e da CI.
+2. Registrar problema ou objetivo com evidências.
+3. Criar plano pequeno, arquivos-alvo, critérios de aceitação e rollback.
+4. Confirmar branch, HEAD e permissões antes de escrever.
+5. Alterar código em workspace isolado.
+6. Executar testes unitários, integração, análise estática e build aplicáveis.
+7. Avaliar resultados por verificador separado.
+8. Corrigir falhas dentro de limite de tentativas.
+9. Reexecutar a suíte relevante.
+10. Registrar diff, hashes, logs, commit, resultados e pendências.
+11. Solicitar aprovação humana para operações protegidas.
+
+### Estados persistentes da tarefa
+
+`queued`, `inspecting`, `diagnosed`, `planned`, `awaiting_approval`, `implementing`, `testing`, `reviewing`, `completed`, `blocked`, `failed`.
+
+Cada transição registra horário, agente, entrada, saída, evidências e motivo. O supervisor deve retomar tarefas interrompidas sem repetir alterações já aplicadas.
+
+### Critérios de autonomia demonstrável
+
+A equipe só será chamada autônoma quando um teste de aceitação comprovar que ela:
+- recebe uma tarefa técnica sem instruções humanas por etapa;
+- inspeciona o repositório e apresenta evidências;
+- modifica código e/ou testes em branch/workspace permitido;
+- executa os testes reais e identifica falhas;
+- corrige ao menos uma falha reproduzível ou justifica tecnicamente o bloqueio;
+- executa novamente os testes e compara resultados;
+- produz diff e registro persistente;
+- bloqueia tentativas de alterar `main`, `C:\\SERMAX`, memórias ou arquivos fora do escopo.
+
+Até esse teste passar, o estado deve ser descrito como **automação de engenharia em desenvolvimento**, nunca autonomia concluída.
+
+## 4. SERMAX INTELLIGENCE TEAM
+
+### Papéis
+
+- **Intelligence Supervisor:** classifica a solicitação e escolhe capacidades internas.
+- **Assistant:** mantém a conversa e entrega a resposta unificada SERMAX.
+- **Researcher:** pesquisa fontes e documentação quando há ferramenta e autorização.
+- **Analyst:** analisa dados, arquivos e problemas.
+- **Programmer:** auxilia o usuário com código e tarefas de programação no escopo permitido.
+- **Task Planner:** divide solicitações em etapas.
+- **Task Executor:** executa ferramentas com parâmetros validados e permissões.
+- **Verifier:** confere resultados e comunica limitações.
+
+A equipe funciona durante o uso normal do produto. Não altera o código-fonte do SERMAX como parte de suas tarefas rotineiras.
+
+## 5. MAX e coordenação entre equipes
+
+MAX coordena as duas estruturas por um **control plane** comum, com dois supervisores independentes:
+
+- solicitação de uso do produto segue para Intelligence Team;
+- tarefa de engenharia do próprio SERMAX segue para Development Team;
+- tarefa híbrida é dividida em entregas com fronteiras explícitas;
+- a Intelligence Team não recebe acesso automático ao workspace de desenvolvimento;
+- a Development Team não recebe memória pessoal nem dados privados do usuário.
+
+O control plane compartilha somente contratos, catálogo de capacidades, política de segurança, telemetria técnica mínima e estado de disponibilidade. Filas, contextos e memórias de cada equipe permanecem separados.
+
+## 6. Jarvis e Pestinha
+
+### OpenJarvis / Jarvis
+
+**Possível papel na Intelligence Team:** motor/agente para raciocínio e execução de tarefas, desde que o SERMAX integre agentes, ferramentas e contexto de forma segura.
+
+**Possível papel na Development Team:** componente de orquestração ou agente de programação somente se a integração demonstrar leitura do repositório, edição em workspace isolado, execução de testes e retorno de diffs/resultados. O SDK atual configurado como `simple`, `tools=[]` e `context=False` não comprova essas capacidades.
+
+A compatibilidade atual exige worker Python 3.13 separado do núcleo Python 3.14. Não habilitar ferramentas de shell, escrita irrestrita, navegador, MCP ou skills sem revisão individual, isolamento e testes.
+
+### Pestinha
+
+Pestinha é uma rede comportamental LIF para o pet de tela. Pode contribuir com estado, atenção, sinais comportamentais e adaptação limitada.
+
+**Intelligence Team:** sinais internos de estado/atenção e comportamento visual, subordinados ao supervisor.  
+**Development Team:** no máximo, sinais auxiliares de estado ou prioridade do agente, após avaliação. Não atribuir a ele programação, raciocínio de código ou execução de testes.
+
+A rede não decide permissões nem executa ações. Saídas neurais são dados não confiáveis. Sensores do computador, rotina, teclado, mouse, leitura de janelas, autostart e assets não são habilitados por esta arquitetura.
+
+## 7. Reaproveitamento sem duplicação
+
+Criar uma camada compartilhada de contratos, não duas implementações das mesmas ferramentas:
+
+- **Capability Registry:** declara capacidades, versão, disponibilidade, equipe permitida e permissões.
+- **Policy Engine:** valida escopo, risco, diretórios, ferramentas, limites e aprovações.
+- **Model/Agent Gateway:** interface comum para modelos e agentes, com adaptadores por runtime.
+- **Tool Contracts:** schemas e validadores comuns; cada equipe recebe uma allowlist própria.
+- **Evidence Store:** formato comum para logs técnicos, hashes, resultados e citações, com namespaces separados.
+- **Task State Schema:** formato de estado reutilizável, mas filas e registros independentes.
+
+Ferramentas de leitura e análise podem compartilhar implementação. Ferramentas de escrita devem ter adaptadores e raízes de diretório distintas: workspace de desenvolvimento para Development Team, caminhos autorizados do usuário para Intelligence Team. Nenhum agente acessa a outra raiz por padrão.
+
+## 8. Estado dos componentes atuais
+
+| Componente | Estado verificado | Destino |
+|---|---|---|
+| `sermax_core.py` / MAX | Núcleo conversacional; ainda sem dois supervisores | Control plane e entrada única |
+| `sermax_planejador.py` | Planeja tarefas curtas; não altera código | Reaproveitar como planejador, com contratos separados por equipe |
+| `sermax_executor.py` | Ações locais restritas de sistema, memória e cálculo | Reaproveitar políticas e validadores; ampliar por ferramentas específicas |
+| `sermax_tarefas.py` | Consultas sequenciais limitadas; sem fila persistente de engenharia | Reaproveitar execução sequencial no runtime |
+| `sermax_jarvis_adapter.py` / worker | Processo separado; SDK em agente `simple`, sem ferramentas/contexto próprios | Gateway de agente; avaliar agentes distintos por equipe |
+| `sermax_pestinha_adapter.py` | Eventos fechados e estados visuais; sem autonomia de código | Subsistema comportamental da Intelligence Team |
+| Testes atuais | Testes parciais de núcleo, adaptadores e integração simulada | Reaproveitar e ampliar com testes de aceitação das duas equipes |
+| GitHub PR #2 | Branch de integração aberta em draft; sem merge | Base de trabalho, após verificar HEAD a cada escrita |
+
+## 9. Trabalho necessário
+
+### Prioridade 1: proteger e organizar
+
+- manter `main` intacta;
+- manter `C:\\SERMAX` intocada;
+- preservar interface original, `memoria_sermax.json`, memória neural e backups;
+- definir inventário e hashes de arquivos protegidos;
+- registrar contratos, permissões e separação de dados.
+
+### Prioridade 2: Intelligence Team
+
+- implementar supervisor de inteligência e roteamento automático;
+- retirar a dependência de seleção manual de motor para o fluxo normal;
+- definir papéis e ferramentas com allowlists;
+- manter Jarvis como adaptador isolado até validar SDK real;
+- manter Pestinha como subsistema comportamental, sem autoridade de execução.
+
+### Prioridade 3: Development Team
+
+- criar workspace isolado e fila persistente;
+- implementar observador Git/CI e diagnóstico baseado em evidências;
+- implementar programador com edição restrita e diff obrigatório;
+- implementar executor de testes com allowlist, timeout e limites;
+- implementar revisor independente e registro de progresso;
+- criar testes de aceitação que demonstrem modificação real, testes, correção e registro.
+
+### Prioridade 4: integração e validação
+
+- ligar os dois supervisores ao MAX pelo control plane;
+- testar roteamento correto de tarefas;
+- testar isolamento entre equipes, diretórios e memórias;
+- testar falhas, retomada e limites de recursos;
+- executar CI no commit exato e validação Windows real;
+- manter PR em draft até todos os gates aplicáveis passarem.
+
+## 10. Gates de liberação e comunicação
+
+Não declarar equipe autônoma, agente integrado, teste aprovado ou versão concluída sem evidência verificável.
+
+Relatórios devem separar:
+- especificado;
+- implementado no código;
+- integrado ao fluxo;
+- testado automaticamente;
+- validado no Windows real;
+- pendente ou bloqueado.
+
+Nenhuma alteração nesta arquitetura autoriza merge, release, instalação ou modificação da memória pessoal. A interface original e os arquivos protegidos permanecem preservados.
+
