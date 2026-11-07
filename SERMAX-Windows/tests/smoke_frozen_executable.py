@@ -15,7 +15,7 @@ def main() -> int:
 
     result = subprocess.run(
         [str(executable)],
-        input="/sair\\n",
+        input="/sair\n",
         text=True,
         encoding="utf-8",
         errors="replace",
@@ -23,7 +23,7 @@ def main() -> int:
         timeout=30,
         cwd=str(executable.parent),
     )
-    output = result.stdout + "\\n" + result.stderr
+    output = result.stdout + "\n" + result.stderr
     if result.returncode != 0:
         print(output[-12000:], file=sys.stderr)
         raise SystemExit(f"SERMAX.exe exited with code {result.returncode}")
