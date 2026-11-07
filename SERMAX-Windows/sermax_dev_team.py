@@ -215,7 +215,7 @@ class DevelopmentTeam:
                                 raise
                             correction_prompt = (
                                 f"{prompt}\n\nA tentativa {attempt} foi rejeitada pelo "
-                                f"validador: {detail}\\n"
+                                f"validador: {detail}\n"
                                 "Corrija a proposta e retorne exclusivamente o JSON completo "
                                 "exigido. Preserve o escopo permitido. Inclua unittest em tests. "
                                 "Não alegue que executou testes."
