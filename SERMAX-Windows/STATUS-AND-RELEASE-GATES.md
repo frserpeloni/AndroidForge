@@ -110,3 +110,20 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 6. Só depois iniciar testes com modelo Ollama real e validação no Windows do mantenedor.
 
 **Não executado nesta revisão:** testes locais da nova sequência, CI dos commits recentes, execução com modelo real, teste físico Windows, medição de recursos, atualizador/rollback e revisão jurídica de licença.
+
+
+## Atualização de auditoria, 07/11/2026, CI 254
+
+- Commit validado: `8afa040ed944591e0742bbdef930b4e56cf4a341`.
+- Workflow run `42396609888`, execução 254, conclusão `success`.
+- Job `validate-and-build`: todas as etapas concluídas com sucesso.
+- Foram aprovados 94 testes automatizados em Python 3.14.
+- OpenJarvis foi instalado em ambiente isolado Python 3.13.
+- PyInstaller gerou `SERMAX.exe` no runner Windows.
+- Smoke test executou o binário congelado, confirmou a abertura do terminal original, encontrou o prompt de entrada e processou `/sair`.
+- Artefato `SERMAX-Windows-executable`, ID `13582579833`, ZIP de 22.827.088 bytes, digest SHA-256 `659130e36a7c32db14eec789e47d387f152639ca1cd8f3a42839e717215084d3`. Expira em 21/11/2026. É artefato de CI, não instalador.
+- A primeira tentativa do smoke test falhou por comparação literal do caractere acentuado `ê` sob a página de código do runner. A verificação foi ajustada para procurar o prefixo ASCII `Voc`, sem alterar o terminal. A execução 254 passou após a correção.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/42396609888
+- A PR nº 2 permanece aberta, em rascunho e sem merge. Nenhuma alteração foi feita em `main`.
+- Permanecem NÃO EXECUTADOS: comparação integral com a candidata `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` e o backup `SERMAX bkp 28 10 26.zip`; testes físicos na instalação `C:\\SERMAX`; validação de Ollama, Jarvis com modelo local, voz e persistência após reinício; atualizador e rollback; revisão final das obrigações GPL e assets.
+- Não declarar versão final nem instalar o artefato de CI na instalação existente com base somente nesta execução.
