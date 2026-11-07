@@ -28,7 +28,7 @@ class GroqBackendTests(unittest.TestCase):
 
     def test_uses_conservative_default_token_budget(self):
         backend = self.make_backend()
-        self.assertEqual(backend.max_tokens, 1024)
+        self.assertEqual(backend.max_tokens, 2048)
 
     def test_caps_configured_token_budget(self):
         backend = self.make_backend(max_tokens=9000)
