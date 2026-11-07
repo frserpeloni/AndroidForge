@@ -88,7 +88,10 @@ class GroqChatBackend:
                     raise GroqAPIError("A Groq retornou conteúdo vazio.")
                 return answer
             except urllib.error.HTTPError as exc:
-                detail = exc.read(4000).decode("utf-8", errors="replace")
+                try:
+                    detail = exc.read(4000).decode("utf-8", errors="replace")
+                finally:
+                    exc.close()
                 if exc.code == 429 and attempt < self.max_retries:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
                     match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", detail, re.I)
