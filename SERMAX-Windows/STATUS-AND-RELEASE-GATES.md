@@ -127,3 +127,24 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 - A PR nº 2 permanece aberta, em rascunho e sem merge. Nenhuma alteração foi feita em `main`.
 - Permanecem NÃO EXECUTADOS: comparação integral com a candidata `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` e o backup `SERMAX bkp 28 10 26.zip`; testes físicos na instalação `C:\\SERMAX`; validação de Ollama, Jarvis com modelo local, voz e persistência após reinício; atualizador e rollback; revisão final das obrigações GPL e assets.
 - Não declarar versão final nem instalar o artefato de CI na instalação existente com base somente nesta execução.
+
+
+## Atualização de auditoria, 07/11/2026, CI 255
+
+- Commit de documentação validado: `2208c424765371cd48fd7d51e35df7b5c62b3b0e`.
+- Workflow run `42399920379`, execução 255, conclusão `success`, job único `validate-and-build`.
+- Foram aprovados 94 testes automatizados em Python 3.14, compilação PyInstaller e smoke test do executável congelado. O smoke test confirmou abertura do terminal original e processamento de `/sair`.
+- OpenJarvis foi instalado no ambiente isolado Python 3.13. Isso comprova instalação de dependência no runner, não teste funcional do modelo local no computador do mantenedor.
+- Artefato `SERMAX-Windows-executable`, ID `13585087465`, tamanho ZIP de 22.826.408 bytes, SHA-256 `e9e34e072400db1e8eda481623de5c03284a51dd929abd293a7c40853939c14f`. Expira em 21/11/2026. Artefato de CI, não instalador.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/42399920379
+- O workflow executado contém somente o job `validate-and-build`. Não houve job separado `real-integrations` nesta execução. A PR descreve um segundo job, mas essa descrição não corresponde ao workflow observado nesta execução e precisa ser reconciliada.
+- O log registra 94 testes aprovados. Também registra um `ResourceWarning` associado a HTTP 429 durante o teste do launcher empacotado; a suíte terminou com sucesso. A causa e o impacto desse aviso ainda precisam de análise, sem tratá-lo como falha nem ignorá-lo.
+- A PR nº 2 segue aberta, em rascunho, sem merge. Nenhuma alteração foi feita em `main`.
+
+### Gates que continuam abertos
+
+1. A auditoria de 02/11 comparou a raiz do ZIP de backup com a branch por hashes e identificou divergências no núcleo, launcher, especificação, voz e integração de comandos. A candidata nominal `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` não estava dentro do ZIP analisado. Portanto, a comparação com o backup raiz foi parcialmente executada, mas a equivalência integral com a candidata nominal continua NÃO COMPROVADA.
+2. A execução 255 não executou Ollama real, Jarvis com modelo local, voz com recursos locais do Whisper, nem persistência após reinício no computador do mantenedor.
+3. Atualizador dedicado para `C:\\SERMAX`, com backup, preservação de arquivos pessoais e rollback automático, continua NÃO IMPLEMENTADO/VALIDADO. O script de preparação de dependências não substitui esse componente.
+4. Revisão das obrigações GPL-3.0-or-later e da origem/licença de assets Pestinha continua pendente para distribuição do binário combinado.
+5. Não declarar versão final, não instalar o artefato de CI e não mesclar a PR enquanto os gates acima estiverem abertos.
