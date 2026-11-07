@@ -214,7 +214,7 @@ class DevelopmentTeam:
                             if attempt >= self.max_attempts:
                                 raise
                             correction_prompt = (
-                                f"{prompt}\\n\\nA tentativa {attempt} foi rejeitada pelo "
+                                f"{prompt}\n\nA tentativa {attempt} foi rejeitada pelo "
                                 f"validador: {detail}\\n"
                                 "Corrija a proposta e retorne exclusivamente o JSON completo "
                                 "exigido. Preserve o escopo permitido. Inclua unittest em tests. "
