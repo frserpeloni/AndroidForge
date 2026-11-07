@@ -110,5 +110,83 @@ class DevelopmentTeamTests(unittest.TestCase):
                                 workspace_adapter=workspace)
 
 
+    def test_programmer_invalid_proposal_gets_bounded_correction_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_generated.py").write_text(
+                "import unittest\\nclass GeneratedTests(unittest.TestCase):\\n"
+                "    def test_value(self): self.assertEqual(1 + 1, 2)\\n",
+                encoding="utf-8")
+            workspace = WorkspaceAdapter(root)
+            runner = TestRunner(workspace)
+            programmer_calls = []
+
+            def model_call(role, prompt):
+                if role == "programador":
+                    programmer_calls.append(prompt)
+                    if len(programmer_calls) == 1:
+                        return json.dumps({"summary": "gera", "files": [
+                            {"path": "generated.py", "content": "VALUE = 42\\n"}
+                        ], "tests": ["compileall"]})
+                    self.assertIn("unittest", prompt)
+                    self.assertIn("rejeitada pelo validador", prompt)
+                    return json.dumps({"summary": "gera", "files": [
+                        {"path": "generated.py", "content": "VALUE = 42\\n"}
+                    ], "tests": ["unittest"]})
+                if role == "testador":
+                    return '{"verdict":"PASS","evidence":"unittest aprovado"}'
+                return "análise"
+
+            team = DevelopmentTeam(
+                Path(folder) / "team.sqlite3", model_call, max_attempts=2,
+                workspace_adapter=workspace, test_runner=runner,
+            )
+            task_id = team.enqueue("Criar módulo")
+            team.run_next()
+            self.assertEqual(team.get_task(task_id)["status"], "completed")
+            self.assertEqual(len(programmer_calls), 2)
+            self.assertTrue(any(
+                event["status"] == "proposal_rejected" for event in team.events(task_id)
+            ))
+            self.assertEqual(workspace.read_text("generated.py"), "VALUE = 42\\n")
+
+    def test_programmer_invalid_proposal_stops_at_attempt_limit_without_writes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "tests").mkdir()
+            (root / "tests" / "test_ok.py").write_text(
+                "import unittest\\nclass T(unittest.TestCase):\\n"
+                "    def test_ok(self): self.assertTrue(True)\\n",
+                encoding="utf-8")
+            workspace = WorkspaceAdapter(root)
+            runner = TestRunner(workspace)
+            calls = []
+
+            def model_call(role, prompt):
+                if role == "programador":
+                    calls.append(prompt)
+                    return json.dumps({"summary": "inválida", "files": [
+                        {"path": "must_not_exist.py", "content": "VALUE = 1\\n"}
+                    ], "tests": ["compileall"]})
+                return "análise"
+
+            team = DevelopmentTeam(
+                Path(folder) / "team.sqlite3", model_call, max_attempts=2,
+                workspace_adapter=workspace, test_runner=runner,
+            )
+            task_id = team.enqueue("Proposta inválida")
+            with self.assertRaises(ValueError):
+                team.run_next()
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(team.get_task(task_id)["status"], "failed")
+            self.assertFalse((root / "must_not_exist.py").exists())
+            rejected = [
+                event for event in team.events(task_id)
+                if event["status"] == "proposal_rejected"
+            ]
+            self.assertEqual(len(rejected), 2)
+
+
 if __name__ == "__main__":
     unittest.main()
