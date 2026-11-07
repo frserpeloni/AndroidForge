@@ -49,7 +49,20 @@ class TestUpdateInventory(unittest.TestCase):
             inventory_directory(self.root / "documento-pessoal.txt")
 
     def test_rejects_unsafe_allowlist_paths(self):
-        for unsafe in ("../outside.txt", "/absolute.txt", "C:/outside.txt", "a//b"):
+        unsafe_paths = (
+            "../outside.txt",
+            "/absolute.txt",
+            "C:/outside.txt",
+            "a//b",
+            "dir/file:stream",
+            "dir/CON.txt",
+            "dir/NUL",
+            "dir/COM1.log",
+            "dir/name.",
+            "dir/name ",
+            "dir/cafe\u0301.txt",
+        )
+        for unsafe in unsafe_paths:
             with self.subTest(path=unsafe):
                 with self.assertRaises(InventoryError):
                     inventory_directory(self.root, managed_paths=[unsafe])
