@@ -19,6 +19,8 @@ a = Analysis(
         (os.path.join(TERMINAL, "sermax_voz.py"), "SERMAX_terminal"),
         (os.path.join(TERMINAL, "sermax_integracao_comandos.py"), "SERMAX_terminal"),
         (os.path.join(ROOT, "sermax_jarvis_worker.py"), "."),
+        (os.path.join(ROOT, "THIRD_PARTY_NOTICES", "Pestinha-GPL-3.0.txt"), "THIRD_PARTY_NOTICES"),
+        (os.path.join(ROOT, "THIRD_PARTY_NOTICES", "Pestinha-ORIGIN.md"), "THIRD_PARTY_NOTICES"),
     ] + extra_datas,
     hiddenimports=[
         "sermax_core", "sermax_historico_comandos", "sermax_planejador",
