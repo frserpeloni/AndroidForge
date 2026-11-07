@@ -23,7 +23,7 @@ CONTEXT_FILES = (
 def collect_code_context(project_root: Path) -> str:
     """Anexa trechos reais e limitados dos arquivos relevantes ao contexto dos papéis."""
     sections = []
-    remaining = 10_000
+    remaining = 3_000
     for relative in CONTEXT_FILES:
         path = project_root / relative
         if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
@@ -32,7 +32,7 @@ def collect_code_context(project_root: Path) -> str:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(1800, remaining)]
+        excerpt = content[: min(650, remaining)]
         section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
         sections.append(section)
         remaining -= len(section)
