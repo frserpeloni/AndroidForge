@@ -15,7 +15,8 @@ from sermax_dev_proposal import apply_and_test_proposal, parse_proposal, preview
 
 ROLES = {"analista", "pesquisador", "programador", "testador"}
 STATUSES = {"queued", "running", "completed", "blocked", "failed"}
-MAX_PROMPT_CHARS = 12_000
+MAX_PROMPT_CHARS = 7_000
+MAX_TRANSCRIPT_CHARS = 3_500
 MAX_RESULT_CHARS = 20_000
 
 ROLE_INSTRUCTIONS = {
@@ -181,7 +182,7 @@ class DevelopmentTeam:
         transcript = []
         try:
             for role in task["roles"]:
-                prior = "\n\n".join(transcript)[-MAX_PROMPT_CHARS:]
+                prior = "\n\n".join(transcript)[-MAX_TRANSCRIPT_CHARS:]
                 prompt = (
                     f"OBJETIVO:\n{task['objective']}\n\n"
                     f"EVIDÊNCIAS E CONTEXTO DE CÓDIGO:\n{task['evidence'] or 'Nenhuma evidência anexada.'}\n\n"
