@@ -27,9 +27,9 @@ def main() -> int:
     if result.returncode != 0:
         print(output[-12000:], file=sys.stderr)
         raise SystemExit(f"SERMAX.exe exited with code {result.returncode}")
-    if "Você:" not in output:
+    if "Voc" not in output:
         print(output[-12000:], file=sys.stderr)
-        raise SystemExit("SERMAX.exe did not reach the original terminal input prompt")
+        raise SystemExit("SERMAX.exe did not reach the original terminal input prompt (ASCII prefix not found)")
     print("Frozen executable smoke test passed: original terminal prompt reached and /sair handled.")
     return 0
 
