@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: sermax-windows-validation-${{ github.event.pull_request.number || github.ref }}
+  group: sermax-windows-validation-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 permissions:
