@@ -48,6 +48,8 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             '"sermax_executor"',
             '"sermax_tarefas"',
             '"ferramenta_windows"',
+            '"Pestinha-GPL-3.0.txt"',
+            '"Pestinha-ORIGIN.md"',
         ):
             self.assertIn(marcador, spec, f"SERMAX.spec não declara: {marcador}")
 
