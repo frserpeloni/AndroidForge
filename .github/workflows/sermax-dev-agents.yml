@@ -1,11 +1,17 @@
 name: SERMAX Development Agents
 
 on:
+  push:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - ".github/workflows/sermax-dev-agents.yml"
   workflow_dispatch:
     inputs:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
-        required: true
+        required: false
+        default: "Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Identifique uma falha reproduzível ou uma lacuna objetiva de segurança/correção. Se encontrar, implemente uma correção pequena com teste unittest; se não encontrar, acrescente um teste de regressão para comportamento existente ainda sem cobertura. Não altere infraestrutura, workflows, integrações Jarvis/Pestinha, memórias ou arquivos protegidos."
         type: string
 
 permissions:
@@ -76,7 +82,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "1024"
-          SERMAX_DEV_TASK: ${{ inputs.task }}
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Corrija uma falha objetiva ou acrescente um teste de regressão com unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
