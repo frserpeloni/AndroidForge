@@ -148,3 +148,27 @@ Esses resultados confirmam a validação automatizada e a compilação no runner
 3. Atualizador dedicado para `C:\\SERMAX`, com backup, preservação de arquivos pessoais e rollback automático, continua NÃO IMPLEMENTADO/VALIDADO. O script de preparação de dependências não substitui esse componente.
 4. Revisão das obrigações GPL-3.0-or-later e da origem/licença de assets Pestinha continua pendente para distribuição do binário combinado.
 5. Não declarar versão final, não instalar o artefato de CI e não mesclar a PR enquanto os gates acima estiverem abertos.
+
+
+## Atualização de auditoria, 07/11/2026, CI 256
+
+- Commit validado: `ada738950871d3e25eadac7d5fdec55dab8f3e09`.
+- Workflow run `42402910169`, execução 256, conclusão `success`, job único `validate-and-build`.
+- Foram aprovados 94 testes automatizados em Python 3.14. OpenJarvis foi instalado em ambiente isolado Python 3.13.
+- PyInstaller gerou `SERMAX.exe` no runner Windows. O smoke test iniciou o executável congelado, confirmou o prompt do terminal original e processou `/sair`.
+- Artefato `SERMAX-Windows-executable`, ID `13586067856`, tamanho ZIP de 22.824.775 bytes, SHA-256 `21c08cae095c99a32c5cfdd49bf847e2f84f2c9a21ece8f754ba99ba94ac72ab`. Expira em 21/11/2026. É artefato de CI, não instalador.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/42402910169
+- O `ResourceWarning` associado a `HTTPError 429: Too Many Requests` voltou a aparecer durante `test_launcher_empacotado_define_raiz_e_abre_interface_do_bundle`. A suíte terminou com sucesso, mas a origem do objeto HTTPError não foi isolada. O aviso permanece aberto para rastreamento; não foi suprimido.
+- A CI valida build e inicialização no runner. Não valida Ollama local, modelo Jarvis real, voz/Whisper local, memória após reinício nem instalação em `C:\\SERMAX`.
+- A PR nº 2 permanece aberta, em rascunho e sem merge. Nenhuma alteração foi feita em `main`.
+
+### Gates ainda abertos após CI 256
+
+1. Comparação integral com a candidata nominal `SERMAX_CONSOLIDACAO_TECNICA_CANDIDATA_28-10-2026` e reconciliação com o backup original.
+2. Testes físicos no Windows do mantenedor, incluindo terminal, comandos, reinício, memória pessoal/neural, Ollama, Jarvis com modelo local e voz/Whisper.
+3. Atualizador in-place com backup, preservação dos dados do usuário e rollback automático, ainda não implementado/validado.
+4. Revisão das obrigações GPL-3.0-or-later e licenças dos assets Pestinha.
+5. Supervisor com roteamento automático, limites, auditoria e fallback.
+6. Investigar a origem do `HTTPError 429` que gera o aviso durante a suíte, sem ocultar o warning.
+
+Não declarar versão final, não instalar o artefato de CI e não mesclar a PR enquanto esses gates estiverem abertos.
