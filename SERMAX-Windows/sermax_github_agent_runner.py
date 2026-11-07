@@ -63,6 +63,7 @@ def main() -> int:
     team = DevelopmentTeam(
         Path(tempfile.gettempdir()) / "sermax-development-team.sqlite3",
         model_call=backend,
+        max_attempts=3,
         workspace_adapter=workspace,
         test_runner=test_runner,
     )
