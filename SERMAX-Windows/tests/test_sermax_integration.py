@@ -53,6 +53,11 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         ):
             self.assertIn(marcador, spec, f"SERMAX.spec não declara: {marcador}")
 
+    def test_instalador_prepara_dependencias_windows_do_pestinha(self):
+        instalador = (ROOT / "INSTALAR_INTEGRACOES_WINDOWS.ps1").read_text(encoding="utf-8")
+        self.assertIn("'psutil>=7.2.2'", instalador)
+        self.assertIn("'pywin32>=305'", instalador)
+
     def test_memoria_fica_na_pasta_da_instalacao(self):
         launcher = (ROOT / "sermax_launcher.py").read_text(encoding="utf-8")
         core = (ROOT / "sermax_core.py").read_text(encoding="utf-8")
