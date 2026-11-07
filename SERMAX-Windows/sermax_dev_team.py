@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from sermax_dev_proposal import apply_and_test_proposal, parse_proposal, preview_proposal
+from sermax_dev_proposal import (
+    ProposalError, apply_and_test_proposal, parse_proposal, preview_proposal,
+)
 
 ROLES = {"analista", "pesquisador", "programador", "testador"}
 STATUSES = {"queued", "running", "completed", "blocked", "failed"}
@@ -195,8 +197,37 @@ class DevelopmentTeam:
                     raise ValueError(f"O papel {role} retornou resposta vazia.")
                 answer = answer[:MAX_RESULT_CHARS]
                 if role == "programador" and self.workspace_adapter is not None:
-                    proposal = parse_proposal(answer)
-                    previews = preview_proposal(self.workspace_adapter, proposal)
+                    proposal = None
+                    for attempt in range(1, self.max_attempts + 1):
+                        try:
+                            proposal = parse_proposal(answer)
+                            previews = preview_proposal(self.workspace_adapter, proposal)
+                            break
+                        except ProposalError as exc:
+                            detail = str(exc)
+                            with self._connection() as db:
+                                self._event(
+                                    db, task_id, role, "proposal_rejected",
+                                    json.dumps({"attempt": attempt, "error": detail},
+                                               ensure_ascii=False),
+                                )
+                            if attempt >= self.max_attempts:
+                                raise
+                            correction_prompt = (
+                                f"{prompt}\\n\\nA tentativa {attempt} foi rejeitada pelo "
+                                f"validador: {detail}\\n"
+                                "Corrija a proposta e retorne exclusivamente o JSON completo "
+                                "exigido. Preserve o escopo permitido. Inclua unittest em tests. "
+                                "Não alegue que executou testes."
+                            )
+                            answer = self.model_call(role, correction_prompt)
+                            if not isinstance(answer, str) or not answer.strip():
+                                raise ValueError(
+                                    "O Programador retornou resposta vazia durante a correção."
+                                )
+                            answer = answer[:MAX_RESULT_CHARS]
+                    if proposal is None:
+                        raise RuntimeError("O Programador não produziu proposta validada.")
                     with self._connection() as db:
                         self._event(
                             db, task_id, role, "proposal_validated",
