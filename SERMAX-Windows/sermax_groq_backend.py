@@ -35,7 +35,7 @@ class GroqChatBackend:
         self.timeout_seconds = max(10, min(int(timeout_seconds), 180))
         configured_tokens = (
             max_tokens if max_tokens is not None
-            else os.environ.get("GROQ_MAX_TOKENS", "2048")
+            else os.environ.get("GROQ_MAX_TOKENS", "1024")
         )
         self.max_tokens = max(256, min(int(configured_tokens), 4096))
         self.max_retries = max(0, min(int(max_retries), 5))
