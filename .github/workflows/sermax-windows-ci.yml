@@ -113,6 +113,14 @@ jobs:
           if (-not (Test-Path "dist/SERMAX.exe")) { throw "SERMAX.exe was not generated." }
           if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small." }
 
+      - name: Smoke-test the frozen executable startup and original terminal
+        shell: pwsh
+        working-directory: SERMAX-Windows
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py tests/smoke_frozen_executable.py dist/SERMAX.exe
+          if ($LASTEXITCODE -ne 0) { throw "Frozen SERMAX.exe startup smoke test failed." }
+
       - name: Publish SERMAX executable artifact
         uses: actions/upload-artifact@v4
         with:
