@@ -147,3 +147,23 @@ Depois disso, a etapa seguinte será backup em sandbox temporária, com compara�
 ## 8. Próxima tarefa de implementação
 
 Criar o módulo Windows de handles com testes isolados, sem substituir o inventário atual. Integrar ao inventário somente após todos os critérios de aceite. A implementação deve começar pelos protótipos ABI e testes de abertura de raiz e componentes, antes de adicionar hashing recursivo.
+
+
+## 9. Refinamento da enumeração por handle
+
+Consulta documental adicional:
+
+- `GetFileInformationByHandleEx` aceita classes de informação específicas para diretórios, incluindo `FileIdBothDirectoryInfo` e `FileIdExtdDirectoryInfo`. https://learn.microsoft.com/en-us/windows/desktop/api/winbase/nf-winbase-getfileinformationbyhandleex
+- `FILE_ID_BOTH_DIR_INFO` é usado com handles de diretório e a enumeração continua em chamadas subsequentes no mesmo handle. Sua informação de FileId tem limitações de estabilidade e unicidade dependentes do filesystem. https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_both_dir_info
+- `FILE_ID_INFO` fornece VolumeSerialNumber e FileId de 128 bits quando suportado; a combinação identifica o arquivo no volume para comparação entre handles. https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_id_info
+
+Consequências para a implementação:
+
+1. Preferir enumeração por `GetFileInformationByHandleEx` no handle do diretório, com buffer alinhado e validação rigorosa de `NextEntryOffset` e `FileNameLength`.
+2. Tratar nomes da enumeração como candidatos, não como autorização de leitura.
+3. Abrir cada candidato relativamente ao handle pai com `NtCreateFile` e `FILE_OPEN_REPARSE_POINT`.
+4. Consultar `FileAttributeTagInfo`, `FileStandardInfo` e `FileIdInfo` no handle filho. Não confiar exclusivamente no FileId de 64 bits retornado na estrutura de enumeração.
+5. Comparar a identidade consultada no handle com a informação disponível na enumeração quando o filesystem oferecer identificadores comparáveis. Divergência ou ausência de informação exigida implica bloqueio.
+6. Testar explicitamente a classe de enumeração e o comportamento dos buffers em NTFS e ReFS. Filesystems sem suporte compatível não entram em fallback por caminho.
+
+A enumeração por handle reduz a dependência de caminhos, mas não elimina por si só corridas entre enumeração e abertura. A abertura relativa ao handle pai, sem seguir reparse points, e a validação do objeto efetivamente aberto continuam obrigatórias.
