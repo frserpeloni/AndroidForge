@@ -1,7 +1,6 @@
 """Abertura validada da raiz de uma unidade local no Windows x64.
 
-O módulo abre somente caminhos no formato exato X:\\, sem aceitar UNC,
-caminhos relativos ou componentes adicionais. Não altera arquivos.
+Aceita somente o formato exato X:\. Não altera arquivos.
 """
 from __future__ import annotations
 
@@ -10,11 +9,7 @@ import os
 import re
 from ctypes import wintypes
 
-from sermax_windows_handle_io import (
-    HandleIoError,
-    close_handle,
-    query_handle_metadata,
-)
+from sermax_windows_handle_io import close_handle, query_handle_metadata
 
 FILE_READ_ATTRIBUTES = 0x0080
 FILE_LIST_DIRECTORY = 0x0001
@@ -26,7 +21,7 @@ OPEN_EXISTING = 3
 FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
-_DRIVE_ROOT = re.compile(r"^[A-Za-z]:\\\\$")
+_DRIVE_ROOT = re.compile(r"^[A-Za-z]:\\$")
 
 
 class RootOpenError(RuntimeError):
@@ -35,14 +30,14 @@ class RootOpenError(RuntimeError):
 
 def _validate_drive_root(path: str) -> str:
     if not isinstance(path, str) or not _DRIVE_ROOT.fullmatch(path):
-        raise RootOpenError("Informe a raiz local no formato X:\\\\.")
+        raise RootOpenError("Informe a raiz local no formato X:\\.")
     if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
         raise RootOpenError("A abertura da raiz exige Windows x64.")
     return path
 
 
 def open_drive_root(path: str):
-    """Abre X:\\ como diretório e valida o objeto pelo handle retornado.
+    """Abre X:\ como diretório e valida o objeto pelo handle retornado.
 
     O chamador passa a ser responsável por fechar o handle com close_handle().
     A abertura compartilha leitura, escrita e exclusão para não impor bloqueio
