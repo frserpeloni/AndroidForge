@@ -57,7 +57,7 @@ def _parse_directory_buffer(buffer: bytes | bytearray | memoryview) -> list[dict
         except UnicodeDecodeError as exc:
             raise DirectoryEnumerationError("Nome contém UTF-16 inválido.") from exc
 
-        if not name or "\\x00" in name or "/" in name or "\\\\" in name:
+        if not name or "\x00" in name or "/" in name or "\\" in name:
             raise DirectoryEnumerationError("Nome de entrada inválido.")
         if name not in {".", ".."}:
             entries.append({
