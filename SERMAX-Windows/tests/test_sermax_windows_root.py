@@ -32,13 +32,14 @@ class DriveRootValidationTests(unittest.TestCase):
 )
 class DriveRootWindowsIntegrationTests(unittest.TestCase):
     def test_opens_and_validates_windows_system_root(self):
-        import ctypes.wintypes as wintypes
-
         buffer = ctypes.create_unicode_buffer(260)
-        length = ctypes.windll.kernel32.GetWindowsDirectoryW(buffer, len(buffer))
+        get_windows_directory = ctypes.windll.kernel32.GetWindowsDirectoryW
+        get_windows_directory.argtypes = [ctypes.c_wchar_p, ctypes.c_uint]
+        get_windows_directory.restype = ctypes.c_uint
+        length = get_windows_directory(buffer, len(buffer))
         self.assertGreater(length, 0)
         drive = buffer.value[:2]
-        handle = root.open_drive_root(drive + "\\\\")
+        handle = root.open_drive_root(drive + "\\")
         try:
             metadata = root.query_handle_metadata(handle)
             self.assertTrue(metadata["is_directory"])
