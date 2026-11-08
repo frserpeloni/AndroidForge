@@ -62,5 +62,55 @@ class DirectoryBufferParsingTests(unittest.TestCase):
                 enum_io.enumerate_directory_handle(1)
 
 
+    def test_rejects_nul_and_path_separators(self):
+        for invalid in ("a\x00b", "a/b", "a\\b"):
+            data = _entry(invalid)
+            with self.subTest(name=repr(invalid)):
+                with self.assertRaises(enum_io.DirectoryEnumerationError):
+                    enum_io._parse_directory_buffer(data)
+
+    @unittest.skipUnless(
+        __import__("os").name == "nt" and __import__("ctypes").sizeof(__import__("ctypes").c_void_p) == 8,
+        "Integração nativa exige Windows x64.",
+    )
+    def test_enumerates_real_directory_handle(self):
+        import ctypes
+        import ctypes.wintypes as wintypes
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            os.mkdir(os.path.join(root, "subdir"))
+            with open(os.path.join(root, "alpha.txt"), "w", encoding="utf-8") as stream:
+                stream.write("alpha")
+            with open(os.path.join(root, "beta.txt"), "w", encoding="utf-8") as stream:
+                stream.write("beta")
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                wintypes.HANDLE,
+            ]
+            create_file.restype = wintypes.HANDLE
+            close_handle = kernel32.CloseHandle
+            close_handle.argtypes = [wintypes.HANDLE]
+            close_handle.restype = wintypes.BOOL
+
+            directory = create_file(
+                root, 0x0001, 0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000, None,
+            )
+            self.assertNotEqual(directory, wintypes.HANDLE(-1).value)
+            try:
+                entries = enum_io.enumerate_directory_handle(directory)
+            finally:
+                self.assertTrue(close_handle(directory))
+
+            names = {entry["name"] for entry in entries}
+            self.assertEqual(names, {"subdir", "alpha.txt", "beta.txt"})
+
+
 if __name__ == "__main__":
     unittest.main()
