@@ -8,6 +8,7 @@ from __future__ import annotations
 import ctypes
 import os
 import re
+import unicodedata
 from ctypes import wintypes
 
 from sermax_windows_handle_abi import (
@@ -29,8 +30,9 @@ SYNCHRONIZE = 0x00100000
 FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 FILE_ATTRIBUTE_TAG_INFO_CLASS = 9
 FILE_STANDARD_INFO_CLASS = 1
+MAX_COMPONENT_UTF16_UNITS = 255
 _NAME_RESERVED = re.compile(
-    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$",
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\..*)?$",
     re.IGNORECASE,
 )
 
@@ -56,12 +58,20 @@ class FILE_STANDARD_INFO(ctypes.Structure):
 def _validate_component(name: str) -> None:
     if not isinstance(name, str) or not name or name in {".", ".."}:
         raise HandleIoError("É exigido um único nome de componente.")
-    if any(ch in name for ch in ("\\", "/", ":", "\x00")):
+    if any(ch in name for ch in ("\\\\", "/", ":", "\\x00")):
         raise HandleIoError("Separadores, ADS e NUL não são aceitos.")
-    if name.endswith((" ", ".")) or _NAME_RESERVED.fullmatch(name):
-        raise HandleIoError("Nome incompatível com as regras do Windows.")
     if any(ord(ch) < 32 for ch in name):
         raise HandleIoError("Caractere de controle no nome.")
+    try:
+        encoded_length = len(name.encode("utf-16-le", errors="strict"))
+    except UnicodeEncodeError as exc:
+        raise HandleIoError("Nome contém sequência Unicode inválida.") from exc
+    if encoded_length // 2 > MAX_COMPONENT_UTF16_UNITS:
+        raise HandleIoError("Nome excede 255 unidades UTF-16.")
+    if unicodedata.normalize("NFC", name) != name:
+        raise HandleIoError("Nome Unicode fora da forma NFC.")
+    if name.endswith((" ", ".")) or _NAME_RESERVED.fullmatch(name):
+        raise HandleIoError("Nome incompatível com as regras do Windows.")
 
 
 def _native_api():
