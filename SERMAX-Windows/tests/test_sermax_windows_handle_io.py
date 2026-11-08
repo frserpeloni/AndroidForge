@@ -54,6 +54,8 @@ class WindowsHandleIoValidationTests(unittest.TestCase):
         self.assertEqual(handle_io.FILE_STANDARD_INFO.NumberOfLinks.offset, 16)
         self.assertEqual(handle_io.FILE_STANDARD_INFO.DeletePending.offset, 20)
         self.assertEqual(handle_io.FILE_STANDARD_INFO.Directory.offset, 21)
+        self.assertEqual(ctypes.sizeof(handle_io.FILE_ID_INFO), 24)
+        self.assertEqual(handle_io.FILE_ID_INFO.FileId.offset, 8)
 
 
 class WindowsHandleIoIntegrationTests(unittest.TestCase):
@@ -92,6 +94,8 @@ class WindowsHandleIoIntegrationTests(unittest.TestCase):
                     metadata = handle_io.query_handle_metadata(opened)
                     self.assertTrue(metadata["is_directory"])
                     self.assertFalse(metadata["is_reparse_point"])
+                    self.assertEqual(len(metadata["file_id_128"]), 32)
+                    self.assertIsInstance(metadata["volume_serial_number"], int)
                 finally:
                     handle_io.close_handle(opened)
             finally:
