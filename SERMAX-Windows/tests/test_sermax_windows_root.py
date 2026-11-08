@@ -129,6 +129,46 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
         finally:
             root.close_handle(handle)
 
+    def test_opens_sermax_child_relative_to_temporary_parent_handle(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path:
+            child_path = os.path.join(parent_path, "SERMAX")
+            os.mkdir(child_path)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path, 0x0080 | 0x0001 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
+            try:
+                child = root.open_sermax_directory(parent)
+                try:
+                    metadata = root.query_handle_metadata(child)
+                    self.assertTrue(metadata["is_directory"])
+                    self.assertFalse(metadata["is_reparse_point"])
+                    self.assertEqual(
+                        metadata["volume_serial_number"],
+                        root.query_handle_metadata(parent)["volume_serial_number"],
+                    )
+                finally:
+                    root.close_handle(child)
+            finally:
+                self.assertTrue(close(parent))
+
 
 if __name__ == "__main__":
     unittest.main()
