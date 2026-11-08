@@ -108,7 +108,7 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
     attributes = OBJECT_ATTRIBUTES()
     attributes.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
     attributes.RootDirectory = parent_handle
-    attributes.ObjectName = ctypes.cast(unicode_name_ptr, ctypes.c_void_p)
+    attributes.ObjectName = unicode_name_ptr
     attributes.Attributes = OBJ_CASE_INSENSITIVE
 
     result_handle = wintypes.HANDLE()
