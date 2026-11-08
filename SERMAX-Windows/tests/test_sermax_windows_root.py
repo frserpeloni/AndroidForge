@@ -1,6 +1,7 @@
 import ctypes
 import os
 import unittest
+from unittest import mock
 
 import sermax_windows_root as root
 
@@ -24,6 +25,85 @@ class DriveRootValidationTests(unittest.TestCase):
         if os.name != "nt":
             with self.assertRaises(root.RootOpenError):
                 root._validate_drive_root("C:\\")
+
+
+class ManagedDirectoryTests(unittest.TestCase):
+    def setUp(self):
+        self.platform = mock.patch.object(root, "_require_windows_x64")
+        self.platform.start()
+        self.addCleanup(self.platform.stop)
+
+    def test_opens_sermax_relative_and_accepts_same_volume(self):
+        parent = object()
+        child = object()
+        metadata = {
+            "is_directory": True,
+            "is_reparse_point": False,
+            "delete_pending": False,
+            "volume_serial_number": 1234,
+        }
+        with (
+            mock.patch.object(root, "query_handle_metadata", side_effect=[metadata, metadata]),
+            mock.patch.object(root, "open_relative_component", return_value=child) as opener,
+            mock.patch.object(root, "close_handle") as closer,
+        ):
+            result = root.open_sermax_directory(parent)
+        self.assertIs(result, child)
+        opener.assert_called_once_with(parent, "SERMAX", directory=True)
+        closer.assert_not_called()
+
+    def test_rejects_parent_reparse_point_before_opening_child(self):
+        parent = object()
+        parent_metadata = {
+            "is_directory": True,
+            "is_reparse_point": True,
+            "delete_pending": False,
+            "volume_serial_number": 1234,
+        }
+        with (
+            mock.patch.object(root, "query_handle_metadata", return_value=parent_metadata),
+            mock.patch.object(root, "open_relative_component") as opener,
+        ):
+            with self.assertRaises(root.RootOpenError):
+                root.open_sermax_directory(parent)
+        opener.assert_not_called()
+
+    def test_rejects_cross_volume_child_and_closes_it(self):
+        parent, child = object(), object()
+        parent_metadata = {
+            "is_directory": True, "is_reparse_point": False,
+            "delete_pending": False, "volume_serial_number": 1234,
+        }
+        child_metadata = {
+            "is_directory": True, "is_reparse_point": False,
+            "delete_pending": False, "volume_serial_number": 5678,
+        }
+        with (
+            mock.patch.object(root, "query_handle_metadata",
+                              side_effect=[parent_metadata, child_metadata]),
+            mock.patch.object(root, "open_relative_component", return_value=child),
+            mock.patch.object(root, "close_handle") as closer,
+        ):
+            with self.assertRaisesRegex(root.RootOpenError, "outro volume"):
+                root.open_sermax_directory(parent)
+        closer.assert_called_once_with(child)
+
+    def test_rejects_non_directory_parent(self):
+        parent_metadata = {
+            "is_directory": False, "is_reparse_point": False,
+            "delete_pending": False, "volume_serial_number": 1234,
+        }
+        with (
+            mock.patch.object(root, "query_handle_metadata", return_value=parent_metadata),
+            mock.patch.object(root, "open_relative_component") as opener,
+        ):
+            with self.assertRaises(root.RootOpenError):
+                root.open_sermax_directory(object())
+        opener.assert_not_called()
+
+    def test_only_sermax_component_is_allowed(self):
+        with self.assertRaises(root.RootOpenError):
+            root.open_managed_directory(object(), "Windows")
 
 
 @unittest.skipUnless(
