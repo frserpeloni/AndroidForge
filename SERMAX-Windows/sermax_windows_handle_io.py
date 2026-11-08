@@ -28,6 +28,7 @@ SYNCHRONIZE = 0x00100000
 FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 FILE_ATTRIBUTE_TAG_INFO_CLASS = 9
 FILE_STANDARD_INFO_CLASS = 1
+FILE_ID_INFO_CLASS = 18
 MAX_COMPONENT_UTF16_UNITS = 255
 _NAME_RESERVED = re.compile(
     r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$",
@@ -41,6 +42,13 @@ class HandleIoError(RuntimeError):
 
 class FILE_ATTRIBUTE_TAG_INFO(ctypes.Structure):
     _fields_ = [("FileAttributes", wintypes.DWORD), ("ReparseTag", wintypes.DWORD)]
+
+
+class FILE_ID_INFO(ctypes.Structure):
+    _fields_ = [
+        ("VolumeSerialNumber", ctypes.c_ulonglong),
+        ("FileId", ctypes.c_ubyte * 16),
+    ]
 
 
 class FILE_STANDARD_INFO(ctypes.Structure):
@@ -152,17 +160,21 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
     return result_handle
 
 
-def query_handle_metadata(handle) -> dict[str, int | bool]:
+def query_handle_metadata(handle) -> dict[str, int | bool | str]:
     """Consulta atributos, reparse tag e metadados pelo handle aberto."""
     _, query, _ = _native_api()
     tag = FILE_ATTRIBUTE_TAG_INFO()
     standard = FILE_STANDARD_INFO()
+    identity = FILE_ID_INFO()
     if not query(handle, FILE_ATTRIBUTE_TAG_INFO_CLASS, ctypes.byref(tag), ctypes.sizeof(tag)):
         error = ctypes.get_last_error()
         raise HandleIoError(f"FileAttributeTagInfo falhou, WinError={error}")
     if not query(handle, FILE_STANDARD_INFO_CLASS, ctypes.byref(standard), ctypes.sizeof(standard)):
         error = ctypes.get_last_error()
         raise HandleIoError(f"FileStandardInfo falhou, WinError={error}")
+    if not query(handle, FILE_ID_INFO_CLASS, ctypes.byref(identity), ctypes.sizeof(identity)):
+        error = ctypes.get_last_error()
+        raise HandleIoError(f"FileIdInfo falhou, WinError={error}")
     return {
         "attributes": int(tag.FileAttributes),
         "reparse_tag": int(tag.ReparseTag),
@@ -171,6 +183,8 @@ def query_handle_metadata(handle) -> dict[str, int | bool]:
         "end_of_file": int(standard.EndOfFile),
         "number_of_links": int(standard.NumberOfLinks),
         "delete_pending": bool(standard.DeletePending),
+        "volume_serial_number": int(identity.VolumeSerialNumber),
+        "file_id_128": bytes(identity.FileId).hex(),
     }
 
 
