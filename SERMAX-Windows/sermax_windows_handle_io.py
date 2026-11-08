@@ -11,7 +11,6 @@ import re
 from ctypes import wintypes
 
 from sermax_windows_handle_abi import (
-    FILE_DIRECTORY_FILE,
     FILE_NON_DIRECTORY_FILE,
     FILE_OPEN,
     FILE_OPEN_REPARSE_POINT,
@@ -118,7 +117,8 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
     result_handle = wintypes.HANDLE()
     io_status = IO_STATUS_BLOCK()
     options = FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT
-    options |= FILE_DIRECTORY_FILE if directory else FILE_NON_DIRECTORY_FILE
+    if not directory:
+        options |= FILE_NON_DIRECTORY_FILE
 
     status = create(
         ctypes.byref(result_handle),
@@ -135,6 +135,20 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
     )
     if status < 0:
         raise HandleIoError(f"NtCreateFile falhou, NTSTATUS=0x{status & 0xffffffff:08X}")
+
+    # FILE_DIRECTORY_FILE não é combinado com FILE_OPEN_REPARSE_POINT.
+    # Para diretórios, validar o objeto efetivamente aberto pelo próprio handle.
+    if directory:
+        try:
+            metadata = query_handle_metadata(result_handle)
+            if not metadata["is_directory"] or metadata["is_reparse_point"]:
+                raise HandleIoError("O componente aberto não é um diretório regular.")
+        except Exception:
+            try:
+                close_handle(result_handle)
+            except Exception:
+                pass
+            raise
     return result_handle
 
 
