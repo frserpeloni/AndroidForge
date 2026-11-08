@@ -170,10 +170,6 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class DriveRootHandleLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.platform = mock.patch.object(root, "_require_windows_x64")
@@ -199,7 +195,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             mock.patch.object(root, "query_handle_metadata", return_value=metadata),
             mock.patch.object(root, "close_handle") as closer,
         ):
-            result = root.open_drive_root("C:\\\\")
+            result = root.open_drive_root("C:\\")
         self.assertEqual(result, handle)
         closer.assert_not_called()
         kernel32.CreateFileW.assert_called_once()
@@ -233,3 +229,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "metadata failure"):
                 root.open_drive_root("C:\\\\")
         closer.assert_called_once_with(handle)
+
+
+if __name__ == "__main__":
+    unittest.main()
