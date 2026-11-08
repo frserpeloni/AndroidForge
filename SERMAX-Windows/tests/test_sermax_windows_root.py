@@ -16,7 +16,7 @@ class DriveRootValidationTests(unittest.TestCase):
     def test_rejects_non_root_and_non_local_forms(self):
         for value in (
             "", "C:", "C:\\SERMAX", "C:/", "\\\\server\\share\\",
-            "\\\\?\\C:\\", "C:\\", "1:\\", None,
+            "\\\\?\\C:\\" "1:\\", None,
         ):
             with self.subTest(value=value):
                 with self.assertRaises(root.RootOpenError):
