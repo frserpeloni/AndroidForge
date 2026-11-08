@@ -8,7 +8,6 @@ from __future__ import annotations
 import ctypes
 import os
 import re
-import unicodedata
 from ctypes import wintypes
 
 from sermax_windows_handle_abi import (
@@ -68,8 +67,6 @@ def _validate_component(name: str) -> None:
         raise HandleIoError("Nome contém sequência Unicode inválida.") from exc
     if encoded_length // 2 > MAX_COMPONENT_UTF16_UNITS:
         raise HandleIoError("Nome excede 255 unidades UTF-16.")
-    if unicodedata.normalize("NFC", name) != name:
-        raise HandleIoError("Nome Unicode fora da forma NFC.")
     if name.endswith((" ", ".")) or _NAME_RESERVED.fullmatch(name):
         raise HandleIoError("Nome incompatível com as regras do Windows.")
 
