@@ -231,5 +231,38 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
         closer.assert_called_once_with(handle)
 
 
+    def test_rejects_regular_file_named_sermax(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path:
+            file_path = os.path.join(parent_path, "SERMAX")
+            with open(file_path, "w", encoding="utf-8") as stream:
+                stream.write("not a directory")
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path, 0x0080 | 0x0001 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
+            try:
+                with self.assertRaisesRegex(Exception, "diretório regular"):
+                    root.open_sermax_directory(parent)
+            finally:
+                self.assertTrue(close(parent))
+
+
 if __name__ == "__main__":
     unittest.main()
