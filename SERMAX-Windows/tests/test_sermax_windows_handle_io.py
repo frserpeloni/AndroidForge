@@ -23,6 +23,18 @@ class WindowsHandleIoValidationTests(unittest.TestCase):
                 with self.assertRaises(handle_io.HandleIoError):
                     handle_io._validate_component(name)
 
+    def test_rejects_component_over_255_utf16_units(self):
+        with self.assertRaises(handle_io.HandleIoError):
+            handle_io._validate_component("a" * 256)
+
+    def test_rejects_non_nfc_unicode(self):
+        with self.assertRaises(handle_io.HandleIoError):
+            handle_io._validate_component("e\\u0301.txt")
+
+    def test_rejects_unpaired_surrogates(self):
+        with self.assertRaises(handle_io.HandleIoError):
+            handle_io._validate_component("\\ud800")
+
     def test_rejects_control_characters(self):
         with self.assertRaises(handle_io.HandleIoError):
             handle_io._validate_component("arquivo\n.txt")
