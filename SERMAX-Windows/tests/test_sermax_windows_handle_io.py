@@ -105,6 +105,55 @@ class WindowsHandleIoIntegrationTests(unittest.TestCase):
         os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
         "Integração nativa exige Windows x64.",
     )
+    def test_regular_file_metadata_and_identity_are_read_from_open_handle(self):
+        import ctypes.wintypes as wintypes
+
+        with tempfile.TemporaryDirectory() as root:
+            path = os.path.join(root, "sample.bin")
+            payload = b"SERMAX-handle-identity"
+            with open(path, "wb") as stream:
+                stream.write(payload)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                wintypes.HANDLE,
+            ]
+            create_file.restype = wintypes.HANDLE
+            close_handle = kernel32.CloseHandle
+            close_handle.argtypes = [wintypes.HANDLE]
+            close_handle.restype = wintypes.BOOL
+            parent = create_file(
+                root, 0x0080, 0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000, None,
+            )
+            self.assertNotEqual(parent, wintypes.HANDLE(-1).value)
+            try:
+                first = handle_io.open_relative_component(parent, "sample.bin")
+                second = handle_io.open_relative_component(parent, "sample.bin")
+                try:
+                    first_info = handle_io.query_handle_metadata(first)
+                    second_info = handle_io.query_handle_metadata(second)
+                    self.assertFalse(first_info["is_directory"])
+                    self.assertFalse(first_info["is_reparse_point"])
+                    self.assertEqual(first_info["end_of_file"], len(payload))
+                    self.assertEqual(first_info["volume_serial_number"],
+                                     second_info["volume_serial_number"])
+                    self.assertEqual(first_info["file_id_128"],
+                                     second_info["file_id_128"])
+                    self.assertEqual(len(first_info["file_id_128"]), 32)
+                finally:
+                    handle_io.close_handle(second)
+                    handle_io.close_handle(first)
+            finally:
+                self.assertTrue(close_handle(parent))
+
+    @unittest.skipUnless(
+        os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
+        "Integração nativa exige Windows x64.",
+    )
     def test_directory_request_rejects_regular_file_and_closes_handle(self):
         import ctypes.wintypes as wintypes
 
