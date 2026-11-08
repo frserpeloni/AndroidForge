@@ -4,6 +4,7 @@ import unittest
 from unittest import mock
 
 import sermax_windows_root as root
+from sermax_windows_handle_io import HandleIoError
 
 
 class DriveRootValidationTests(unittest.TestCase):
@@ -180,7 +181,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
         def create_file(*args):
             return handle
 
-        return mock.Mock(CreateFileW=create_file)
+        return mock.Mock(CreateFileW=mock.Mock(side_effect=create_file))
 
     def test_returns_validated_root_handle_without_closing_it(self):
         handle = 123456
@@ -258,7 +259,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             )
             self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
             try:
-                with self.assertRaisesRegex(Exception, "diretório regular"):
+                with self.assertRaisesRegex(HandleIoError, "diretório regular"):
                     root.open_sermax_directory(parent)
             finally:
                 self.assertTrue(close(parent))
