@@ -1,7 +1,7 @@
 """Operações iniciais de I/O por handle, isoladas para Windows x64.
 
-Este módulo abre um único componente relativamente a um handle de diretório já
-validado. Não resolve a raiz, não enumera diretórios e não lê conteúdo.
+Abre um único componente relativamente a um handle de diretório já validado.
+Não resolve a raiz, não enumera diretórios e não lê conteúdo.
 """
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ from sermax_windows_handle_abi import (
     FILE_SYNCHRONOUS_IO_NONALERT,
     OBJ_CASE_INSENSITIVE,
     OBJECT_ATTRIBUTES,
-    PUNICODE_STRING,
     UNICODE_STRING,
     IO_STATUS_BLOCK,
     NativeApiError,
@@ -27,12 +26,11 @@ from sermax_windows_handle_abi import (
 
 FILE_READ_ATTRIBUTES = 0x0080
 SYNCHRONIZE = 0x00100000
-FILE_ATTRIBUTE_DIRECTORY = 0x00000010
 FILE_ATTRIBUTE_REPARSE_POINT = 0x00000400
 FILE_ATTRIBUTE_TAG_INFO_CLASS = 9
 FILE_STANDARD_INFO_CLASS = 1
 _NAME_RESERVED = re.compile(
-    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\..*)?$",
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$",
     re.IGNORECASE,
 )
 
@@ -58,7 +56,7 @@ class FILE_STANDARD_INFO(ctypes.Structure):
 def _validate_component(name: str) -> None:
     if not isinstance(name, str) or not name or name in {".", ".."}:
         raise HandleIoError("É exigido um único nome de componente.")
-    if any(ch in name for ch in ("\\\\", "/", ":", "\\x00")):
+    if any(ch in name for ch in ("\\", "/", ":", "\x00")):
         raise HandleIoError("Separadores, ADS e NUL não são aceitos.")
     if name.endswith((" ", ".")) or _NAME_RESERVED.fullmatch(name):
         raise HandleIoError("Nome incompatível com as regras do Windows.")
@@ -91,8 +89,8 @@ def _native_api():
 def open_relative_component(parent_handle, name: str, *, directory: bool = False):
     """Abre um componente sob parent_handle sem seguir reparse point.
 
-    O chamador deve manter parent_handle aberto e já ter validado que representa
-    um diretório confiável. O handle retornado pertence ao chamador.
+    O chamador deve manter parent_handle aberto e validado como diretório.
+    O handle retornado pertence ao chamador e deve ser fechado por ele.
     """
     _validate_component(name)
     create, _, _ = _native_api()
@@ -104,11 +102,10 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
         MaximumLength=encoded_length + 2,
         Buffer=ctypes.cast(name_buffer, wintypes.LPWSTR),
     )
-    unicode_name_ptr = ctypes.pointer(unicode_name)
     attributes = OBJECT_ATTRIBUTES()
     attributes.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
     attributes.RootDirectory = parent_handle
-    attributes.ObjectName = unicode_name_ptr
+    attributes.ObjectName = ctypes.pointer(unicode_name)
     attributes.Attributes = OBJ_CASE_INSENSITIVE
 
     result_handle = wintypes.HANDLE()
