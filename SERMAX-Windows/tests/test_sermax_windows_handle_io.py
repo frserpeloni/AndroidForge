@@ -76,6 +76,9 @@ class WindowsHandleIoIntegrationTests(unittest.TestCase):
                 wintypes.HANDLE,
             ]
             create_file.restype = wintypes.HANDLE
+            close_handle = kernel32.CloseHandle
+            close_handle.argtypes = [wintypes.HANDLE]
+            close_handle.restype = wintypes.BOOL
             parent = create_file(
                 root, 0x0080, 0x00000001 | 0x00000002 | 0x00000004,
                 None, 3, 0x02000000, None,
@@ -92,7 +95,7 @@ class WindowsHandleIoIntegrationTests(unittest.TestCase):
                 finally:
                     handle_io.close_handle(opened)
             finally:
-                kernel32.CloseHandle(parent)
+                close_handle(parent)
 
     @unittest.skipUnless(
         os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
