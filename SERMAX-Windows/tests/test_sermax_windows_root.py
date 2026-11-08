@@ -15,7 +15,7 @@ class DriveRootValidationTests(unittest.TestCase):
     def test_rejects_non_root_and_non_local_forms(self):
         for value in (
             "", "C:", "C:\\SERMAX", "C:/", "\\\\server\\share\\",
-            "\\\\?\\C:\\", "C:\\\\", "1:\\", None,
+            "\\\\?\\C:\\", "C:\\", "1:\\", None,
         ):
             with self.subTest(value=value):
                 with self.assertRaises(root.RootOpenError):
@@ -214,7 +214,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             mock.patch.object(root, "close_handle") as closer,
         ):
             with self.assertRaisesRegex(root.RootOpenError, "reparse point"):
-                root.open_drive_root("C:\\\\")
+                root.open_drive_root("C:\\")
         closer.assert_called_once_with(handle)
 
     def test_closes_root_handle_when_metadata_query_fails(self):
@@ -227,7 +227,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             mock.patch.object(root, "close_handle") as closer,
         ):
             with self.assertRaisesRegex(RuntimeError, "metadata failure"):
-                root.open_drive_root("C:\\\\")
+                root.open_drive_root("C:\\")
         closer.assert_called_once_with(handle)
 
 
