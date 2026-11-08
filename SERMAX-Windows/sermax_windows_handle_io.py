@@ -32,7 +32,7 @@ FILE_ATTRIBUTE_TAG_INFO_CLASS = 9
 FILE_STANDARD_INFO_CLASS = 1
 MAX_COMPONENT_UTF16_UNITS = 255
 _NAME_RESERVED = re.compile(
-    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\\..*)?$",
+    r"^(?:CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\..*)?$",
     re.IGNORECASE,
 )
 
@@ -58,7 +58,7 @@ class FILE_STANDARD_INFO(ctypes.Structure):
 def _validate_component(name: str) -> None:
     if not isinstance(name, str) or not name or name in {".", ".."}:
         raise HandleIoError("É exigido um único nome de componente.")
-    if any(ch in name for ch in ("\\\\", "/", ":", "\\x00")):
+    if any(ch in name for ch in ("\\", "/", ":", "\x00")):
         raise HandleIoError("Separadores, ADS e NUL não são aceitos.")
     if any(ord(ch) < 32 for ch in name):
         raise HandleIoError("Caractere de controle no nome.")
