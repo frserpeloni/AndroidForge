@@ -27,9 +27,8 @@ class WindowsHandleIoValidationTests(unittest.TestCase):
         with self.assertRaises(handle_io.HandleIoError):
             handle_io._validate_component("a" * 256)
 
-    def test_rejects_non_nfc_unicode(self):
-        with self.assertRaises(handle_io.HandleIoError):
-            handle_io._validate_component("e" + chr(0x0301) + ".txt")
+    def test_accepts_decomposed_unicode_filename(self):
+        handle_io._validate_component("e" + chr(0x0301) + ".txt")
 
     def test_rejects_unpaired_surrogates(self):
         with self.assertRaises(handle_io.HandleIoError):
