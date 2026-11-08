@@ -1,7 +1,7 @@
 # Projeto de abertura segura da raiz do volume
 
 Data: 08/11/2026  
-Estado: especificação técnica, ainda não implementada
+Estado: implementação isolada inicial registrada; validação Windows x64 e integração ao inventário ainda pendentes
 
 ## Objetivo
 
@@ -86,6 +86,16 @@ O compartilhamento inicial conservador do código atual é `FILE_SHARE_READ`. Is
 - CI registra explicitamente testes aprovados, falhos e ignorados. Teste ignorado não conta como aprovado.
 - Nenhuma integração ao inventário ou ao atualizador ocorre nesta etapa.
 
+## Implementação registrada em 08/11/2026
+
+O módulo `sermax_windows_root.py` implementa a abertura de `X:\\` com `CreateFileW`, `OPEN_EXISTING`, `FILE_FLAG_BACKUP_SEMANTICS` e `FILE_FLAG_OPEN_REPARSE_POINT`. Consulta metadados pelo handle e rejeita objeto que não seja diretório, reparse point ou esteja marcado para exclusão.
+
+O mesmo módulo implementa `open_sermax_directory(root_handle)`. A função abre o componente `SERMAX` relativamente ao handle pai, consulta novamente os metadados e exige que o filho seja diretório regular no mesmo volume. Em caso de falha de validação, fecha o handle filho. O handle da raiz deve permanecer aberto pelo chamador durante a operação.
+
+Os testes `test_sermax_windows_root.py` incluem validação de caminhos, testes com mocks para rejeição de reparse point e divergência de volume, além de integração Windows x64 para abertura da raiz e abertura relativa de um diretório temporário chamado `SERMAX`.
+
+**Estado de validação:** os commits de implementação ainda não têm execução de CI confirmada nesta branch. Os testes Windows são critérios pendentes, não resultados aprovados. A abertura da raiz por letra também não prova, por si só, que o volume não seja SUBST ou ponto de montagem. A política inicial exige investigação adicional antes de autorizar volumes montados.
+
 ## Próxima ação
 
-Implementar um wrapper isolado de abertura da raiz do volume, após revisar a ABI de `CreateFileW` e os direitos de acesso. Em seguida, executar a matriz no runner Windows. Só depois avaliar a abertura relativa de `SERMAX`.
+Executar a suíte no runner Windows x64, revisar os logs e ampliar testes de falha/concorrência. Só depois avaliar a caminhada incremental de subdiretórios. Não integrar ao inventário, leitura, hash ou atualizador nesta etapa.
