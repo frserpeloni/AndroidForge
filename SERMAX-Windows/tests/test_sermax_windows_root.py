@@ -171,7 +171,7 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
-    def test_managed_directory_handle_blocks_concurrent_write_open(self):
+    def test_managed_directory_handle_blocks_concurrent_delete_open(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as parent_path:
@@ -200,7 +200,7 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 managed = root.open_sermax_directory(parent)
                 try:
                     competing = create_file(
-                        child_path, 0x00000002,
+                        child_path, 0x00010000,
                         0x00000001 | 0x00000002 | 0x00000004,
                         None, 3, 0x02000000 | 0x00200000, None,
                     )
