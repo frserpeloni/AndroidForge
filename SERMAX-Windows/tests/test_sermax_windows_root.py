@@ -469,6 +469,9 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             close = kernel32.CloseHandle
             close.argtypes = [ctypes.c_void_p]
             close.restype = ctypes.c_int
+            create_directory = kernel32.CreateDirectoryW
+            create_directory.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p]
+            create_directory.restype = ctypes.c_int
 
             parent = create_file(
                 parent_path, 0x0080 | 0x0001 | 0x00100000,
@@ -494,7 +497,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
 
                 nested_path = os.path.join(managed_path, "denied-dir")
                 ctypes.set_last_error(0)
-                self.assertFalse(kernel32.CreateDirectoryW(nested_path, None))
+                self.assertFalse(create_directory(nested_path, None))
                 self.assertEqual(ctypes.get_last_error(), 5)
             finally:
                 if managed is not None:
