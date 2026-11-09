@@ -1,7 +1,7 @@
 # Projeto de abertura segura da raiz do volume
 
-Data: 08/11/2026  
-Estado: implementação isolada inicial registrada; validação Windows x64 e integração ao inventário ainda pendentes
+Data: 09/11/2026  
+Estado: abertura isolada validada em CI Windows x64 no commit `4d9b5f9535c41d421d0f0314e4c8c7ef74f55271`; integração ao inventário permanece bloqueada
 
 ## Objetivo
 
@@ -94,8 +94,14 @@ O mesmo módulo implementa `open_sermax_directory(root_handle)`. A função abre
 
 Os testes `test_sermax_windows_root.py` incluem validação de caminhos, testes com mocks para rejeição de reparse point e divergência de volume, além de integração Windows x64 para abertura da raiz, abertura relativa de um diretório temporário chamado `SERMAX` e rejeição de um arquivo regular com esse nome.
 
-**Estado de validação:** o teste adicional que coloca um arquivo regular chamado `SERMAX` no lugar do diretório foi registrado em 08/11/2026. Os commits de implementação e desse teste ainda não têm execução de CI confirmada nesta branch. Os testes Windows são critérios pendentes, não resultados aprovados. A abertura da raiz por letra também não prova, por si só, que o volume não seja SUBST ou ponto de montagem. A política inicial exige investigação adicional antes de autorizar volumes montados.
+**Estado de validação em 09/11/2026:** a execução GitHub Actions nº 309, run ID `42605467632`, associada ao commit `4d9b5f9535c41d421d0f0314e4c8c7ef74f55271`, concluiu com sucesso no runner Windows x64. O job `validate-and-build` passou por verificação das fontes e do terminal original, preparação dos ambientes Python 3.14/3.13, compilação e testes de integração, build do `SERMAX.exe`, smoke test do executável/terminal e publicação do artifact experimental. O log registra `Ran 143 tests ... OK`. O teste `test_rejects_symlink_named_sermax` aparece como `ok`, sem `skip`. O teste de arquivo regular também aparece como `ok`. Esta aprovação valida o commit exato citado, mas não representa validação em todas as versões de Windows nem teste na máquina do usuário.
+
+**Gates ainda pendentes:** teste de junction no componente `SERMAX`; concorrência de renomeação/remoção e abertura; compartilhamento com handles concorrentes de leitura, escrita e exclusão; falhas de fechamento de handles; política para `SUBST`, mount points e volumes removíveis; confirmação dos filesystems suportados. A abertura da raiz por letra não prova, por si só, que o volume não seja `SUBST` ou ponto de montagem. A política exige investigação adicional antes de autorizar esses casos.
+
+Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/42605467632
+
+O artifact publicado é experimental, não instalador. Não instalar em `C:\\SERMAX`.
 
 ## Próxima ação
 
-Executar a suíte no runner Windows x64, revisar os logs e ampliar testes de falha/concorrência. Só depois avaliar a caminhada incremental de subdiretórios. Não integrar ao inventário, leitura, hash ou atualizador nesta etapa.
+Implementar e executar testes reais para junction, concorrência, share modes e ciclo de vida de handles. Definir a política de volumes antes de ampliar a caminhada incremental. Não integrar ao inventário, leitura, hash ou atualizador nesta etapa.
