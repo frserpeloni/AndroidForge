@@ -221,7 +221,7 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
                 ace_type == win32security.ACCESS_DENIED_ACE_TYPE
                 and (ace_flags & inherit_flags) == inherit_flags
                 and (ace[1] & denied_mask) == denied_mask
-                and ace[2].GetBinaryForm() == sid.GetBinaryForm()
+                and win32security.ConvertSidToStringSid(ace[2]) == win32security.ConvertSidToStringSid(sid)
             ):
                 return False
 
@@ -264,7 +264,7 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
                 ace_type == win32security.ACCESS_DENIED_ACE_TYPE
                 and (ace_flags & inherit_flags) == inherit_flags
                 and (ace[1] & denied_mask) == denied_mask
-                and ace[2].GetBinaryForm() == sid.GetBinaryForm()
+                and win32security.ConvertSidToStringSid(ace[2]) == win32security.ConvertSidToStringSid(sid)
             ):
                 return True
         raise RootOpenError("A ACE de negação não foi confirmada após a gravação.")
