@@ -224,19 +224,19 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
             ):
                 return False
 
-        updated_dacl = win32security.ACL()
-        updated_dacl.AddAccessDeniedAceEx(
-            win32security.ACL_REVISION_DS,
-            inherit_flags,
-            denied_mask,
-            sid,
-        )
-        for index in range(current_dacl.GetAceCount()):
-            updated_dacl.AddAce(
-                win32security.ACL_REVISION_DS,
-                updated_dacl.GetAceCount(),
-                current_dacl.GetAce(index),
-            )
+        updated_dacl = current_dacl
+        updated_dacl.SetEntriesInAcl([
+            {
+                "AccessMode": win32security.DENY_ACCESS,
+                "AccessPermissions": denied_mask,
+                "Inheritance": inherit_flags,
+                "Trustee": {
+                    "TrusteeType": win32security.TRUSTEE_IS_USER,
+                    "TrusteeForm": win32security.TRUSTEE_IS_SID,
+                    "Identifier": sid,
+                },
+            }
+        ])
 
         win32security.SetSecurityInfo(
             native_handle,
