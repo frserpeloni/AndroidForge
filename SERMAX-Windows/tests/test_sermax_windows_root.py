@@ -200,7 +200,7 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 managed = root.open_sermax_directory(parent)
                 try:
                     competing = create_file(
-                        child_path, 0x00000100,
+                        child_path, 0x00000002,
                         0x00000001 | 0x00000002 | 0x00000004,
                         None, 3, 0x02000000 | 0x00200000, None,
                     )
