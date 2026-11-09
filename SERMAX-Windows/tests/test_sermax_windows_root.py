@@ -229,6 +229,52 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
             finally:
                 self.assertTrue(close(parent))
 
+    def test_managed_directory_handle_blocks_concurrent_entry_creation_access(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path:
+            child_path = os.path.join(parent_path, "SERMAX")
+            os.mkdir(child_path)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path, 0x0080 | 0x0001 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
+            try:
+                managed = root.open_sermax_directory(parent)
+                try:
+                    # FILE_ADD_FILE and FILE_ADD_SUBDIRECTORY are directory
+                    # access rights. Each competing open must fail because
+                    # the managed handle intentionally shares read access only.
+                    for access in (0x00000002, 0x00000004):
+                        with self.subTest(access=hex(access)):
+                            ctypes.set_last_error(0)
+                            competing = create_file(
+                                child_path, access,
+                                0x00000001 | 0x00000002 | 0x00000004,
+                                None, 3, 0x02000000 | 0x00200000, None,
+                            )
+                            self.assertEqual(competing, root.INVALID_HANDLE_VALUE)
+                            self.assertEqual(ctypes.get_last_error(), 32)
+                finally:
+                    root.close_handle(managed)
+            finally:
+                self.assertTrue(close(parent))
+
     def test_rejects_junction_named_sermax(self):
         import subprocess
         import tempfile
