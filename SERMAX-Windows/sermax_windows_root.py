@@ -191,11 +191,19 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
     except ImportError as exc:
         raise RootOpenError("A camada de ACL exige o módulo win32security.") from exc
 
+    native_handle = (
+        directory_handle.value
+        if isinstance(directory_handle, ctypes.c_void_p)
+        else directory_handle
+    )
+    if native_handle is None:
+        raise RootOpenError("Handle nulo para alteração de ACL.")
+
     denied_mask = FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY
     inherit_flags = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
     try:
         current_sd = win32security.GetSecurityInfo(
-            directory_handle,
+            native_handle,
             win32security.SE_FILE_OBJECT,
             win32security.DACL_SECURITY_INFORMATION,
         )
@@ -231,7 +239,7 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
             )
 
         win32security.SetSecurityInfo(
-            directory_handle,
+            native_handle,
             win32security.SE_FILE_OBJECT,
             win32security.DACL_SECURITY_INFORMATION,
             None,
@@ -241,7 +249,7 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
         )
 
         verified_sd = win32security.GetSecurityInfo(
-            directory_handle,
+            native_handle,
             win32security.SE_FILE_OBJECT,
             win32security.DACL_SECURITY_INFORMATION,
         )
