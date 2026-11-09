@@ -171,7 +171,7 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
-    def test_managed_directory_handle_blocks_concurrent_rename(self):
+    def test_managed_directory_handle_preserves_identity_after_parent_rename(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as parent_path:
@@ -200,11 +200,20 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
             try:
                 managed = root.open_sermax_directory(parent)
                 try:
-                    with self.assertRaises(PermissionError) as raised:
-                        os.rename(child_path, renamed_path)
-                    self.assertEqual(raised.exception.winerror, 32)
-                    self.assertTrue(os.path.isdir(child_path))
-                    self.assertFalse(os.path.exists(renamed_path))
+                    before = root.query_handle_metadata(managed)
+                    os.rename(child_path, renamed_path)
+                    after = root.query_handle_metadata(managed)
+
+                    self.assertFalse(os.path.exists(child_path))
+                    self.assertTrue(os.path.isdir(renamed_path))
+                    self.assertEqual(
+                        before["volume_serial_number"],
+                        after["volume_serial_number"],
+                    )
+                    self.assertEqual(before["file_id_128"], after["file_id_128"])
+
+                    reopened = root.open_sermax_directory(parent) if os.path.exists(child_path) else None
+                    self.assertIsNone(reopened)
                 finally:
                     root.close_handle(managed)
             finally:
