@@ -212,8 +212,18 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                     )
                     self.assertEqual(before["file_id_128"], after["file_id_128"])
 
-                    reopened = root.open_sermax_directory(parent) if os.path.exists(child_path) else None
-                    self.assertIsNone(reopened)
+                    reopened = root.open_relative_component(
+                        parent, "SERMAX-renamed", directory=True
+                    )
+                    try:
+                        reopened_info = root.query_handle_metadata(reopened)
+                        self.assertEqual(
+                            after["volume_serial_number"],
+                            reopened_info["volume_serial_number"],
+                        )
+                        self.assertEqual(after["file_id_128"], reopened_info["file_id_128"])
+                    finally:
+                        root.close_handle(reopened)
                 finally:
                     root.close_handle(managed)
             finally:
