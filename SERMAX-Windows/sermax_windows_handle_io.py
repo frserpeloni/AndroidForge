@@ -100,11 +100,19 @@ def _native_api():
     return create, query, close
 
 
-def open_relative_component(parent_handle, name: str, *, directory: bool = False):
+def open_relative_component(
+    parent_handle,
+    name: str,
+    *,
+    directory: bool = False,
+    desired_access: int | None = None,
+):
     """Abre um componente sob parent_handle sem seguir reparse point.
 
     O chamador deve manter parent_handle aberto e validado como diretório.
     O handle retornado pertence ao chamador e deve ser fechado por ele.
+    desired_access permite solicitar direitos adicionais, como READ_CONTROL
+    e WRITE_DAC, sem ampliar o acesso padrão dos demais chamadores.
     """
     _validate_component(name)
     create, _, _ = _native_api()
@@ -128,9 +136,16 @@ def open_relative_component(parent_handle, name: str, *, directory: bool = False
     if not directory:
         options |= FILE_NON_DIRECTORY_FILE
 
+    if desired_access is None:
+        access_mask = FILE_READ_ATTRIBUTES | SYNCHRONIZE
+    elif isinstance(desired_access, int) and desired_access >= 0:
+        access_mask = desired_access | FILE_READ_ATTRIBUTES | SYNCHRONIZE
+    else:
+        raise HandleIoError("desired_access deve ser uma máscara inteira não negativa.")
+
     status = create(
         ctypes.byref(result_handle),
-        FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        access_mask,
         ctypes.byref(attributes),
         ctypes.byref(io_status),
         None,
