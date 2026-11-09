@@ -216,11 +216,12 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
 
         for index in range(current_dacl.GetAceCount()):
             ace = current_dacl.GetAce(index)
+            ace_type, ace_flags = ace[0]
             if (
-                ace[0] == win32security.ACCESS_DENIED_ACE_TYPE
-                and (ace[1] & inherit_flags) == inherit_flags
-                and (ace[2] & denied_mask) == denied_mask
-                and win32security.EqualSid(ace[3], sid)
+                ace_type == win32security.ACCESS_DENIED_ACE_TYPE
+                and (ace_flags & inherit_flags) == inherit_flags
+                and (ace[1] & denied_mask) == denied_mask
+                and win32security.EqualSid(ace[2], sid)
             ):
                 return False
 
@@ -258,11 +259,12 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
             raise RootOpenError("A verificação posterior encontrou DACL ausente.")
         for index in range(verified_dacl.GetAceCount()):
             ace = verified_dacl.GetAce(index)
+            ace_type, ace_flags = ace[0]
             if (
-                ace[0] == win32security.ACCESS_DENIED_ACE_TYPE
-                and (ace[1] & inherit_flags) == inherit_flags
-                and (ace[2] & denied_mask) == denied_mask
-                and win32security.EqualSid(ace[3], sid)
+                ace_type == win32security.ACCESS_DENIED_ACE_TYPE
+                and (ace_flags & inherit_flags) == inherit_flags
+                and (ace[1] & denied_mask) == denied_mask
+                and win32security.EqualSid(ace[2], sid)
             ):
                 return True
         raise RootOpenError("A ACE de negação não foi confirmada após a gravação.")
