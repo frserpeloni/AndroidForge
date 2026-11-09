@@ -194,11 +194,12 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
     denied_mask = FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY
     inherit_flags = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
     try:
-        _, _, current_dacl, _ = win32security.GetSecurityInfo(
+        current_sd = win32security.GetSecurityInfo(
             directory_handle,
             win32security.SE_FILE_OBJECT,
             win32security.DACL_SECURITY_INFORMATION,
         )
+        current_dacl = current_sd.GetSecurityDescriptorDacl()
         if current_dacl is None:
             raise RootOpenError(
                 "DACL ausente ou nula; alteração recusada para evitar liberar ou bloquear "
@@ -239,11 +240,12 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
             None,
         )
 
-        _, _, verified_dacl, _ = win32security.GetSecurityInfo(
+        verified_sd = win32security.GetSecurityInfo(
             directory_handle,
             win32security.SE_FILE_OBJECT,
             win32security.DACL_SECURITY_INFORMATION,
         )
+        verified_dacl = verified_sd.GetSecurityDescriptorDacl()
         if verified_dacl is None:
             raise RootOpenError("A verificação posterior encontrou DACL ausente.")
         for index in range(verified_dacl.GetAceCount()):
