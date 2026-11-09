@@ -229,12 +229,13 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
             finally:
                 self.assertTrue(close(parent))
 
-    def test_managed_directory_handle_blocks_concurrent_entry_creation_access(self):
+    def test_managed_directory_handle_share_mode_does_not_lock_child_entries(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as parent_path:
             child_path = os.path.join(parent_path, "SERMAX")
             os.mkdir(child_path)
+            entry_path = os.path.join(child_path, "probe.tmp")
 
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
             create_file = kernel32.CreateFileW
@@ -257,19 +258,16 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
             try:
                 managed = root.open_sermax_directory(parent)
                 try:
-                    # FILE_ADD_FILE and FILE_ADD_SUBDIRECTORY are directory
-                    # access rights. Each competing open must fail because
-                    # the managed handle intentionally shares read access only.
-                    for access in (0x00000002, 0x00000004):
-                        with self.subTest(access=hex(access)):
-                            ctypes.set_last_error(0)
-                            competing = create_file(
-                                child_path, access,
-                                0x00000001 | 0x00000002 | 0x00000004,
-                                None, 3, 0x02000000 | 0x00200000, None,
-                            )
-                            self.assertEqual(competing, root.INVALID_HANDLE_VALUE)
-                            self.assertEqual(ctypes.get_last_error(), 32)
+                    # Share modes govern opens of the same object. They do not
+                    # prevent creating a new entry inside that directory.
+                    created = create_file(
+                        entry_path, 0x40000000,
+                        0x00000001 | 0x00000002 | 0x00000004,
+                        None, 1, 0x00000080, None,
+                    )
+                    self.assertNotEqual(created, root.INVALID_HANDLE_VALUE)
+                    self.assertTrue(close(created))
+                    self.assertTrue(os.path.isfile(entry_path))
                 finally:
                     root.close_handle(managed)
             finally:
