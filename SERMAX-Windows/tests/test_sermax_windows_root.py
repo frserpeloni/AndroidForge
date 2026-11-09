@@ -171,6 +171,41 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
+    def test_rejects_symlink_named_sermax(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path, tempfile.TemporaryDirectory() as target_path:
+            link_path = os.path.join(parent_path, "SERMAX")
+            try:
+                os.symlink(target_path, link_path, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"Runner sem privilégio para criar symlink: {exc}")
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path, 0x0080 | 0x0001 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
+            try:
+                with self.assertRaisesRegex(HandleIoError, "diretório regular"):
+                    root.open_sermax_directory(parent)
+            finally:
+                self.assertTrue(close(parent))
+
+
 class DriveRootHandleLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.platform = mock.patch.object(root, "_require_windows_x64")
