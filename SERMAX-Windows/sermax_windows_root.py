@@ -25,6 +25,12 @@ FILE_SHARE_DELETE = 0x00000004
 OPEN_EXISTING = 3
 FILE_FLAG_OPEN_REPARSE_POINT = 0x00200000
 FILE_FLAG_BACKUP_SEMANTICS = 0x02000000
+READ_CONTROL = 0x00020000
+WRITE_DAC = 0x00040000
+FILE_ADD_FILE = 0x00000002
+FILE_ADD_SUBDIRECTORY = 0x00000004
+OBJECT_INHERIT_ACE = 0x01
+CONTAINER_INHERIT_ACE = 0x02
 INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
 _DRIVE_ROOT = re.compile(r"^[A-Za-z]:\\$")
 
@@ -92,7 +98,8 @@ def open_drive_root(path: str):
 
 
 def open_managed_directory(parent_handle, component: str = "SERMAX", *,
-                           expected_volume_serial: int | None = None):
+                           expected_volume_serial: int | None = None,
+                           access_mask: int | None = None):
     """Abre um diretório filho relativo ao pai e valida identidade e tipo.
 
     O handle pai deve permanecer aberto durante a chamada e durante o uso do
@@ -116,7 +123,12 @@ def open_managed_directory(parent_handle, component: str = "SERMAX", *,
     if expected_volume_serial is not None and parent_volume != expected_volume_serial:
         raise RootOpenError("A identidade do volume pai diverge da identidade esperada.")
 
-    child = open_relative_component(parent_handle, component, directory=True)
+    if access_mask is None:
+        child = open_relative_component(parent_handle, component, directory=True)
+    else:
+        child = open_relative_component(
+            parent_handle, component, directory=True, desired_access=access_mask
+        )
     try:
         child_metadata = query_handle_metadata(child)
         if not child_metadata["is_directory"] or child_metadata["is_reparse_point"]:
@@ -138,6 +150,116 @@ def open_managed_directory(parent_handle, component: str = "SERMAX", *,
                 f"Falha ao validar SERMAX e também ao fechar o handle: {close_error}"
             ) from close_error
         raise
+
+
+def open_managed_directory_for_acl(parent_handle, component: str = "SERMAX"):
+    """Abre um diretório gerenciado com READ_CONTROL e WRITE_DAC.
+
+    O handle retornado permite consultar e alterar a DACL. O chamador deve
+    fechá-lo e aplicar somente uma política explicitamente definida.
+    """
+    return open_managed_directory(
+        parent_handle,
+        component,
+        access_mask=READ_CONTROL | WRITE_DAC,
+    )
+
+
+def deny_child_creation_for_sid(directory_handle, sid) -> bool:
+    """Nega criação de arquivos e subdiretórios para um SID específico.
+
+    A ACE vale para o diretório e é herdável por arquivos e subdiretórios.
+    As demais ACEs existentes são preservadas. A função exige DACL presente,
+    não nula, e um handle de diretório aberto com READ_CONTROL e WRITE_DAC.
+
+    Retorna True quando adiciona a ACE e False quando a mesma regra já existe.
+    Não escolhe SID automaticamente e não altera qualquer caminho por nome.
+    """
+    _require_windows_x64()
+    try:
+        metadata = query_handle_metadata(directory_handle)
+    except Exception as exc:
+        raise RootOpenError(f"Não foi possível validar o handle para ACL: {exc}") from exc
+
+    if not metadata["is_directory"] or metadata["is_reparse_point"]:
+        raise RootOpenError("A ACL exige handle de diretório regular, sem reparse point.")
+    if metadata["delete_pending"]:
+        raise RootOpenError("O diretório está marcado para exclusão.")
+
+    try:
+        import win32security
+    except ImportError as exc:
+        raise RootOpenError("A camada de ACL exige o módulo win32security.") from exc
+
+    denied_mask = FILE_ADD_FILE | FILE_ADD_SUBDIRECTORY
+    inherit_flags = OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE
+    try:
+        _, _, current_dacl, _ = win32security.GetSecurityInfo(
+            directory_handle,
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION,
+        )
+        if current_dacl is None:
+            raise RootOpenError(
+                "DACL ausente ou nula; alteração recusada para evitar liberar ou bloquear "
+                "acessos de forma ampla."
+            )
+
+        for index in range(current_dacl.GetAceCount()):
+            ace = current_dacl.GetAce(index)
+            if (
+                ace[0] == win32security.ACCESS_DENIED_ACE_TYPE
+                and (ace[1] & inherit_flags) == inherit_flags
+                and (ace[2] & denied_mask) == denied_mask
+                and win32security.EqualSid(ace[3], sid)
+            ):
+                return False
+
+        updated_dacl = win32security.ACL()
+        updated_dacl.AddAccessDeniedAceEx(
+            win32security.ACL_REVISION_DS,
+            inherit_flags,
+            denied_mask,
+            sid,
+        )
+        for index in range(current_dacl.GetAceCount()):
+            updated_dacl.AddAce(
+                win32security.ACL_REVISION_DS,
+                updated_dacl.GetAceCount(),
+                current_dacl.GetAce(index),
+            )
+
+        win32security.SetSecurityInfo(
+            directory_handle,
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            updated_dacl,
+            None,
+        )
+
+        _, _, verified_dacl, _ = win32security.GetSecurityInfo(
+            directory_handle,
+            win32security.SE_FILE_OBJECT,
+            win32security.DACL_SECURITY_INFORMATION,
+        )
+        if verified_dacl is None:
+            raise RootOpenError("A verificação posterior encontrou DACL ausente.")
+        for index in range(verified_dacl.GetAceCount()):
+            ace = verified_dacl.GetAce(index)
+            if (
+                ace[0] == win32security.ACCESS_DENIED_ACE_TYPE
+                and (ace[1] & inherit_flags) == inherit_flags
+                and (ace[2] & denied_mask) == denied_mask
+                and win32security.EqualSid(ace[3], sid)
+            ):
+                return True
+        raise RootOpenError("A ACE de negação não foi confirmada após a gravação.")
+    except RootOpenError:
+        raise
+    except Exception as exc:
+        raise RootOpenError(f"Falha ao aplicar ou verificar a DACL: {exc}") from exc
 
 
 def open_sermax_directory(drive_root_handle):
