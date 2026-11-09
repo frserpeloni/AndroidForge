@@ -171,6 +171,49 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
+    def test_rejects_junction_named_sermax(self):
+        import subprocess
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path, tempfile.TemporaryDirectory() as target_path:
+            junction_path = os.path.join(parent_path, "SERMAX")
+            result = subprocess.run(
+                ["cmd.exe", "/c", "mklink", "/J", junction_path, target_path],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode != 0:
+                self.skipTest(
+                    "Runner não criou junction: "
+                    + (result.stderr.strip() or result.stdout.strip() or str(result.returncode))
+                )
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path, 0x0080 | 0x0001 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, root.INVALID_HANDLE_VALUE)
+            try:
+                with self.assertRaisesRegex(HandleIoError, "diretório regular"):
+                    root.open_sermax_directory(parent)
+            finally:
+                self.assertTrue(close(parent))
+                os.rmdir(junction_path)
+
     def test_rejects_symlink_named_sermax(self):
         import tempfile
 
