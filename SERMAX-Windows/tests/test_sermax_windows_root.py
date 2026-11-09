@@ -445,5 +445,62 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
+    def test_directory_acl_can_deny_child_file_and_subdirectory_creation(self):
+        import tempfile
+        import win32api
+        import win32security
+
+        with tempfile.TemporaryDirectory() as parent_path:
+            managed_path = os.path.join(parent_path, "SERMAX")
+            os.mkdir(managed_path)
+
+            user_sid, _, _ = win32security.LookupAccountName(
+                None, win32api.GetUserName()
+            )
+            dacl = win32security.ACL()
+            dacl.AddAccessDeniedAceEx(
+                win32security.ACL_REVISION,
+                0,
+                0x00000002 | 0x00000004,
+                user_sid,
+            )
+            win32security.SetNamedSecurityInfo(
+                managed_path,
+                win32security.SE_FILE_OBJECT,
+                win32security.DACL_SECURITY_INFORMATION,
+                None,
+                None,
+                dacl,
+                None,
+            )
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            create_directory = kernel32.CreateDirectoryW
+            create_directory.argtypes = [ctypes.c_wchar_p, ctypes.c_void_p]
+            create_directory.restype = ctypes.c_int
+
+            file_path = os.path.join(managed_path, "denied.tmp")
+            ctypes.set_last_error(0)
+            file_handle = create_file(
+                file_path, 0x40000000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 1, 0x00000080, None,
+            )
+            self.assertEqual(file_handle, root.INVALID_HANDLE_VALUE)
+            self.assertEqual(ctypes.get_last_error(), 5)
+
+            nested_path = os.path.join(managed_path, "denied-dir")
+            ctypes.set_last_error(0)
+            self.assertFalse(create_directory(nested_path, None))
+            self.assertEqual(ctypes.get_last_error(), 5)
+
+
 if __name__ == "__main__":
     unittest.main()
