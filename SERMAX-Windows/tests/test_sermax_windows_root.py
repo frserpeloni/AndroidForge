@@ -482,7 +482,33 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             managed = None
             try:
                 managed = root.open_managed_directory_for_acl(parent)
+                before_dacl = win32security.GetSecurityInfo(
+                    managed,
+                    win32security.SE_FILE_OBJECT,
+                    win32security.DACL_SECURITY_INFORMATION,
+                ).GetSecurityDescriptorDacl()
+
+                def allowed_entries(dacl):
+                    entries = []
+                    for index in range(dacl.GetAceCount()):
+                        ace = dacl.GetAce(index)
+                        if ace[0][0] == win32security.ACCESS_ALLOWED_ACE_TYPE:
+                            entries.append((
+                                ace[0][0],
+                                ace[0][1],
+                                ace[1],
+                                win32security.ConvertSidToStringSid(ace[2]),
+                            ))
+                    return sorted(entries)
+
+                before_allowed = allowed_entries(before_dacl)
                 self.assertTrue(root.deny_child_creation_for_sid(managed, user_sid))
+                after_dacl = win32security.GetSecurityInfo(
+                    managed,
+                    win32security.SE_FILE_OBJECT,
+                    win32security.DACL_SECURITY_INFORMATION,
+                ).GetSecurityDescriptorDacl()
+                self.assertEqual(allowed_entries(after_dacl), before_allowed)
                 self.assertFalse(root.deny_child_creation_for_sid(managed, user_sid))
 
                 file_path = os.path.join(managed_path, "denied.tmp")
