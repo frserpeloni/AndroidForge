@@ -32,6 +32,7 @@ class TestAutomaticJarvisIntegration(unittest.TestCase):
             patch.object(core, "responder_calculo_local", return_value=None),
             patch.object(core, "registrar_memoria"),
             patch.object(core, "montar_contexto", return_value=contexto),
+            patch.object(core.ferramenta_windows, "responder_consulta", return_value=None),
         )
 
     def test_pergunta_normal_tenta_jarvis_automaticamente_com_contexto_sermax(self):
@@ -41,7 +42,7 @@ class TestAutomaticJarvisIntegration(unittest.TestCase):
             {"role": "user", "content": "Qual óleo devo usar?"},
         ]
         patches = self._isolar_caminho_de_resposta(contexto)
-        with patches[0], patches[1], patches[2], patches[3], patch.object(
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patch.object(
             core.sermax_jarvis_adapter, "JarvisAdapter"
         ) as adapter:
             adapter.return_value.responder.return_value = "Resposta OpenJarvis"
