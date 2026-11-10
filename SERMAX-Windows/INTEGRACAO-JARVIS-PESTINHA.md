@@ -54,3 +54,16 @@ A especificação `ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md` passa a defi
 - O adaptador Pestinha atual, limitado à rede LIF e eventos sintéticos, ainda não incorpora toda a arquitetura neural, mecanismos de aprendizagem ou demais capacidades upstream.
 - O comando de seleção manual de motor é provisório e deve ser substituído por coordenação automática do núcleo SERMAX após inventário e implementação testável.
 - Não remover abruptamente os caminhos atuais antes de existir substituição funcional e testes de regressão. Preservar compatibilidade, memória pessoal, Terminal e fallback.
+
+
+## Implementação incremental do supervisor automático, 10/11/2026
+
+- O núcleo passa a iniciar com a política `SERMAX_MOTOR=auto`, salvo configuração explícita em contrário.
+- No modo AUTO, solicitações conversacionais tentam a ponte OpenJarvis sem ferramentas externas e sem memória própria.
+- Se a ponte Jarvis falhar, o núcleo retorna ao fluxo Ollama já existente. A falha de Jarvis não deve interromper a conversa.
+- O modo explícito `/motor jarvis` mantém comportamento estrito e informa a falha, sem fallback silencioso.
+- `/motor auto` retorna à coordenação automática.
+- O comando `/integracoes` informa se o ambiente do worker Jarvis foi localizado e o estado neural Pestinha detectado pelo núcleo.
+- Foram adicionados testes para roteamento automático, resposta Jarvis, fallback Ollama e modo Jarvis estrito.
+
+**Limite desta entrega:** o worker OpenJarvis continua usando o agente `simple`, com `tools=[]` e `context=False`. Esta etapa automatiza a seleção e a recuperação de falhas, mas ainda não incorpora agentes ReAct/Orchestrator, catálogo de skills ou ferramentas OpenJarvis. O Pestinha continua fornecendo sinais de estado neural e expressão visual, não raciocínio linguístico nem seleção autônoma de ferramentas. A integração unificada completa segue em desenvolvimento.
