@@ -29,9 +29,9 @@ Converse naturalmente em português do Brasil. Use contexto e memória sem inven
 MODELO = "sermax"
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
 # Motor principal selecionável. O padrão preserva o comportamento atual do SERMAX.
-MOTOR_RESPOSTA = os.environ.get("SERMAX_MOTOR", "ollama").strip().lower()
-if MOTOR_RESPOSTA not in {"ollama", "jarvis"}:
-    MOTOR_RESPOSTA = "ollama"
+MOTOR_RESPOSTA = os.environ.get("SERMAX_MOTOR", "auto").strip().lower()
+if MOTOR_RESPOSTA not in {"auto", "ollama", "jarvis"}:
+    MOTOR_RESPOSTA = "auto"
 if os.environ.get("SERMAX_ROOT"):
     BASE_DIR = os.path.abspath(os.environ["SERMAX_ROOT"])
 elif getattr(sys, "frozen", False):
@@ -237,10 +237,24 @@ def responder_comando_local(mensagem):
         return sermax_tarefas.executar_plano(mensagem.strip()[len(prefixo):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
     global MOTOR_RESPOSTA
     if comando in {"/motor", "/motor status"}:
-        return f"Motor de resposta atual: {MOTOR_RESPOSTA.upper()}. Use /motor ollama ou /motor jarvis para alternar nesta sessão."
-    if comando in {"/motor ollama", "/motor jarvis"}:
+        return f"Política de resposta atual: {MOTOR_RESPOSTA.upper()}. Use /motor auto, /motor ollama ou /motor jarvis para alternar nesta sessão."
+    if comando in {"/motor auto", "/motor ollama", "/motor jarvis"}:
         MOTOR_RESPOSTA = comando.split()[-1]
-        return f"Motor de resposta alterado para {MOTOR_RESPOSTA.upper()} nesta sessão."
+        return f"Política de resposta alterada para {MOTOR_RESPOSTA.upper()} nesta sessão."
+    if comando in {"/integracoes", "/integrações"}:
+        jarvis_python = os.environ.get("SERMAX_JARVIS_PYTHON") or os.path.join(BASE_DIR, ".venv-jarvis", "Scripts", "python.exe")
+        jarvis_worker = os.path.join(BASE_DIR, "sermax_jarvis_worker.py")
+        worker_no_bundle = getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS") and os.path.isfile(os.path.join(sys._MEIPASS, "sermax_jarvis_worker.py"))
+        jarvis_pronto = os.path.isfile(jarvis_python) and (os.path.isfile(jarvis_worker) or worker_no_bundle)
+        neural = diagnostico_widget()
+        return ("Diagnóstico das integrações SERMAX:\\n"
+                f"OpenJarvis: {'AMBIENTE LOCAL DETECTADO' if jarvis_pronto else 'NÃO CONFIGURADO'}\\n"
+                f"Python Jarvis: {jarvis_python if os.path.isfile(jarvis_python) else 'não encontrado'}\\n"
+                f"Pestinha: {neural['neural_status']}\\n"
+                f"Estado neural: {neural['estado']}\\n"
+                f"Política de resposta: {MOTOR_RESPOSTA.upper()}\\n"
+                "No modo AUTO, o SERMAX tenta OpenJarvis e usa Ollama como fallback. "
+                "O worker Jarvis permanece sem ferramentas externas.")
     if comando in {"/jarvis", "jarvis"}:
         return "Informe uma pergunta após /jarvis. Exemplo: /jarvis explique o que é aprendizado de máquina"
     if comando.startswith("/jarvis "):
@@ -267,7 +281,7 @@ def responder_comando_local(mensagem):
         d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
         return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
     if comando in {"/ajuda","ajuda"}:
-        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /motor status, /motor ollama, /motor jarvis, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /integracoes, /plano objetivo, /motor status, /motor auto, /motor ollama, /motor jarvis, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
 def _perguntar_impl(mensagem,receber_parte=None):
@@ -286,18 +300,22 @@ def _perguntar_impl(mensagem,receber_parte=None):
         sessao.append({"role":"assistant","content":ferramenta})
         if receber_parte: receber_parte(ferramenta)
         return ferramenta
-    if MOTOR_RESPOSTA == "jarvis":
-        # O SERMAX fornece identidade, memória recuperada e contexto da sessão.
-        # OpenJarvis permanece sem ferramentas e sem memória própria.
+    if MOTOR_RESPOSTA in {"auto", "jarvis"}:
+        # AUTO tenta OpenJarvis sem ferramentas e sem memória própria.
+        # Se a ponte falhar, mantém a conversa pelo Ollama.
         mensagens = montar_contexto(mensagem)
-        prompt = "\n\n".join(
+        prompt = "\\n\\n".join(
             f"{item['role'].upper()}: {item['content']}" for item in mensagens
-        )
-        prompt = prompt[-3900:]
-        resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
-        sessao.append({"role":"assistant","content":resposta})
-        if receber_parte: receber_parte(resposta)
-        return resposta
+        )[-3900:]
+        try:
+            resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
+            sessao.append({"role":"assistant","content":resposta})
+            if receber_parte: receber_parte(resposta)
+            return resposta
+        except Exception:
+            if MOTOR_RESPOSTA == "jarvis":
+                raise
+            # Fallback automático e transparente para o Ollama.
     ultimo_diagnostico_ollama={}
     dados={"model":MODELO,"messages":montar_contexto(mensagem),"stream":True,"keep_alive":KEEP_ALIVE,"options":OPCOES_MODELO}
     pedido=urllib.request.Request(OLLAMA_URL,data=json.dumps(dados,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
