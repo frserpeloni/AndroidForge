@@ -506,5 +506,44 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
 
 
 
+class AceInheritanceMatchingTests(unittest.TestCase):
+    def setUp(self):
+        self.security = mock.Mock()
+        self.security.ACCESS_DENIED_ACE_TYPE = 1
+        self.security.ConvertSidToStringSid.side_effect = str
+        self.sid = "S-1-5-21-1000"
+
+    def test_effective_inheritable_deny_matches_directory_and_children(self):
+        ace = ((1, root.OBJECT_INHERIT_ACE | root.CONTAINER_INHERIT_ACE),
+               root.FILE_ADD_FILE | root.FILE_ADD_SUBDIRECTORY,
+               self.sid)
+        self.assertTrue(
+            root._ace_denies_child_creation_on_directory(
+                ace, self.sid, self.security
+            )
+        )
+
+    def test_inherit_only_deny_does_not_match_current_directory(self):
+        ace = ((1, root.OBJECT_INHERIT_ACE | root.CONTAINER_INHERIT_ACE
+                | root.INHERIT_ONLY_ACE),
+               root.FILE_ADD_FILE | root.FILE_ADD_SUBDIRECTORY,
+               self.sid)
+        self.assertFalse(
+            root._ace_denies_child_creation_on_directory(
+                ace, self.sid, self.security
+            )
+        )
+
+    def test_deny_for_another_sid_does_not_match(self):
+        ace = ((1, root.OBJECT_INHERIT_ACE | root.CONTAINER_INHERIT_ACE),
+               root.FILE_ADD_FILE | root.FILE_ADD_SUBDIRECTORY,
+               "S-1-5-21-2000")
+        self.assertFalse(
+            root._ace_denies_child_creation_on_directory(
+                ace, self.sid, self.security
+            )
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
