@@ -482,8 +482,11 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
             managed = None
             try:
                 managed = root.open_managed_directory_for_acl(parent)
+                native_managed = (
+                    managed.value if isinstance(managed, ctypes.c_void_p) else managed
+                )
                 before_dacl = win32security.GetSecurityInfo(
-                    managed,
+                    native_managed,
                     win32security.SE_FILE_OBJECT,
                     win32security.DACL_SECURITY_INFORMATION,
                 ).GetSecurityDescriptorDacl()
@@ -504,7 +507,7 @@ class DriveRootHandleLifecycleTests(unittest.TestCase):
                 before_allowed = allowed_entries(before_dacl)
                 self.assertTrue(root.deny_child_creation_for_sid(managed, user_sid))
                 after_dacl = win32security.GetSecurityInfo(
-                    managed,
+                    native_managed,
                     win32security.SE_FILE_OBJECT,
                     win32security.DACL_SECURITY_INFORMATION,
                 ).GetSecurityDescriptorDacl()
