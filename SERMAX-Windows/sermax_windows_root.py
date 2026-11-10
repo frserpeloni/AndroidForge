@@ -235,19 +235,17 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
             if _ace_denies_child_creation_on_directory(ace, sid, win32security):
                 return False
 
+        # AddAccessDeniedAceEx acrescenta a ACE à DACL existente e o
+        # pywin32 reorganiza a lista em ordem canônica. Diferente de
+        # SetEntriesInAcl, não mescla o trustee nem remove/modifica ACEs ALLOW
+        # existentes para o mesmo SID.
+        current_dacl.AddAccessDeniedAceEx(
+            win32security.ACL_REVISION_DS,
+            inherit_flags,
+            denied_mask,
+            sid,
+        )
         updated_dacl = current_dacl
-        updated_dacl.SetEntriesInAcl([
-            {
-                "AccessMode": win32security.DENY_ACCESS,
-                "AccessPermissions": denied_mask,
-                "Inheritance": inherit_flags,
-                "Trustee": {
-                    "TrusteeType": win32security.TRUSTEE_IS_USER,
-                    "TrusteeForm": win32security.TRUSTEE_IS_SID,
-                    "Identifier": sid,
-                },
-            }
-        ])
 
         win32security.SetSecurityInfo(
             native_handle,
