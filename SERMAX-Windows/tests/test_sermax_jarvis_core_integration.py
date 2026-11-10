@@ -58,7 +58,7 @@ class TestAutomaticJarvisIntegration(unittest.TestCase):
         contexto = [{"role": "system", "content": "IDENTIDADE SERMAX"},
                     {"role": "user", "content": "Explique este assunto"}]
         patches = self._isolar_caminho_de_resposta(contexto)
-        with patches[0], patches[1], patches[2], patches[3], patch.object(
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patch.object(
             core.sermax_jarvis_adapter, "JarvisAdapter"
         ) as adapter, patch.object(
             core.urllib.request, "urlopen", return_value=FakeOllamaResponse()
