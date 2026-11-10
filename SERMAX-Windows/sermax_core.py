@@ -28,10 +28,9 @@ Converse naturalmente em português do Brasil. Use contexto e memória sem inven
 
 MODELO = "sermax"
 OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
-# Motor principal selecionável. O padrão preserva o comportamento atual do SERMAX.
-MOTOR_RESPOSTA = os.environ.get("SERMAX_MOTOR", "ollama").strip().lower()
-if MOTOR_RESPOSTA not in {"ollama", "jarvis"}:
-    MOTOR_RESPOSTA = "ollama"
+# O roteamento dos backends é automático. OpenJarvis é tentado primeiro;
+# Ollama permanece como fallback local do SERMAX.
+ultimo_diagnostico_roteamento = {"backend": "nao_executado", "fallback": None}
 if os.environ.get("SERMAX_ROOT"):
     BASE_DIR = os.path.abspath(os.environ["SERMAX_ROOT"])
 elif getattr(sys, "frozen", False):
@@ -235,20 +234,8 @@ def responder_comando_local(mensagem):
     if comando.startswith("/executar-plano ") or comando.startswith("/tarefas "):
         prefixo="/executar-plano " if comando.startswith("/executar-plano ") else "/tarefas "
         return sermax_tarefas.executar_plano(mensagem.strip()[len(prefixo):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
-    global MOTOR_RESPOSTA
-    if comando in {"/motor", "/motor status"}:
-        return f"Motor de resposta atual: {MOTOR_RESPOSTA.upper()}. Use /motor ollama ou /motor jarvis para alternar nesta sessão."
-    if comando in {"/motor ollama", "/motor jarvis"}:
-        MOTOR_RESPOSTA = comando.split()[-1]
-        return f"Motor de resposta alterado para {MOTOR_RESPOSTA.upper()} nesta sessão."
-    if comando in {"/jarvis", "jarvis"}:
-        return "Informe uma pergunta após /jarvis. Exemplo: /jarvis explique o que é aprendizado de máquina"
-    if comando.startswith("/jarvis "):
-        pergunta=mensagem.strip()[len("/jarvis "):]
-        try:
-            return sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(pergunta)
-        except Exception as e:
-            return f"OpenJarvis indisponível: {type(e).__name__}: {e}"
+    if comando in {"/motor", "/motor status", "/motor ollama", "/motor jarvis", "/jarvis", "jarvis"} or comando.startswith("/jarvis "):
+        return "A integração é coordenada automaticamente pelo SERMAX. Envie sua solicitação normalmente; OpenJarvis e Ollama são selecionados internamente com fallback seguro."
     if comando in {"/plano","/planejar","planejar"}: return "Informe o objetivo após /plano. Exemplo: /plano organizar minhas tarefas da semana"
     if comando.startswith("/plano ") or comando.startswith("/planejar "):
         return sermax_planejador.planejar(mensagem.split(" ",1)[1].strip(),modelo=MODELO,url=OLLAMA_URL)
@@ -286,20 +273,28 @@ def _perguntar_impl(mensagem,receber_parte=None):
         sessao.append({"role":"assistant","content":ferramenta})
         if receber_parte: receber_parte(ferramenta)
         return ferramenta
-    if MOTOR_RESPOSTA == "jarvis":
-        # O SERMAX fornece identidade, memória recuperada e contexto da sessão.
-        # OpenJarvis permanece sem ferramentas e sem memória própria.
-        mensagens = montar_contexto(mensagem)
-        prompt = "\n\n".join(
-            f"{item['role'].upper()}: {item['content']}" for item in mensagens
-        )
-        prompt = prompt[-3900:]
+    # Roteamento interno: tenta OpenJarvis sem exigir comando do usuário.
+    # A ponte atual usa o agente simple sem ferramentas; não representa ainda
+    # a ativação dos agentes ReAct/Orchestrator ou do catálogo de skills.
+    global ultimo_diagnostico_roteamento
+    mensagens = montar_contexto(mensagem)
+    prompt = "\n\n".join(
+        f"{item['role'].upper()}: {item['content']}" for item in mensagens
+    )[-3900:]
+    try:
         resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
+        ultimo_diagnostico_roteamento = {"backend": "openjarvis", "fallback": None}
         sessao.append({"role":"assistant","content":resposta})
         if receber_parte: receber_parte(resposta)
         return resposta
+    except Exception as erro_jarvis:
+        # A falha do worker não interrompe a conversa: Ollama assume a solicitação.
+        ultimo_diagnostico_roteamento = {
+            "backend": "ollama",
+            "fallback": f"{type(erro_jarvis).__name__}: {str(erro_jarvis)[:300]}",
+        }
     ultimo_diagnostico_ollama={}
-    dados={"model":MODELO,"messages":montar_contexto(mensagem),"stream":True,"keep_alive":KEEP_ALIVE,"options":OPCOES_MODELO}
+    dados={"model":MODELO,"messages":mensagens,"stream":True,"keep_alive":KEEP_ALIVE,"options":OPCOES_MODELO}
     pedido=urllib.request.Request(OLLAMA_URL,data=json.dumps(dados,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
     resposta=""
     try:
@@ -317,6 +312,10 @@ def _perguntar_impl(mensagem,receber_parte=None):
                     ultimo_diagnostico_ollama={k:obj[k] for k in campos if k in obj}; break
     except urllib.error.URLError as e:
         raise RuntimeError("Não foi possível conectar ao Ollama. Verifique se o Ollama está aberto.") from e
+    ultimo_diagnostico_roteamento = {
+        "backend": "ollama",
+        "fallback": ultimo_diagnostico_roteamento.get("fallback"),
+    }
     sessao.append({"role":"assistant","content":resposta})
     return resposta.strip()
 
