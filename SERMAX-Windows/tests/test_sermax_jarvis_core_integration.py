@@ -13,7 +13,7 @@ class FakeOllamaResponse:
         return False
 
     def __iter__(self):
-        yield (json.dumps({"message": {"content": "Resposta via Ollama"}, "done": True}) + "\\n").encode("utf-8")
+        yield (json.dumps({"message": {"content": "Resposta via Ollama"}, "done": True}) + "\n").encode("utf-8")
 
 
 class TestAutomaticJarvisIntegration(unittest.TestCase):
