@@ -78,6 +78,24 @@ def atualizar_estado_widget(evento):
         return "error"
 
 
+def registrar_contexto_neural(mensagem):
+    """Envia contexto textual classificado por regras explícitas à rede Pestinha."""
+    controller = _obter_widget_controller()
+    adapter = _widget_adapter
+    if adapter is None or not adapter.available:
+        return {"available": False, "reason": "Pestinha indisponível"}
+    texto = normalizar(mensagem)
+    canais = {"SOCIAL": 0.35, "TYPING": 0.10}
+    termos_trabalho = ("codigo", "código", "programar", "programação", "projeto",
+                       "sermax", "arquivo", "teste", "função", "funcao", "bug")
+    termos_web = ("pesquise", "pesquisar", "internet", "site", "navegador", "web")
+    if any(termo in texto for termo in termos_trabalho):
+        canais["WORK"] = 0.65
+    if any(termo in texto for termo in termos_web):
+        canais["WEB"] = 0.60
+    return adapter.registrar_contexto(canais, dt_ms=80)
+
+
 def diagnostico_widget():
     controller = _obter_widget_controller()
     neural_ativa = bool(_widget_adapter and _widget_adapter.available)
@@ -87,6 +105,7 @@ def diagnostico_widget():
         "neural_ativa": neural_ativa,
         "neural_status": "ATIVA" if neural_ativa else "OFFLINE",
         "detalhe": _widget_init_error or ("" if neural_ativa else "Dependência neural não carregada"),
+        "metricas_neurais": _widget_adapter.diagnostico() if _widget_adapter else {},
     }
 
 
@@ -324,6 +343,7 @@ def perguntar(mensagem, receber_parte=None):
     """Envolve cada solicitação com eventos neurais isolados e fallback seguro."""
     atualizar_estado_widget("processing")
     try:
+        registrar_contexto_neural(mensagem)
         resposta = _perguntar_impl(mensagem, receber_parte=receber_parte)
         atualizar_estado_widget("completed")
         return resposta
