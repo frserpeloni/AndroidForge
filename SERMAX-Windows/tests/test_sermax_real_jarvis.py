@@ -79,7 +79,9 @@ class TestRealOpenJarvisWorker(unittest.TestCase):
                 answer = adapter.responder("Responda com uma confirmação curta.")
             self.assertEqual(answer, "SERMAX JARVIS CI OK")
             self.assertEqual(server.last_request["model"], "sermax")
-            self.assertFalse(server.last_request.get("tools"))
+            tool_defs = server.last_request.get("tools") or []
+            tool_names = {item.get("function", {}).get("name") for item in tool_defs}
+            self.assertTrue({"calculator", "think"}.issubset(tool_names))
         finally:
             server.shutdown()
             server.server_close()
