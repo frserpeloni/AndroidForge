@@ -1,5 +1,10 @@
-"""Adaptador isolado da rede LIF do Pestinha para estados visuais SERMAX."""
+"""Adaptador da rede LIF do Pestinha para SERMAX.
+
+A rede recebe contexto sensorial e devolve métricas auditáveis. Saídas neurais
+nunca executam ações, ferramentas ou alteram permissões do sistema.
+"""
 from __future__ import annotations
+import math
 import os
 from typing import Callable, Optional
 from sermax_widget_state import ESTADOS_VISUAIS
@@ -13,6 +18,7 @@ ESTIMULOS={
  "error":{"NOVELTY":0.65,"SILENCE":0.05},
 }
 MOTORES_VISUAIS={"WATCH":"attention","CHEER":"completed","SETTLE":"idle","DROWSE":"idle","SAD":"error","ANGRY":"error"}
+TAXA_APRENDIZADO=0.02
 
 class PestinhaAdapter:
     def __init__(self,state_path,*,brain_factory:Optional[Callable[[],object]]=None):
@@ -20,6 +26,8 @@ class PestinhaAdapter:
         self._brain_factory=brain_factory
         self._brain=None
         self.available=False
+        self.last_metrics={}
+        self.last_feedback=0.0
         try:
             factory=brain_factory or self._load_brain_factory()
             self._brain=factory()
@@ -28,8 +36,6 @@ class PestinhaAdapter:
             if existed and restored is not True:
                 raise ValueError("memória neural existente inválida ou incompatível")
             self.available=True
-        except (ImportError,ModuleNotFoundError):
-            self._brain=None
         except Exception:
             self._brain=None
 
@@ -57,6 +63,65 @@ class PestinhaAdapter:
             self.available=False
             self._brain=None
             return evento
+
+    def registrar_contexto(self,canais,dt_ms=80):
+        """Registra estímulos sensoriais permitidos e atualiza elegibilidade sem recompensa."""
+        if self._brain is None or not isinstance(canais,dict):
+            return {"available":False,"error":"rede indisponível ou contexto inválido"}
+        try:
+            nomes=set(getattr(self._brain,"sensory_names",()))
+            if not canais or any(name not in nomes for name in canais):
+                raise ValueError("canal sensorial desconhecido")
+            valores={}
+            for name,value in canais.items():
+                if isinstance(value,bool) or not isinstance(value,(int,float)):
+                    raise ValueError("intensidade inválida")
+                value=float(value)
+                if not math.isfinite(value) or not 0.0<=value<=1.0:
+                    raise ValueError("intensidade fora do intervalo 0..1")
+                valores[name]=value
+            duracao=max(1,min(400,int(dt_ms)))
+            self._brain.stimulate(valores)
+            self._brain.step(duracao)
+            self._brain.learn(0.0,duracao/1000.0,TAXA_APRENDIZADO)
+            self.last_metrics=self._coletar_metricas()
+            return {"available":True,"metrics":self.last_metrics}
+        except Exception as exc:
+            self.last_metrics={"error":f"{type(exc).__name__}: {exc}"}
+            return {"available":False,"error":self.last_metrics["error"]}
+
+    def registrar_feedback(self,recompensa):
+        """Aprende somente com feedback explícito e limitado a -1 ou +1."""
+        if self._brain is None:
+            return False
+        if isinstance(recompensa,bool) or recompensa not in (-1,1):
+            return False
+        try:
+            self._brain.learn(float(recompensa),0.1,TAXA_APRENDIZADO)
+            self.last_feedback=float(recompensa)
+            self.last_metrics=self._coletar_metricas()
+            return True
+        except Exception:
+            return False
+
+    def _coletar_metricas(self):
+        brain=self._brain
+        metricas={}
+        for nome,metodo in (("pools", "pool_rates"),("efficacy","efficacy"),("motors","motor_activity")):
+            fn=getattr(brain,metodo,None)
+            if callable(fn):
+                valor=fn()
+                if isinstance(valor,dict):
+                    metricas[nome]={str(k):round(float(v),5) for k,v in valor.items()
+                                    if isinstance(v,(int,float)) and math.isfinite(float(v))}
+        resumo=getattr(brain,"learned_summary",None)
+        if callable(resumo):
+            metricas["learned"]=[list(item) for item in resumo(top=5)]
+        return metricas
+
+    def diagnostico(self):
+        return {"available":self.available,"metrics":self.last_metrics,
+                "last_explicit_feedback":self.last_feedback}
 
     def salvar(self):
         if self._brain is None: return False
