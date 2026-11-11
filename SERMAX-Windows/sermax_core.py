@@ -299,8 +299,8 @@ def _perguntar_impl(mensagem,receber_parte=None):
         if receber_parte: receber_parte(ferramenta)
         return ferramenta
     # Roteamento interno: tenta OpenJarvis sem exigir comando do usuário.
-    # A ponte atual usa o agente simple sem ferramentas; não representa ainda
-    # a ativação dos agentes ReAct/Orchestrator ou do catálogo de skills.
+    # O worker usa Orchestrator com allowlist calculator/think e limite de turnos.
+    # A escolha do agente ainda é fixa; MAX não faz seleção dinâmica nesta versão.
     global ultimo_diagnostico_roteamento
     mensagens = montar_contexto(mensagem)
     prompt = "\n\n".join(
