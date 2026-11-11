@@ -84,6 +84,9 @@ def registrar_contexto_neural(mensagem):
     adapter = _widget_adapter
     if adapter is None or not adapter.available:
         return {"available": False, "reason": "Pestinha indisponível"}
+    registrar = getattr(adapter, "registrar_contexto", None)
+    if not callable(registrar):
+        return {"available": False, "reason": "Adaptador sem suporte a contexto sensorial"}
     texto = normalizar(mensagem)
     canais = {"SOCIAL": 0.35, "TYPING": 0.10}
     termos_trabalho = ("codigo", "código", "programar", "programação", "projeto",
@@ -93,7 +96,10 @@ def registrar_contexto_neural(mensagem):
         canais["WORK"] = 0.65
     if any(termo in texto for termo in termos_web):
         canais["WEB"] = 0.60
-    return adapter.registrar_contexto(canais, dt_ms=80)
+    try:
+        return registrar(canais, dt_ms=80)
+    except Exception as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
 
 
 def diagnostico_widget():
