@@ -8,6 +8,10 @@ import sys
 from pathlib import Path
 
 
+AGENTE_SERMAX = "orchestrator"
+FERRAMENTAS_PERMITIDAS = ("calculator", "think")
+
+
 def _configurar_openjarvis():
     """Cria configuração explícita. Não herda preferências do perfil do usuário."""
     from openjarvis.core.config import JarvisConfig
@@ -18,6 +22,7 @@ def _configurar_openjarvis():
     config.tools.enabled = ""
     config.agent.tools = ""
     config.agent.context_from_memory = False
+    config.agent.max_turns = 4
     config.agent.default_system_prompt = (
         "Você é um componente interno do SERMAX. "
         "Responda ao pedido recebido em português, com precisão. "
@@ -63,8 +68,8 @@ def main():
             try:
                 response = sdk.ask(
                     prompt.strip(),
-                    agent="simple",
-                    tools=[],
+                    agent=AGENTE_SERMAX,
+                    tools=list(FERRAMENTAS_PERMITIDAS),
                     context=False,
                     temperature=0.2,
                     max_tokens=512,
