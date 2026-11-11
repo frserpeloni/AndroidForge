@@ -29,11 +29,32 @@ class OllamaMockHandler(BaseHTTPRequestHandler):
         if self.path != "/api/chat":
             self.send_error(404)
             return
-        self.server.last_request = request
-        payload = {
-            "model": request.get("model", "sermax"),
-            "message": {"role": "assistant", "content": "SERMAX JARVIS CI OK"},
-            "done": True,
+        self.server.requests.append(request)
+        if self.server.tool_call_name and len(self.server.requests) == 1:
+            arguments = (
+                {"expression": "6*7"}
+                if self.server.tool_call_name == "calculator"
+                else {"thought": "plano de teste"}
+            )
+            payload = {
+                "model": request.get("model", "sermax"),
+                "message": {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{
+                        "function": {
+                            "name": self.server.tool_call_name,
+                            "arguments": arguments,
+                        }
+                    }],
+                },
+                "done": True,
+            }
+        else:
+            payload = {
+                "model": request.get("model", "sermax"),
+                "message": {"role": "assistant", "content": "SERMAX JARVIS CI OK"},
+                "done": True,
             "prompt_eval_count": 4,
             "eval_count": 5,
             "total_duration": 1000000,
@@ -60,7 +81,8 @@ class TestRealOpenJarvisWorker(unittest.TestCase):
 
         root = Path(__file__).resolve().parents[1]
         server = ThreadingHTTPServer(("127.0.0.1", 0), OllamaMockHandler)
-        server.last_request = None
+        server.requests = []
+        server.tool_call_name = None
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         host = f"http://127.0.0.1:{server.server_port}"
@@ -78,10 +100,53 @@ class TestRealOpenJarvisWorker(unittest.TestCase):
                 )
                 answer = adapter.responder("Responda com uma confirmação curta.")
             self.assertEqual(answer, "SERMAX JARVIS CI OK")
-            self.assertEqual(server.last_request["model"], "sermax")
-            tool_defs = server.last_request.get("tools") or []
+            self.assertEqual(server.requests[0]["model"], "sermax")
+            tool_defs = server.requests[0].get("tools") or []
             tool_names = {item.get("function", {}).get("name") for item in tool_defs}
             self.assertTrue({"calculator", "think"}.issubset(tool_names))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+    def test_sdk_executes_allowlisted_calculator_tool(self):
+        self._run_tool_cycle("calculator", "42")
+
+    def test_sdk_executes_allowlisted_think_tool(self):
+        self._run_tool_cycle("think", "plano de teste")
+
+    def _run_tool_cycle(self, tool_name, expected_observation):
+        python = os.environ.get("SERMAX_JARVIS_PYTHON")
+        if not python or not Path(python).is_file():
+            self.skipTest("Ambiente Python 3.13 do OpenJarvis não configurado.")
+
+        root = Path(__file__).resolve().parents[1]
+        server = ThreadingHTTPServer(("127.0.0.1", 0), OllamaMockHandler)
+        server.requests = []
+        server.tool_call_name = tool_name
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host = f"http://127.0.0.1:{server.server_port}"
+        try:
+            with patch.dict(os.environ, {
+                "OLLAMA_HOST": host,
+                "SERMAX_ROOT": str(root),
+                "SERMAX_JARVIS_PYTHON": python,
+            }):
+                adapter = JarvisAdapter(
+                    model="sermax",
+                    python_executable=python,
+                    worker_path=str(root / "sermax_jarvis_worker.py"),
+                    timeout=60,
+                )
+                answer = adapter.responder("Use a ferramenta solicitada e responda.")
+            self.assertEqual(answer, "SERMAX JARVIS CI OK")
+            self.assertGreaterEqual(len(server.requests), 2)
+            self.assertTrue(any(
+                expected_observation in str(message.get("content", ""))
+                for request in server.requests[1:]
+                for message in request.get("messages", [])
+            ))
         finally:
             server.shutdown()
             server.server_close()
