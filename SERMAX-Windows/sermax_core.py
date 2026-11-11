@@ -102,6 +102,68 @@ def registrar_contexto_neural(mensagem):
         return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
 
 
+def registrar_feedback_neural(recompensa):
+    """Registra recompensa explícita do usuário e confirma a persistência neural.
+
+    Aceita somente inteiros -1 ou +1. Não infere recompensa a partir de respostas,
+    ações ou satisfação presumida.
+    """
+    if type(recompensa) is not int or recompensa not in (-1, 1):
+        return {
+            "available": bool(_widget_adapter and _widget_adapter.available),
+            "accepted": False,
+            "reward": None,
+            "persisted": False,
+            "reason": "Feedback inválido. Informe o inteiro -1 ou +1.",
+        }
+
+    _obter_widget_controller()
+    adapter = _widget_adapter
+    if adapter is None or not getattr(adapter, "available", False):
+        return {
+            "available": False, "accepted": False, "reward": recompensa,
+            "persisted": False, "reason": _widget_init_error or "Pestinha indisponível",
+        }
+
+    registrar = getattr(adapter, "registrar_feedback", None)
+    salvar = getattr(adapter, "salvar", None)
+    if not callable(registrar) or not callable(salvar):
+        return {
+            "available": True, "accepted": False, "reward": recompensa,
+            "persisted": False, "reason": "Adaptador sem suporte a feedback e persistência",
+        }
+
+    try:
+        aceito = registrar(recompensa)
+    except Exception as exc:
+        return {
+            "available": False, "accepted": False, "reward": recompensa,
+            "persisted": False, "reason": f"Falha no feedback: {type(exc).__name__}: {exc}",
+        }
+    if aceito is not True:
+        return {
+            "available": bool(getattr(adapter, "available", False)),
+            "accepted": False, "reward": recompensa, "persisted": False,
+            "reason": "A rede recusou o feedback",
+        }
+
+    try:
+        persistido = salvar() is True
+    except Exception as exc:
+        persistido = False
+        motivo = f"Feedback aceito, mas falha ao salvar: {type(exc).__name__}: {exc}"
+    else:
+        motivo = "" if persistido else "Feedback aceito, mas a persistência falhou"
+
+    return {
+        "available": bool(getattr(adapter, "available", False)),
+        "accepted": True,
+        "reward": recompensa,
+        "persisted": persistido,
+        "reason": motivo,
+    }
+
+
 def diagnostico_widget():
     controller = _obter_widget_controller()
     neural_ativa = bool(_widget_adapter and _widget_adapter.available)
