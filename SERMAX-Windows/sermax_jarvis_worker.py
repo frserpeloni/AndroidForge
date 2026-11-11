@@ -8,8 +8,8 @@ import sys
 from pathlib import Path
 
 
-AGENTE_SERMAX = "orchestrator"
-FERRAMENTAS_PERMITIDAS = ("calculator", "think")
+AGENTES_PERMITIDOS = {"simple": (), "orchestrator": ("calculator", "think")}
+AGENTE_PADRAO = "orchestrator"
 
 
 def _configurar_openjarvis():
@@ -52,6 +52,10 @@ def main():
             raise ValueError("Solicitação inválida.")
         prompt = request.get("prompt")
         model = request.get("model", "sermax")
+        agent = request.get("agent", AGENTE_PADRAO)
+        if agent not in AGENTES_PERMITIDOS:
+            raise ValueError("Agente OpenJarvis não permitido.")
+        ferramentas = list(AGENTES_PERMITIDOS[agent])
         if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
             raise ValueError("Pergunta inválida.")
         if not isinstance(model, str) or not model.strip() or len(model) > 120:
@@ -68,8 +72,8 @@ def main():
             try:
                 response = sdk.ask(
                     prompt.strip(),
-                    agent=AGENTE_SERMAX,
-                    tools=list(FERRAMENTAS_PERMITIDAS),
+                    agent=agent,
+                    tools=ferramentas,
                     context=False,
                     temperature=0.2,
                     max_tokens=512,
