@@ -16,7 +16,7 @@ class JarvisAdapter:
     def _direct_responder(self, prompt):
         sdk=self._sdk_factory(engine_key="ollama", model=self.model)
         try:
-            answer=sdk.ask(prompt, agent="simple", tools=[], context=False, temperature=0.2, max_tokens=512)
+            answer=sdk.ask(prompt, agent="orchestrator", tools=["calculator", "think"], context=False, temperature=0.2, max_tokens=512)
             if not isinstance(answer,str) or not answer.strip():
                 raise RuntimeError("OpenJarvis retornou uma resposta vazia.")
             return answer.strip()
