@@ -282,6 +282,22 @@ def responder_comando_local(mensagem):
         return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /motor status, /motor ollama, /motor jarvis, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
     return None
 
+def selecionar_agente_max(mensagem):
+    """Política conservadora: simple para diálogo direto, orchestrator para tarefas."""
+    texto = normalizar(mensagem)
+    gatilhos = (
+        "passo a passo", "etapas", "plano", "planeje", "planejar", "analise",
+        "análise", "compare", "comparar", "pesquise", "pesquisar", "investigue",
+        "código", "codigo", "programar", "programação", "programacao", "arquivo",
+        "arquivos", "corrija", "corrigir", "depure", "debug", "erro", "falha",
+        "teste", "testes", "implemente", "implementar", "desenvolva", "desenvolver",
+        "execute", "executar", "organize", "organizar", "calcule", "calcular",
+    )
+    if len(texto) > 180 or any(gatilho in texto for gatilho in gatilhos):
+        return "orchestrator"
+    return "simple"
+
+
 def _perguntar_impl(mensagem,receber_parte=None):
     global ultimo_diagnostico_ollama
     mensagem=str(mensagem).strip()
@@ -298,17 +314,16 @@ def _perguntar_impl(mensagem,receber_parte=None):
         sessao.append({"role":"assistant","content":ferramenta})
         if receber_parte: receber_parte(ferramenta)
         return ferramenta
-    # Roteamento interno: tenta OpenJarvis sem exigir comando do usuário.
-    # O worker usa Orchestrator com allowlist calculator/think e limite de turnos.
-    # A escolha do agente ainda é fixa; MAX não faz seleção dinâmica nesta versão.
+    # MAX seleciona internamente o agente conforme a complexidade da solicitação.
     global ultimo_diagnostico_roteamento
     mensagens = montar_contexto(mensagem)
     prompt = "\n\n".join(
         f"{item['role'].upper()}: {item['content']}" for item in mensagens
     )[-3900:]
     try:
-        resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
-        ultimo_diagnostico_roteamento = {"backend": "openjarvis", "fallback": None}
+        agente = selecionar_agente_max(mensagem)
+        resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO, agent=agente).responder(prompt)
+        ultimo_diagnostico_roteamento = {"backend": "openjarvis", "agent": agente, "fallback": None}
         sessao.append({"role":"assistant","content":resposta})
         if receber_parte: receber_parte(resposta)
         return resposta
