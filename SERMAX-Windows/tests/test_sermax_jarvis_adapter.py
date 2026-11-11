@@ -34,6 +34,21 @@ class TestJarvisAdapter(unittest.TestCase):
         self.assertFalse(sdk.calls[0][1]["context"])
         self.assertTrue(sdk.closed)
 
+    def test_simple_agent_receives_no_tools(self):
+        instances = []
+        def factory(**kwargs):
+            item = FakeJarvis(**kwargs)
+            instances.append(item)
+            return item
+        adapter = JarvisAdapter(agent="simple", sdk_factory=factory)
+        self.assertEqual(adapter.responder("Olá"), "Resposta local")
+        self.assertEqual(instances[0].calls[0][1]["agent"], "simple")
+        self.assertEqual(instances[0].calls[0][1]["tools"], [])
+
+    def test_rejects_unknown_agent(self):
+        with self.assertRaises(ValueError):
+            JarvisAdapter(agent="native_react")
+
     def test_rejects_empty_and_oversized_prompt(self):
         adapter = JarvisAdapter(sdk_factory=lambda **kwargs: FakeJarvis(**kwargs))
         for prompt in (" ", "x" * 4001):
