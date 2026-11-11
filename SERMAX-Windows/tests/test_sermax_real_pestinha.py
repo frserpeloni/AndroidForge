@@ -23,6 +23,41 @@ class TestRealPestinhaRuntime(unittest.TestCase):
             restored = PestinhaAdapter(str(path), brain_factory=LIFBrain)
             self.assertTrue(restored.available)
 
+    @unittest.skipIf(LIFBrain is None, "Pestinha não instalado neste ambiente.")
+    def test_explicit_learning_and_habituation_survive_restart(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "memoria_neural_pestinha.json"
+            first = PestinhaAdapter(str(path), brain_factory=LIFBrain)
+            self.assertTrue(first.available)
+
+            for _ in range(12):
+                result = first.registrar_contexto({"WORK": 1.0, "TYPING": 0.5}, dt_ms=400)
+                self.assertTrue(result["available"])
+            self.assertTrue(first.registrar_feedback(1))
+            learned_before = first._brain.learned_summary(top=20)
+            efficacy_before = first._brain.efficacy()["WORK"]
+            self.assertTrue(learned_before)
+            self.assertLess(efficacy_before, 1.0)
+            self.assertTrue(first.salvar())
+
+            restored = PestinhaAdapter(str(path), brain_factory=LIFBrain)
+            self.assertTrue(restored.available)
+            learned_after = restored._brain.learned_summary(top=20)
+            efficacy_after = restored._brain.efficacy()["WORK"]
+            self.assertEqual(learned_after, learned_before)
+            self.assertLess(efficacy_after, 1.0)
+
+    @unittest.skipIf(LIFBrain is None, "Pestinha não instalado neste ambiente.")
+    def test_corrupted_neural_state_fails_closed_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "memoria_neural_pestinha.json"
+            original = "{arquivo neural corrompido"
+            path.write_text(original, encoding="utf-8")
+
+            adapter = PestinhaAdapter(str(path), brain_factory=LIFBrain)
+            self.assertFalse(adapter.available)
+            self.assertEqual(path.read_text(encoding="utf-8"), original)
+
 
 if __name__ == "__main__":
     unittest.main()
