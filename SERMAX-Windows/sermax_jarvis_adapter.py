@@ -5,9 +5,11 @@ from pathlib import Path
 from typing import Callable, Optional
 
 class JarvisAdapter:
-    def __init__(self, *, model="sermax", sdk_factory: Optional[Callable[..., object]]=None,
+    def __init__(self, *, model="sermax", agent="orchestrator", sdk_factory: Optional[Callable[..., object]]=None,
                  python_executable=None, worker_path=None, timeout=180):
+        if agent not in {"simple", "orchestrator"}: raise ValueError("Agente OpenJarvis não permitido.")
         self.model=model
+        self.agent=agent
         self._sdk_factory=sdk_factory
         self.python_executable=python_executable or os.environ.get("SERMAX_JARVIS_PYTHON")
         self.worker_path=worker_path
@@ -16,7 +18,8 @@ class JarvisAdapter:
     def _direct_responder(self, prompt):
         sdk=self._sdk_factory(engine_key="ollama", model=self.model)
         try:
-            answer=sdk.ask(prompt, agent="orchestrator", tools=["calculator", "think"], context=False, temperature=0.2, max_tokens=512)
+            tools=["calculator", "think"] if self.agent == "orchestrator" else []
+            answer=sdk.ask(prompt, agent=self.agent, tools=tools, context=False, temperature=0.2, max_tokens=512)
             if not isinstance(answer,str) or not answer.strip():
                 raise RuntimeError("OpenJarvis retornou uma resposta vazia.")
             return answer.strip()
@@ -39,7 +42,7 @@ class JarvisAdapter:
         else: worker=root/"sermax_jarvis_worker.py"
         if not Path(python).is_file(): raise RuntimeError("Ambiente OpenJarvis indisponível. Configure SERMAX_JARVIS_PYTHON ou instale .venv-jarvis.")
         if not worker.is_file(): raise RuntimeError("Worker OpenJarvis não encontrado.")
-        payload=json.dumps({"prompt":prompt,"model":self.model},ensure_ascii=False)
+        payload=json.dumps({"prompt":prompt,"model":self.model,"agent":self.agent},ensure_ascii=False)
         try:
             proc=subprocess.run([python,str(worker)],input=payload,text=True,encoding="utf-8",
                                 capture_output=True,timeout=self.timeout,check=False,cwd=str(root))
