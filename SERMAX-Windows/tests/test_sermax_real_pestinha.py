@@ -44,7 +44,11 @@ class TestRealPestinhaRuntime(unittest.TestCase):
             self.assertTrue(restored.available)
             learned_after = restored._brain.learned_summary(top=20)
             efficacy_after = restored._brain.efficacy()["WORK"]
-            self.assertEqual(learned_after, learned_before)
+            # O formato JSON persiste pesos com seis casas decimais.
+            self.assertEqual(learned_after, [
+                (canal, alvo, round(peso, 6))
+                for canal, alvo, peso in learned_before
+            ])
             self.assertLess(efficacy_after, 1.0)
 
     @unittest.skipIf(LIFBrain is None, "Pestinha não instalado neste ambiente.")
@@ -56,7 +60,11 @@ class TestRealPestinhaRuntime(unittest.TestCase):
 
             adapter = PestinhaAdapter(str(path), brain_factory=LIFBrain)
             self.assertFalse(adapter.available)
-            self.assertEqual(path.read_text(encoding="utf-8"), original)
+            # read_json preserva o arquivo inválido em quarentena .corrompido.
+            quarantined = path.with_name(path.name + ".corrompido")
+            self.assertTrue(quarantined.is_file())
+            self.assertEqual(quarantined.read_text(encoding="utf-8"), original)
+            self.assertFalse(path.exists())
 
 
 if __name__ == "__main__":
