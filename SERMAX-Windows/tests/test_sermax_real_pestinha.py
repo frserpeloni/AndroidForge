@@ -67,5 +67,52 @@ class TestRealPestinhaRuntime(unittest.TestCase):
             self.assertFalse(path.exists())
 
 
+class TestFeedbackPeloNucleoSERMAX(unittest.TestCase):
+    @unittest.skipIf(LIFBrain is None, "Pestinha não instalado neste ambiente.")
+    def test_feedback_do_core_persiste_e_restaura_rede_real(self):
+        import sermax_core as core
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "memoria_neural_pestinha.json"
+            controller_original = core._widget_controller
+            adapter_original = core._widget_adapter
+            error_original = core._widget_init_error
+            base_original = core.BASE_DIR
+            try:
+                core.BASE_DIR = folder
+                core._widget_controller = None
+                core._widget_adapter = None
+                core._widget_init_error = None
+
+                contexto = core.registrar_contexto_neural(
+                    "Estou trabalhando em uma tarefa de execução e análise"
+                )
+                self.assertTrue(contexto["available"])
+                resultado = core.registrar_feedback_neural(1)
+                self.assertTrue(resultado["accepted"])
+                self.assertTrue(resultado["persisted"])
+                self.assertTrue(path.is_file())
+
+                pesos_antes = core._widget_adapter._brain.learned_summary(top=20)
+                self.assertTrue(pesos_antes)
+
+                core._widget_controller = None
+                core._widget_adapter = None
+                core._widget_init_error = None
+                diagnostico = core.diagnostico_widget()
+                self.assertTrue(diagnostico["neural_ativa"])
+                pesos_depois = core._widget_adapter._brain.learned_summary(top=20)
+                self.assertEqual(pesos_depois, [
+                    (canal, alvo, round(peso, 6))
+                    for canal, alvo, peso in pesos_antes
+                ])
+            finally:
+                core.BASE_DIR = base_original
+                core._widget_controller = controller_original
+                core._widget_adapter = adapter_original
+                core._widget_init_error = error_original
+
+
 if __name__ == "__main__":
     unittest.main()
