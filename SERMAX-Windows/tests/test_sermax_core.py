@@ -104,5 +104,71 @@ class TestMemoriaSERMAX(unittest.TestCase):
         self.assertTrue(callable(core.perguntar))
 
 
+class TestFeedbackNeural(unittest.TestCase):
+    def setUp(self):
+        self.adapter_original = core._widget_adapter
+        self.controller_original = core._widget_controller
+        self.error_original = core._widget_init_error
+        self.calls = []
+        class FakeAdapter:
+            available = True
+            def registrar_feedback(inner, reward):
+                self.calls.append(("feedback", reward))
+                return True
+            def salvar(inner):
+                self.calls.append(("salvar",))
+                return True
+        class FakeController:
+            def salvar_estado_neural(inner):
+                return False
+        core._widget_adapter = FakeAdapter()
+        core._widget_controller = FakeController()
+        core._widget_init_error = None
+
+    def tearDown(self):
+        core._widget_adapter = self.adapter_original
+        core._widget_controller = self.controller_original
+        core._widget_init_error = self.error_original
+
+    def test_feedback_positivo_e_negativo_sao_persistidos(self):
+        for reward in (1, -1):
+            result = core.registrar_feedback_neural(reward)
+            self.assertTrue(result["accepted"])
+            self.assertTrue(result["persisted"])
+            self.assertEqual(result["reward"], reward)
+        self.assertEqual(self.calls, [
+            ("feedback", 1), ("salvar",), ("feedback", -1), ("salvar",)
+        ])
+
+    def test_feedback_invalido_nao_chama_rede(self):
+        for reward in (0, 2, True, False, "1", None, 1.0, -1.0):
+            with self.subTest(reward=reward):
+                result = core.registrar_feedback_neural(reward)
+                self.assertFalse(result["accepted"])
+                self.assertFalse(result["persisted"])
+        self.assertEqual(self.calls, [])
+
+    def test_rede_indisponivel_recusa_feedback(self):
+        core._widget_adapter.available = False
+        result = core.registrar_feedback_neural(1)
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["persisted"])
+        self.assertEqual(self.calls, [])
+
+    def test_falha_ao_salvar_nao_declara_persistencia(self):
+        core._widget_adapter.salvar = lambda: False
+        result = core.registrar_feedback_neural(1)
+        self.assertTrue(result["accepted"])
+        self.assertFalse(result["persisted"])
+        self.assertIn("persistência falhou", result["reason"])
+
+    def test_excecao_no_feedback_falha_fechada(self):
+        core._widget_adapter.registrar_feedback = lambda reward: (_ for _ in ()).throw(RuntimeError("falha"))
+        result = core.registrar_feedback_neural(-1)
+        self.assertFalse(result["accepted"])
+        self.assertFalse(result["persisted"])
+        self.assertIn("Falha no feedback", result["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
