@@ -94,18 +94,22 @@ class TestFeedbackPeloNucleoSERMAX(unittest.TestCase):
                 self.assertTrue(resultado["persisted"])
                 self.assertTrue(path.is_file())
 
-                pesos_antes = core._widget_adapter._brain.learned_summary(top=20)
-                self.assertTrue(pesos_antes)
+                pesos_antes = core._widget_adapter._brain.learned.copy()
+                # Um único contexto de 80 ms gera atualização pequena, abaixo
+                # do limiar de exibição de learned_summary (1e-4). Validamos
+                # os pesos internos, sem confundir ausência no resumo com
+                # ausência de plasticidade.
+                self.assertTrue(any(float(valor) != 0.0 for linha in pesos_antes for valor in linha))
 
                 core._widget_controller = None
                 core._widget_adapter = None
                 core._widget_init_error = None
                 diagnostico = core.diagnostico_widget()
                 self.assertTrue(diagnostico["neural_ativa"])
-                pesos_depois = core._widget_adapter._brain.learned_summary(top=20)
-                self.assertEqual(pesos_depois, [
-                    (canal, alvo, round(peso, 6))
-                    for canal, alvo, peso in pesos_antes
+                pesos_depois = core._widget_adapter._brain.learned.copy()
+                self.assertEqual(pesos_depois.tolist(), [
+                    [round(float(valor), 6) for valor in linha]
+                    for linha in pesos_antes
                 ])
             finally:
                 core.BASE_DIR = base_original
