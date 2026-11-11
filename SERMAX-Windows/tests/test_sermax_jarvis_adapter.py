@@ -17,7 +17,7 @@ class FakeJarvis:
 
 
 class TestJarvisAdapter(unittest.TestCase):
-    def test_uses_simple_agent_without_tools_or_memory(self):
+    def test_uses_orchestrator_with_explicit_safe_tools_and_without_memory(self):
         instances = []
 
         def factory(**kwargs):
@@ -29,8 +29,8 @@ class TestJarvisAdapter(unittest.TestCase):
         self.assertEqual(adapter.responder("Olá"), "Resposta local")
         sdk = instances[0]
         self.assertEqual(sdk.kwargs, {"engine_key": "ollama", "model": "sermax"})
-        self.assertEqual(sdk.calls[0][1]["agent"], "simple")
-        self.assertEqual(sdk.calls[0][1]["tools"], [])
+        self.assertEqual(sdk.calls[0][1]["agent"], "orchestrator")
+        self.assertEqual(sdk.calls[0][1]["tools"], ["calculator", "think"])
         self.assertFalse(sdk.calls[0][1]["context"])
         self.assertTrue(sdk.closed)
 
