@@ -95,6 +95,11 @@ class SignedManifestTests(unittest.TestCase):
         with self.assertRaises(ManifestError):
             validate_signed_manifest(self.raw(), verify_signature=self.verifier)
 
+    def test_rejects_non_string_action(self):
+        self.document["files"][0]["action"] = ["replace"]
+        with self.assertRaises(ManifestError):
+            validate_signed_manifest(self.raw(), verify_signature=self.verifier)
+
     def test_rejects_unmanaged_classification(self):
         self.document["files"][0]["classification"] = "unknown"
         with self.assertRaises(ManifestError):
