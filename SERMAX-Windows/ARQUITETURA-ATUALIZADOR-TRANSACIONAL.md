@@ -225,7 +225,7 @@ Contrato atual:
 - Schema `1`; versão SemVer; lista de 1 a 10.000 arquivos.
 - Cada arquivo declara exatamente `path`, `size`, `sha256`, `classification` e `action`.
 - Classificação aceita: `managed`. Ações aceitas: `create` e `replace`.
-- Caminhos relativos normalizados, sem traversal, nomes reservados, duplicidade ou colisão case-insensitive. Memórias protegidas são destinos proibidos.
+- Caminhos relativos normalizados, sem traversal, nomes reservados, duplicidade ou colisão case-insensitive. Memórias protegidas e segmentos de diretório de dados (`_update`, backups, histórico, memória, configurações, voz e modelos) são destinos proibidos.
 - Assinatura declarada como Ed25519, com `key_id` e assinatura Base64 de 64 bytes.
 - O payload assinado é o JSON sem o campo `signature`, serializado em UTF-8, chaves ordenadas, separadores compactos e sem NaN/Infinity.
 - O verificador é uma dependência injetada e precisa consultar chave pública confiável embutida no verificador. O manifesto não fornece sua própria chave pública.
