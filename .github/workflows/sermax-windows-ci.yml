@@ -68,7 +68,7 @@ jobs:
         run: |
           python -m venv .venv-integrations
           $py = ".venv-integrations/Scripts/python.exe"
-          & $py -m pip install --upgrade pip pyinstaller "numpy>=2.4.6" "psutil>=7.2.2" "pywin32>=305" "cryptography==50.0.2"
+          # Ed25519 verifier dependency is pinned for reproducible signature tests.\n          & $py -m pip install --upgrade pip pyinstaller "numpy>=2.4.6" "psutil>=7.2.2" "pywin32>=305" "cryptography==50.0.2"
           if ($LASTEXITCODE -ne 0) { throw "Python 3.14 dependencies failed." }
           "PYTHONPATH=$PWD/.deps/pestinha" | Out-File -FilePath $env:GITHUB_ENV -Append
 
