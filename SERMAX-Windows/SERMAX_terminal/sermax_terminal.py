@@ -194,6 +194,33 @@ def preparar_terminal():
     os.system("title SERMAX - Terminal de IA")
 
 
+def abrir_avisos_licenca():
+    """Abre os avisos legais do Pestinha incluídos no pacote."""
+    bases = []
+    if getattr(sys, "_MEIPASS", None):
+        bases.append(os.path.join(sys._MEIPASS, "THIRD_PARTY_NOTICES"))
+    raiz = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    bases.extend([
+        os.path.join(raiz, "THIRD_PARTY_NOTICES"),
+        os.path.join(os.path.dirname(os.path.abspath(sys.executable)), "THIRD_PARTY_NOTICES"),
+    ])
+    nomes = ("Pestinha-GPL-3.0.txt", "Pestinha-ORIGIN.md")
+    for base in bases:
+        arquivos = [os.path.join(base, nome) for nome in nomes]
+        if all(os.path.isfile(arquivo) for arquivo in arquivos):
+            if os.name != "nt":
+                return "Os avisos foram localizados, mas a abertura automática exige Windows."
+            try:
+                for arquivo in arquivos:
+                    os.startfile(arquivo)
+                return ("Avisos legais abertos. Pestinha está sob GPL-3.0-or-later, "
+                        "sem garantia nos limites da licença. Redistribuição exige "
+                        "cumprir a GPL e disponibilizar o código-fonte correspondente.")
+            except OSError as erro:
+                return "Falha ao abrir os avisos legais: " + str(erro)
+    return "Arquivos legais não encontrados no pacote ou na pasta THIRD_PARTY_NOTICES."
+
+
 def painel():
 
     w = PANEL_COLS
@@ -221,6 +248,8 @@ def painel():
         " FABIANO",
         "",
         " COMANDOS",
+        " PESTINHA: GPL-3.0-OR-LATER",
+        " /licencas: avisos legais",
         " /limpar",
         " /modelo",
         " /ajuda",
@@ -530,6 +559,13 @@ def main():
             if cmd not in {"/sair", "sair", "exit", "quit"}:
                 _sermax_hist.registrar(pergunta)
 
+            if cmd == "/licencas":
+                mensagem = abrir_avisos_licenca()
+                conversa.extend([{"role": "user", "content": pergunta},
+                                 {"role": "assistant", "content": mensagem}])
+                desenhar(conversa)
+                continue
+
             if cmd == "/vozdiag":
                 estado = diagnostico_voz()
                 mensagem = (
@@ -628,7 +664,8 @@ def main():
                     {
                         "role": "assistant",
                         "content": (
-                            "Comandos: /limpar, /modelo, /ajuda, /memoria, /voz <arquivo.wav> e /sair. "
+                            "Comandos: /limpar, /modelo, /ajuda, /memoria, /licencas, /voz <arquivo.wav> e /sair. "
+                            "Pestinha: GPL-3.0-or-later, sem garantia. /licencas abre a licença e o aviso de origem. "
                             "Recursos locais: calculadora e consultas do Windows. "
                             "Perguntas gerais usam o cérebro local SERMAX."
                         )
