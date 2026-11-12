@@ -21,7 +21,7 @@ MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_FILES = 10000
 MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$")
+_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$")
 _KEY_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 _SIGNATURE_ALGORITHM = "Ed25519"
 
@@ -108,6 +108,12 @@ def validate_signed_manifest(
     version = document["release_version"]
     if not isinstance(version, str) or not _VERSION.fullmatch(version):
         raise ManifestError("Versão de release inválida.")
+    prerelease = _VERSION.fullmatch(version).group(4-1)
+    if prerelease is not None and any(
+        len(identifier) > 1 and identifier.isdigit() and identifier.startswith("0")
+        for identifier in prerelease.split(".")
+    ):
+        raise ManifestError("Identificador numérico de pré-release contém zero à esquerda.")
 
     files = document["files"]
     if not isinstance(files, list) or not files or len(files) > MAX_FILES:
