@@ -163,7 +163,7 @@ def validate_signed_manifest(
         if item["classification"] != "managed":
             raise ManifestError(f"Classificação não gerenciada para {path}.")
         action = item["action"]
-        if action not in {"create", "replace"}:
+        if not isinstance(action, str) or action not in {"create", "replace"}:
             raise ManifestError(f"Ação não permitida para {path}.")
         parsed.append(ManifestFile(path=path, size=item["size"], sha256=digest, action=action))
 
