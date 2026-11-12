@@ -40,6 +40,22 @@ class SignedManifestTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 1)
         self.assertNotIn(b'"signature"', self.calls[0][1])
 
+    def test_accepts_semver_prerelease_and_build_metadata(self):
+        for version in ("1.2.3-alpha.1", "1.2.3+build.7", "1.2.3-rc.1+build.7"):
+            with self.subTest(version=version):
+                self.document["release_version"] = version
+                result = validate_signed_manifest(self.raw(), verify_signature=self.verifier)
+                self.assertEqual(result.release_version, version)
+
+    def test_rejects_protected_data_directories(self):
+        for path in ("_update/staging/payload.bin", "backups/old.exe",
+                     "historico/session.json", "config/settings.json",
+                     "voz/model.bin", "models/local.gguf"):
+            with self.subTest(path=path):
+                self.document["files"][0]["path"] = path
+                with self.assertRaises(ManifestError):
+                    validate_signed_manifest(self.raw(), verify_signature=self.verifier)
+
     def test_fails_closed_without_verifier(self):
         with self.assertRaises(ManifestError):
             validate_signed_manifest(self.raw(), verify_signature=None)
