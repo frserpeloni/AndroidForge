@@ -215,3 +215,22 @@ Até lá, o atualizador permanece especificação. Não há instalador final, at
 - `SERMAX.spec`: composição atual do executável e coleta de recursos.
 - `AUDITORIA-RECONCILIACAO-2026-11-07.md`: estado técnico e gates conhecidos.
 - `AUDITORIA-LICENCAS-PESTINHA-2026-11-07.md`: pendências de licença e distribuição.
+
+## 10. Contrato inicial do manifesto assinado, implementação parcial
+
+O módulo `sermax_update_manifest.py` implementa a validação estrutural do schema 1. Ele não instala arquivos e não realiza operações no diretório da instalação.
+
+Contrato atual:
+- Raiz JSON com exatamente `schema_version`, `release_version`, `files` e `signature`.
+- Schema `1`; versão SemVer; lista de 1 a 10.000 arquivos.
+- Cada arquivo declara exatamente `path`, `size`, `sha256`, `classification` e `action`.
+- Classificação aceita: `managed`. Ações aceitas: `create` e `replace`.
+- Caminhos relativos normalizados, sem traversal, nomes reservados, duplicidade ou colisão case-insensitive. Memórias protegidas são destinos proibidos.
+- Assinatura declarada como Ed25519, com `key_id` e assinatura Base64 de 64 bytes.
+- O payload assinado é o JSON sem o campo `signature`, serializado em UTF-8, chaves ordenadas, separadores compactos e sem NaN/Infinity.
+- O verificador é uma dependência injetada e precisa consultar chave pública confiável embutida no verificador. O manifesto não fornece sua própria chave pública.
+- Ausência de verificador, exceção, chave desconhecida ou assinatura inválida interrompe a validação.
+
+**Limite explícito:** o backend Ed25519 com chave pública confiável ainda não foi implementado. Os testes usam um verificador simulado para testar o contrato e o comportamento fail-closed. Portanto, o módulo ainda não autentica releases em produção e não autoriza instalação. SHA-256 valida integridade dos arquivos depois que a origem do manifesto estiver autenticada.
+
+Próximas etapas: implementar backend Ed25519 com chave pública de release versionada e rotação documentada; validar hash/tamanho do pacote extraído; testar colisões de arquivos ZIP; só então avançar para staging, backup e journal. Nenhuma chave privada deve ser armazenada no repositório.
