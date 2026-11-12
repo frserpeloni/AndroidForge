@@ -1,29 +1,15 @@
-# Parser isolado de FILE_ID_BOTH_DIR_INFO
+# Enumeração nativa por handle, primeira implementação isolada
 
-O módulo `sermax_windows_directory_enum.py` valida buffers retornados pela classe 10 (`FileIdBothDirectoryInfo`) de `GetFileInformationByHandleEx`. Ele não chama APIs nativas e não percorre diretórios.
+Arquivo: `sermax_windows_directory_handle.py`.
 
-## Layout validado
+A função `enumerate_directory_handle` usa `GetFileInformationByHandleEx` com:
+- classe 11 (`FileIdBothDirectoryRestartInfo`) para reiniciar a enumeração;
+- classe 10 (`FileIdBothDirectoryInfo`) para continuar os lotes.
 
-- `NextEntryOffset`: 0
-- `FileIndex`: 4
-- Tempos: 8, 16, 24 e 32
-- `EndOfFile`: 40
-- `AllocationSize`: 48
-- `FileAttributes`: 56
-- `FileNameLength`: 60
-- `EaSize`: 64
-- `ShortNameLength`: 68
-- `ShortName`: 70, até 24 bytes
-- `FileId`: 96
-- `FileName`: 104
+Antes da enumeração, consulta metadados pelo handle e exige diretório regular, sem reparse point e sem `DeletePending`. O buffer padrão é 64 KiB. Tamanhos aceitos: 4 KiB a 1 MiB, múltiplos de 8. Rejeita erro de buffer, lote vazio sem término, nomes duplicados e limites excessivos.
 
-O cabeçalho fixo ocupa 104 bytes. Cada nome é UTF-16LE, com comprimento par, positivo e limitado a 255 unidades UTF-16. Entradas intermediárias exigem `NextEntryOffset` alinhado em 8 bytes, sem sobreposição e dentro do buffer. A última entrada usa offset zero.
+## Limites de segurança
 
-O parser rejeita cabeçalhos truncados, comprimentos inválidos, nomes além do buffer, UTF-16 inválido, NUL embutido, nomes fora de NFC, tamanhos negativos e offsets inconsistentes.
+A API não garante snapshot transacional. O código ainda não faz duas passagens independentes, não abre cada filho relativamente ao handle pai, não compara FileId com identidade reaberta e não calcula hash. O tratamento de colisões Unicode completo ainda não foi integrado. Portanto esta função é um componente experimental e não deve alimentar o inventário de produção até os testes de mutação do namespace e a validação completa de cada objeto.
 
-## Limites
-
-Este módulo não inicia enumeração, não interpreta códigos Win32, não controla `ERROR_NO_MORE_FILES` ou `ERROR_MORE_DATA`, não verifica mutação do namespace e não garante snapshot. Não abre objetos nem calcula hashes. O parser isolado não autoriza integração ao inventário de produção.
-
-Fonte do layout: Microsoft Learn, FILE_ID_BOTH_DIR_INFO:
-https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_id_both_dir_info
+A implementação deve ser validada em runner Windows x64. Testes com mocks verificam a sequência de classes e as condições de falha, mas não substituem testes nativos em NTFS.
