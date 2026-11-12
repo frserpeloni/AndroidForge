@@ -47,6 +47,25 @@ class SignedManifestTests(unittest.TestCase):
                 result = validate_signed_manifest(self.raw(), verify_signature=self.verifier)
                 self.assertEqual(result.release_version, version)
 
+    def test_rejects_invalid_semver_prerelease_and_build_identifiers(self):
+        invalid_versions = (
+            "1.2.3-", "1.2.3+", "1.2.3-alpha..1",
+            "1.2.3+build..7", "1.2.3-01", "1.2.3-alpha.01",
+            "1.2.3-..", "01.2.3", "1.02.3", "1.2.03",
+        )
+        for version in invalid_versions:
+            with self.subTest(version=version):
+                self.document["release_version"] = version
+                with self.assertRaises(ManifestError):
+                    validate_signed_manifest(self.raw(), verify_signature=self.verifier)
+
+    def test_accepts_semver_zero_prerelease_and_numeric_build_leading_zero(self):
+        for version in ("1.2.3-0", "1.2.3-alpha-01", "1.2.3+build.007"):
+            with self.subTest(version=version):
+                self.document["release_version"] = version
+                result = validate_signed_manifest(self.raw(), verify_signature=self.verifier)
+                self.assertEqual(result.release_version, version)
+
     def test_rejects_protected_data_directories(self):
         for path in ("_update/staging/payload.bin", "backups/old.exe",
                      "historico/session.json", "config/settings.json",
