@@ -35,9 +35,16 @@ class TestAvisosLicencaTerminal(unittest.TestCase):
                                                     call(str(pasta / "Pestinha-ORIGIN.md"))])
 
     def test_ausencia_de_arquivos_retorna_mensagem_sem_excecao(self):
-        with tempfile.TemporaryDirectory() as temp, \
-             patch.object(sermax_terminal.sys, "_MEIPASS", str(Path(temp) / "vazio"), create=True):
-            resultado = sermax_terminal.abrir_avisos_licenca()
+        with tempfile.TemporaryDirectory() as temp:
+            raiz = Path(temp) / "instalacao"
+            terminal = raiz / "SERMAX_terminal"
+            terminal.mkdir(parents=True)
+            arquivo_terminal = terminal / "sermax_terminal.py"
+            arquivo_terminal.write_text("# teste", encoding="utf-8")
+            with patch.object(sermax_terminal, "__file__", str(arquivo_terminal)), \
+                 patch.object(sermax_terminal.sys, "_MEIPASS", str(Path(temp) / "bundle-vazio"), create=True), \
+                 patch.object(sermax_terminal.sys, "executable", str(raiz / "SERMAX.exe")):
+                resultado = sermax_terminal.abrir_avisos_licenca()
         self.assertIn("não encontrados", resultado)
 
     def test_sistema_nao_windows_nao_tenta_abrir_arquivos(self):
