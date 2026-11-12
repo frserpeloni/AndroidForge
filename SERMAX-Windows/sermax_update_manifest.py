@@ -108,7 +108,7 @@ def validate_signed_manifest(
     version = document["release_version"]
     if not isinstance(version, str) or not _VERSION.fullmatch(version):
         raise ManifestError("Versão de release inválida.")
-    prerelease = _VERSION.fullmatch(version).group(4-1)
+    prerelease = _VERSION.fullmatch(version).group(4)
     if prerelease is not None and any(
         len(identifier) > 1 and identifier.isdigit() and identifier.startswith("0")
         for identifier in prerelease.split(".")
