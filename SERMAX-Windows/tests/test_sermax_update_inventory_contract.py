@@ -112,7 +112,11 @@ class InventoryContractTests(unittest.TestCase):
 
     def test_replace_existing_regular_file(self):
         result = build_plan(
-            [record("bin/SERMAX.exe")],
+            [
+                record("bin", entry_type="directory", classification="unknown",
+                       size=None, digest=None, file_id=None),
+                record("bin/SERMAX.exe"),
+            ],
             manifest(file_item("bin/SERMAX.exe")),
         )
         self.assertEqual(result.release_version, "1.2.3")
