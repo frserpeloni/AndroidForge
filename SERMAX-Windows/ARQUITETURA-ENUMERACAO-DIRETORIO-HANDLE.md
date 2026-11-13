@@ -84,3 +84,21 @@ Essa alteração prepara a próxima etapa: abrir cada filho pelo handle pai e
 comparar o FileId de 128 bits do item enumerado com o FileId obtido do handle
 aberto. Até essa comparação existir e passar em testes nativos, a caminhada
 recursiva e a leitura de conteúdo não devem ser integradas ao inventário.
+
+
+
+## Abertura vinculada à entrada enumerada
+
+`open_verified_child_component(parent_handle, entry)` abre o nome relativo
+ao handle pai e valida o objeto aberto antes de devolvê-lo. Exige FileId de
+128 bits igual ao informado pela enumeração estendida, mesmo volume do pai,
+atributos, tipo e tamanho compatíveis. Rejeita reparse points e objetos
+marcados para exclusão. Para diretórios, solicita também
+`FILE_LIST_DIRECTORY`. Em falha de validação, fecha o handle filho.
+
+`hash_file_component` agora recebe a própria `DirectoryEntry`, não um nome
+livre. A leitura SHA-256 ocorre somente depois da validação de identidade,
+volume, atributos e tamanho. Isso fecha a lacuna entre enumerar um nome e
+abrir um objeto substituto com o mesmo nome. A validação física em NTFS e
+testes concorrentes ainda são necessários antes de qualquer integração ao
+inventário de produção.
