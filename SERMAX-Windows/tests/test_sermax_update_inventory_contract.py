@@ -1,19 +1,56 @@
+import base64
+import json
 import unittest
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from sermax_update_inventory_contract import (
     InventoryContractError,
     build_inventory_plan,
     classify_inventory,
 )
-from sermax_update_manifest import ManifestFile, ValidatedManifest
+from sermax_update_manifest import ManifestFile
+from sermax_update_signature import build_ed25519_verifier
+
+
+_TEST_PRIVATE_KEY = Ed25519PrivateKey.generate()
+_TEST_PUBLIC_KEY = _TEST_PRIVATE_KEY.public_key().public_bytes(
+    encoding=serialization.Encoding.Raw,
+    format=serialization.PublicFormat.Raw,
+)
+_TEST_VERIFIER = build_ed25519_verifier({"inventory-contract-test": _TEST_PUBLIC_KEY})
 
 
 def manifest(*items):
-    return ValidatedManifest(
-        release_version="1.2.3",
-        files=tuple(items),
-        key_id="test-key",
-        manifest_sha256="a" * 64,
+    document = {
+        "schema_version": 1,
+        "release_version": "1.2.3",
+        "files": [{
+            "path": item.path,
+            "size": item.size,
+            "sha256": item.sha256,
+            "classification": "managed",
+            "action": item.action,
+        } for item in items],
+    }
+    payload = json.dumps(
+        document, ensure_ascii=False, sort_keys=True,
+        separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")
+    document["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": "inventory-contract-test",
+        "value": base64.b64encode(_TEST_PRIVATE_KEY.sign(payload)).decode("ascii"),
+    }
+    return json.dumps(document, ensure_ascii=False).encode("utf-8")
+
+
+def build_plan(inventory, raw_manifest):
+    return build_inventory_plan(
+        inventory,
+        raw_manifest,
+        verify_signature=_TEST_VERIFIER,
     )
 
 
@@ -62,6 +99,16 @@ class InventoryContractTests(unittest.TestCase):
                         digest=None, file_id=None)],
                 ["target"],
             )
+
+    def test_rejects_manifest_with_invalid_signature(self):
+        raw = json.loads(manifest(file_item("target", "create")))
+        raw["signature"]["value"] = base64.b64encode(b"x" * 64).decode("ascii")
+        with self.assertRaises(InventoryContractError):
+            build_plan([], json.dumps(raw).encode("utf-8"))
+
+    def test_rejects_plan_without_signature_verifier(self):
+        with self.assertRaises(InventoryContractError):
+            build_inventory_plan([], manifest(file_item("target", "create")))
 
     def test_replace_existing_regular_file(self):
         result = build_inventory_plan(
