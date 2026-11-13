@@ -41,6 +41,7 @@ class PrivateAreaAclPolicyTests(unittest.TestCase):
             "expected_owner_sid": OWNER,
             "expected_volume_serial": VOLUME,
             "expected_file_id_128": FILE_ID,
+            "directory_identity": {"volume_serial_number": VOLUME, "file_id_128": FILE_ID},
             "directory_entries": [] if entries is None else entries,
         }
         args.update(overrides)
