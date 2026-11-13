@@ -17,6 +17,21 @@ PROTECTED_FILES = frozenset({
     "memoria_sermax.json",
     "memoria_neural_pestinha.json",
 })
+PROTECTED_DIRECTORY_SEGMENTS = frozenset({
+    "_update", "backup", "backups", "historico", "history",
+    "memoria", "memorias", "memory", "memories",
+    "config", "configs", "configuracao", "configuracoes",
+    "voice", "voz", "models", "modelos",
+})
+
+
+def is_protected_path(relative_path: str) -> bool:
+    """Identifica arquivos/diretórios pessoais que o inventário não deve ler."""
+    parts = relative_path.replace("\\\\", "/").split("/")
+    return (
+        parts[-1].casefold() in PROTECTED_FILES
+        or any(part.casefold() in PROTECTED_DIRECTORY_SEGMENTS for part in parts)
+    )
 
 REPARSE_POINT_ATTRIBUTE = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
 _WINDOWS_RESERVED = re.compile(
@@ -117,11 +132,14 @@ def inventory_directory(
                 continue
 
             if stat.S_ISDIR(info.st_mode):
+                protected = is_protected_path(relative)
                 records.append({
                     "path": relative, "type": "directory", "size": None,
-                    "sha256": None, "classification": "unknown",
+                    "sha256": None,
+                    "classification": "protected" if protected else "unknown",
                 })
-                walk(path)
+                if not protected:
+                    walk(path)
                 continue
 
             if not stat.S_ISREG(info.st_mode):
@@ -131,20 +149,22 @@ def inventory_directory(
                 })
                 continue
 
+            if is_protected_path(relative):
+                records.append({
+                    "path": relative, "type": "file", "size": None,
+                    "sha256": None, "classification": "protected",
+                })
+                continue
+
             try:
                 digest = _sha256_file(path)
                 final_size = path.stat(follow_symlinks=False).st_size
             except OSError as exc:
                 raise InventoryError(f"Falha ao calcular hash de {relative!r}: {exc}") from exc
 
-            basename = path.name.casefold()
-            if basename in PROTECTED_FILES:
-                classification = "protected"
-            elif relative.casefold() in allowlist:
-                classification = "managed"
-            else:
-                classification = "unknown"
-
+            classification = (
+                "managed" if relative.casefold() in allowlist else "unknown"
+            )
             records.append({
                 "path": relative,
                 "type": "file",
