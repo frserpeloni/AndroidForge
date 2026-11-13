@@ -92,15 +92,17 @@ def inspect_directory_acl(directory_handle) -> dict:
                     ) else None,
                     "sid": None,
                 }
-                if len(ace) > 2:
+                # ACEs padrão carregam SID em [2]. ACEs de objeto
+                # podem carregar GUIDs antes do SID, por isso tentamos os
+                # campos restantes do fim para o início sem presumir formato.
+                for candidate in reversed(ace[2:]):
                     try:
-                        ace_record["sid"] = win32security.ConvertSidToStringSid(
-                            ace[2]
+                        ace_record["sid"] = (
+                            win32security.ConvertSidToStringSid(candidate)
                         )
+                        break
                     except Exception:
-                        # ACEs de objeto podem ter campos diferentes. Mantemos
-                        # o tipo e as flags, sem inferir o trustee.
-                        ace_record["sid"] = None
+                        continue
                 aces.append(ace_record)
 
         owner_sid = (
