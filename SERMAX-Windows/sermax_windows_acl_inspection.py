@@ -68,8 +68,8 @@ def inspect_directory_acl(directory_handle) -> dict:
         descriptor = win32security.GetSecurityInfo(
             native, win32security.SE_FILE_OBJECT, security_info
         )
-        owner = descriptor.GetOwner()
-        group = descriptor.GetGroup()
+        owner = descriptor.GetSecurityDescriptorOwner()
+        group = descriptor.GetSecurityDescriptorGroup()
         dacl = descriptor.GetSecurityDescriptorDacl()
         control, revision = descriptor.GetSecurityDescriptorControl()
 
