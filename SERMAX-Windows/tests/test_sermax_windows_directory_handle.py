@@ -146,5 +146,104 @@ class DirectoryHandleEnumerationControlTests(unittest.TestCase):
                 native_enum.enumerate_directory_handle(123)
 
 
+
+def directory_entry(name="file.bin", *, file_id="00112233445566778899aabbccddeeff",
+                   attributes=0x20, size=12):
+    from sermax_windows_directory_enum import DirectoryEntry
+    return DirectoryEntry(
+        name=name,
+        file_index=1,
+        creation_time=1,
+        last_access_time=2,
+        last_write_time=3,
+        change_time=4,
+        end_of_file=size,
+        allocation_size=16,
+        attributes=attributes,
+        ea_size=0,
+        short_name="",
+        file_id=file_id,
+    )
+
+
+def handle_metadata(*, volume=7, file_id="00112233445566778899aabbccddeeff",
+                    attributes=0x20, size=12, directory=False,
+                    reparse=False, pending=False):
+    return {
+        "volume_serial_number": volume,
+        "file_id_128": file_id,
+        "attributes": attributes,
+        "end_of_file": size,
+        "is_directory": directory,
+        "is_reparse_point": reparse,
+        "delete_pending": pending,
+    }
+
+
+class VerifiedChildHandleTests(unittest.TestCase):
+    def test_opens_and_validates_file_against_128_bit_id(self):
+        entry = directory_entry()
+        with (
+            patch.object(native_enum, "query_handle_metadata",
+                         side_effect=(handle_metadata(directory=True, attributes=0x10, size=0),
+                                      handle_metadata())),
+            patch.object(native_enum, "open_relative_component", return_value=456) as opened,
+            patch.object(native_enum, "close_handle") as closed,
+        ):
+            result = native_enum.open_verified_child_component(123, entry)
+        self.assertEqual(result, 456)
+        opened.assert_called_once_with(123, "file.bin", directory=False,
+                                       desired_access=None)
+        closed.assert_not_called()
+
+    def test_requests_list_directory_access_for_directory_child(self):
+        entry = directory_entry(
+            name="subdir", attributes=0x10, size=0
+        )
+        with (
+            patch.object(native_enum, "query_handle_metadata",
+                         side_effect=(handle_metadata(directory=True, attributes=0x10, size=0),
+                                      handle_metadata(directory=True, attributes=0x10, size=0))),
+            patch.object(native_enum, "open_relative_component", return_value=456) as opened,
+            patch.object(native_enum, "close_handle"),
+        ):
+            native_enum.open_verified_child_component(123, entry)
+        opened.assert_called_once_with(123, "subdir", directory=True,
+                                       desired_access=native_enum.FILE_LIST_DIRECTORY)
+
+    def test_rejects_file_id_mismatch_and_closes_child(self):
+        entry = directory_entry()
+        with (
+            patch.object(native_enum, "query_handle_metadata",
+                         side_effect=(handle_metadata(directory=True, attributes=0x10, size=0),
+                                      handle_metadata(file_id="ff" * 16))),
+            patch.object(native_enum, "open_relative_component", return_value=456),
+            patch.object(native_enum, "close_handle") as closed,
+        ):
+            with self.assertRaises(native_enum.HandleIoError):
+                native_enum.open_verified_child_component(123, entry)
+        closed.assert_called_once_with(456)
+
+    def test_rejects_volume_mismatch_and_closes_child(self):
+        entry = directory_entry()
+        with (
+            patch.object(native_enum, "query_handle_metadata",
+                         side_effect=(handle_metadata(directory=True, attributes=0x10, size=0),
+                                      handle_metadata(volume=8))),
+            patch.object(native_enum, "open_relative_component", return_value=456),
+            patch.object(native_enum, "close_handle") as closed,
+        ):
+            with self.assertRaises(native_enum.HandleIoError):
+                native_enum.open_verified_child_component(123, entry)
+        closed.assert_called_once_with(456)
+
+    def test_rejects_reparse_entry_before_opening(self):
+        entry = directory_entry(attributes=0x400)
+        with patch.object(native_enum, "open_relative_component") as opened:
+            with self.assertRaises(native_enum.HandleIoError):
+                native_enum.open_verified_child_component(123, entry)
+        opened.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
