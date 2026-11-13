@@ -5,6 +5,7 @@ from ctypes import wintypes
 from unittest.mock import patch
 
 import sermax_windows_file_hash as file_hash
+from sermax_windows_directory_enum import DirectoryEntry
 
 
 def metadata(*, size=6, file_id="abc", links=1, directory=False,
@@ -19,6 +20,23 @@ def metadata(*, size=6, file_id="abc", links=1, directory=False,
         "is_reparse_point": reparse,
         "delete_pending": pending,
     }
+
+
+def file_entry():
+    return DirectoryEntry(
+        name="SERMAX.exe",
+        file_index=1,
+        creation_time=1,
+        last_access_time=2,
+        last_write_time=3,
+        change_time=4,
+        end_of_file=6,
+        allocation_size=8,
+        attributes=0x20,
+        ea_size=0,
+        short_name="",
+        file_id="00112233445566778899aabbccddeeff",
+    )
 
 
 def reader_for(payload):
@@ -78,18 +96,18 @@ class HandleFileHashTests(unittest.TestCase):
             file_hash._hash_handle(123, chunk_size=1, read_file=reader_for(b""))
 
     def test_component_handle_is_always_closed(self):
-        with patch.object(file_hash, "open_relative_component", return_value=456) as opened, \
+        with patch.object(file_hash, "open_verified_child_component", return_value=456) as opened, \
              patch.object(file_hash, "_hash_handle", return_value=("digest", 6)) as hashed, \
              patch.object(file_hash, "close_handle") as closed:
-            result = file_hash.hash_file_component(123, "SERMAX.exe")
+            result = file_hash.hash_file_component(123, file_entry())
         self.assertEqual(result, ("digest", 6))
-        opened.assert_called_once_with(123, "SERMAX.exe", directory=False,
+        opened.assert_called_once_with(123, file_entry(),
                                        desired_access=file_hash.FILE_READ_DATA)
         hashed.assert_called_once_with(456, chunk_size=file_hash.DEFAULT_CHUNK_SIZE)
         closed.assert_called_once_with(456)
 
     def test_component_handle_closes_after_hash_failure(self):
-        with patch.object(file_hash, "open_relative_component", return_value=456), \
+        with patch.object(file_hash, "open_verified_child_component", return_value=456), \
              patch.object(file_hash, "_hash_handle",
                           side_effect=file_hash.HandleIoError("read failed")), \
              patch.object(file_hash, "close_handle") as closed:
