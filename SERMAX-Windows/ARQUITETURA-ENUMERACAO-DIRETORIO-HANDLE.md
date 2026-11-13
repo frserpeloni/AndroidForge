@@ -1,15 +1,17 @@
 # Enumeração nativa por handle e comparação de snapshots
 
 Arquivos:
-- `sermax_windows_directory_enum.py`: parser puro de buffers `FILE_ID_BOTH_DIR_INFO`.
+- `sermax_windows_directory_enum.py`: parsers puros de buffers `FILE_ID_BOTH_DIR_INFO` e `FILE_ID_EXTD_DIR_INFO`.
 - `sermax_windows_directory_handle.py`: enumeração nativa isolada por handle.
 - `sermax_windows_directory_snapshot.py`: comparação pura de duas enumerações.
 
 ## Enumeração nativa
 
 A função `enumerate_directory_handle` usa `GetFileInformationByHandleEx` com:
-- classe 11 (`FileIdBothDirectoryRestartInfo`) para reiniciar a enumeração;
-- classe 10 (`FileIdBothDirectoryInfo`) para continuar os lotes.
+- classe 20 (`FileIdExtdDirectoryRestartInfo`) para reiniciar a enumeração;
+- classe 19 (`FileIdExtdDirectoryInfo`) para continuar os lotes.
+
+O parser usa `FILE_ID_EXTD_DIR_INFO`, com cabeçalho de 88 bytes e FileId de 128 bits. Isso permite comparar a identidade completa do item enumerado com `FILE_ID_INFO.FileId` obtido ao abrir o filho, sem reduzir a comparação ao identificador de 64 bits da estrutura anterior. A enumeração estendida exige suporte do sistema de arquivos e do Windows; falha nativa deve abortar a operação, sem fallback silencioso para identidade de 64 bits.
 
 Antes da enumeração, consulta metadados pelo handle e exige diretório regular, sem reparse point e sem `DeletePending`. O buffer padrão é 64 KiB. Tamanhos aceitos: 4 KiB a 1 MiB, múltiplos de 8. Rejeita erro de buffer, lote vazio sem término, nomes duplicados e limites excessivos.
 
@@ -36,7 +38,7 @@ Não conectar ao inventário de produção nem implementar staging/rollback ante
 
 ## Enumeração estável em duas passagens
 
-`enumerate_stable_directory_handle(handle)` executa duas enumerações completas e independentes no mesmo handle, reiniciando a consulta nativa em cada passagem. Em seguida, exige igualdade por nome NFKC + casefold, FileId, atributos, tamanhos, alocação, timestamps, EA size e alias curto. Qualquer diferença aborta com `HandleIoError`.
+`enumerate_stable_directory_handle(handle)` executa duas enumerações completas e independentes no mesmo handle, reiniciando a consulta nativa em cada passagem. Em seguida, exige igualdade por nome NFKC + casefold, FileId de 128 bits, atributos, tamanhos, alocação, timestamps, EA size e alias curto. Qualquer diferença aborta com `HandleIoError`.
 
 Essa etapa reduz a janela de inconsistência do namespace, mas não oferece snapshot transacional e não resolve, sozinha, TOCTOU durante abertura/leitura dos filhos. A função permanece isolada do inventário de produção. Ainda faltam abertura e hash pelo mesmo handle, comparação de volume/FileId e metadados antes/depois da leitura, política efetiva de hardlinks e enumeração final após leitura.
 
@@ -66,3 +68,19 @@ Eles não substituem testes nativos em Windows x64/NTFS.
 Ainda falta integrar essa leitura a uma caminhada de diretórios inteiramente
 por handles, validar a enumeração final após a leitura e executar testes reais
 de concorrência, rename, substituição e reparse points no Windows.
+
+
+
+## Identidade de 128 bits na enumeração
+
+A enumeração nativa foi migrada das classes 10/11 (`FILE_ID_BOTH_DIR_INFO`,
+FileId de 64 bits) para as classes 19/20 (`FILE_ID_EXTD_DIR_INFO`, FileId
+de 128 bits), conforme a tabela oficial de `GetFileInformationByHandleEx`.
+O parser estendido valida o cabeçalho de 88 bytes, o alinhamento de
+`NextEntryOffset`, os limites do nome UTF-16, os tamanhos e os 16 bytes do
+FileId.
+
+Essa alteração prepara a próxima etapa: abrir cada filho pelo handle pai e
+comparar o FileId de 128 bits do item enumerado com o FileId obtido do handle
+aberto. Até essa comparação existir e passar em testes nativos, a caminhada
+recursiva e a leitura de conteúdo não devem ser integradas ao inventário.
