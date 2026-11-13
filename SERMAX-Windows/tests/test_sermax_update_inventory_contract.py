@@ -174,6 +174,13 @@ class InventoryContractTests(unittest.TestCase):
                 manifest(file_item("bin/SERMAX.exe", "create")),
             )
 
+    def test_rejects_target_under_missing_directory_ancestor(self):
+        with self.assertRaises(InventoryContractError):
+            build_plan(
+                [],
+                manifest(file_item("missing/SERMAX.exe", "create")),
+            )
+
     def test_rejects_unicode_normalization_ancestor_collision(self):
         with self.assertRaises(InventoryContractError):
             build_plan(
