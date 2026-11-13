@@ -24,10 +24,10 @@ class FakeDescriptor:
         self.dacl = dacl
         self.control = control
 
-    def GetOwner(self):
+    def GetSecurityDescriptorOwner(self):
         return "OWNER"
 
-    def GetGroup(self):
+    def GetSecurityDescriptorGroup(self):
         return "GROUP"
 
     def GetSecurityDescriptorDacl(self):
