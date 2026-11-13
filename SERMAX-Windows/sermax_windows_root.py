@@ -175,6 +175,11 @@ def open_managed_directory_for_private_area(parent_handle, component: str = "SER
     nenhum diretório. O chamador deve manter o handle aberto durante a
     criação relativa e fechá-lo ao terminar.
     """
+    if component != "SERMAX":
+        raise RootOpenError(
+            "Esta etapa aceita exclusivamente o componente SERMAX."
+        )
+
     required_access = (
         FILE_LIST_DIRECTORY
         | FILE_ADD_SUBDIRECTORY
