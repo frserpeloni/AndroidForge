@@ -3,6 +3,7 @@ import unittest
 from sermax_update_inventory_contract import (
     InventoryContractError,
     build_inventory_plan,
+    classify_inventory,
 )
 from sermax_update_manifest import ManifestFile, ValidatedManifest
 
@@ -33,6 +34,35 @@ def record(path, *, entry_type="file", classification="managed",
 
 
 class InventoryContractTests(unittest.TestCase):
+    def test_allowlist_marks_only_regular_files_as_managed(self):
+        raw = [
+            record("bin", entry_type="directory", classification="unknown",
+                   size=None, digest=None, file_id=None),
+            record("bin/SERMAX.exe", classification="unknown"),
+            record("notes.txt", classification="unknown"),
+        ]
+        classified = classify_inventory(raw, ["bin/SERMAX.exe"])
+        by_path = {item["path"]: item["classification"] for item in classified}
+        self.assertEqual(by_path["bin"], "unknown")
+        self.assertEqual(by_path["bin/SERMAX.exe"], "managed")
+        self.assertEqual(by_path["notes.txt"], "unknown")
+        self.assertEqual(raw[1]["classification"], "unknown")
+
+    def test_allowlist_rejects_missing_and_protected_paths(self):
+        with self.assertRaises(InventoryContractError):
+            classify_inventory([record("notes.txt")], ["missing.exe"])
+        with self.assertRaises(InventoryContractError):
+            classify_inventory([record("memoria_sermax.json")],
+                               ["memoria_sermax.json"])
+
+    def test_allowlist_rejects_non_file_target(self):
+        with self.assertRaises(InventoryContractError):
+            classify_inventory(
+                [record("target", entry_type="directory", size=None,
+                        digest=None, file_id=None)],
+                ["target"],
+            )
+
     def test_replace_existing_regular_file(self):
         result = build_inventory_plan(
             [record("bin/SERMAX.exe")],
