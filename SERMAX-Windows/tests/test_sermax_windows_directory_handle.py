@@ -5,17 +5,18 @@ import unittest
 from unittest.mock import patch
 
 import sermax_windows_directory_handle as native_enum
-from sermax_windows_directory_enum import HEADER_SIZE
+from sermax_windows_directory_enum import FILE_ID_EXTD_HEADER_SIZE
 
 
 def make_entry(name, file_id):
     encoded = name.encode("utf-16-le")
-    data = bytearray(HEADER_SIZE + len(encoded))
+    data = bytearray(FILE_ID_EXTD_HEADER_SIZE + len(encoded))
     struct.pack_into("<II", data, 0, 0, 0)
     struct.pack_into("<qqqqqq", data, 8, 1, 2, 3, 4, 8, 8)
     struct.pack_into("<III", data, 56, 0, len(encoded), 0)
-    struct.pack_into("<q", data, 96, file_id)
-    data[104:] = encoded
+    struct.pack_into("<I", data, 68, 0)
+    data[72:88] = int(file_id).to_bytes(16, "little", signed=False)
+    data[88:] = encoded
     return bytes(data)
 
 
@@ -61,7 +62,7 @@ class DirectoryHandleEnumerationControlTests(unittest.TestCase):
         self.assertEqual(
             [entry.name for entry in result], ["first.txt", "second.txt"]
         )
-        self.assertEqual(calls, [11, 10, 10])
+        self.assertEqual(calls, [20, 19, 19])
 
     def test_rejects_reparse_or_non_directory_handle(self):
         metadata_values = (
