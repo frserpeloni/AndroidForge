@@ -47,6 +47,68 @@ def _path_key(value: object) -> tuple[str, str]:
     return normalized, unicodedata.normalize("NFC", normalized).casefold()
 
 
+def classify_inventory(
+    inventory: Sequence[Mapping[str, object]],
+    managed_paths: Sequence[str],
+) -> list[dict[str, object]]:
+    """Aplica allowlist explícita ao inventário, sem ler nem alterar arquivos.
+
+    Somente arquivos regulares listados na allowlist recebem classificação
+    managed. Diretórios permanecem unknown, dados protegidos permanecem
+    protected e entradas bloqueadas nunca viram managed.
+    """
+    if not isinstance(inventory, (list, tuple)):
+        raise InventoryContractError("Inventário deve ser uma sequência.")
+    if not isinstance(managed_paths, (list, tuple)):
+        raise InventoryContractError("Allowlist deve ser uma sequência.")
+
+    allowed: set[str] = set()
+    for raw_path in managed_paths:
+        _, key = _path_key(raw_path)
+        if key in allowed:
+            raise InventoryContractError("Allowlist contém caminho duplicado.")
+        if is_protected_path(raw_path):
+            raise InventoryContractError("Allowlist inclui caminho protegido.")
+        allowed.add(key)
+
+    seen: set[str] = set()
+    classified: list[dict[str, object]] = []
+    found_managed: set[str] = set()
+    for index, record in enumerate(inventory):
+        if not isinstance(record, Mapping):
+            raise InventoryContractError(f"Registro {index} inválido.")
+        path, key = _path_key(record.get("path"))
+        if key in seen:
+            raise InventoryContractError(f"Colisão de caminhos no inventário: {path}")
+        seen.add(key)
+        entry_type = record.get("type")
+        if entry_type not in _ALLOWED_TYPES:
+            raise InventoryContractError(f"Tipo inválido no inventário: {path}")
+        protected = is_protected_path(path)
+        if protected:
+            classification = "protected"
+        elif entry_type in {"reparse", "special"}:
+            classification = "blocked"
+        elif entry_type == "directory":
+            classification = "unknown"
+        elif key in allowed:
+            classification = "managed"
+            found_managed.add(key)
+        else:
+            classification = "unknown"
+        item = dict(record)
+        item["classification"] = classification
+        classified.append(item)
+
+    missing = allowed - found_managed
+    if missing:
+        raise InventoryContractError(
+            "Allowlist aponta para arquivo regular ausente ou não elegível: "
+            + ", ".join(sorted(missing))
+        )
+    return classified
+
+
 def build_inventory_plan(
     inventory: Sequence[Mapping[str, object]],
     manifest: ValidatedManifest,
