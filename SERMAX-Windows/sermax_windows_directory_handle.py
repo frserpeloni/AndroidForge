@@ -15,6 +15,10 @@ from sermax_windows_directory_enum import (
     DirectoryEntry,
     parse_file_id_both_dir_info,
 )
+from sermax_windows_directory_snapshot import (
+    DirectorySnapshotError,
+    compare_directory_snapshots,
+)
 from sermax_windows_handle_io import (
     HandleIoError,
     _native_api,
@@ -90,3 +94,24 @@ def enumerate_directory_handle(
         info_class = FILE_ID_BOTH_DIRECTORY_INFO_CLASS
 
     raise HandleIoError("Limite de lotes excedido; enumeração abortada.")
+
+
+
+def enumerate_stable_directory_handle(
+    handle,
+    *,
+    buffer_size: int = DEFAULT_BUFFER_SIZE,
+) -> tuple[DirectoryEntry, ...]:
+    """Exige duas enumerações completas e independentes com estado idêntico.
+
+    Cada passagem reinicia a consulta nativa no mesmo handle. Qualquer
+    divergência de namespace, identidade ou metadados aborta a operação.
+    Isso reduz a janela de TOCTOU, mas não cria snapshot transacional e
+    ainda não valida a identidade dos filhos durante leitura de conteúdo.
+    """
+    first = enumerate_directory_handle(handle, buffer_size=buffer_size)
+    second = enumerate_directory_handle(handle, buffer_size=buffer_size)
+    try:
+        return compare_directory_snapshots(first, second)
+    except DirectorySnapshotError as exc:
+        raise HandleIoError(f"Diretório mudou entre enumerações: {exc}") from exc
