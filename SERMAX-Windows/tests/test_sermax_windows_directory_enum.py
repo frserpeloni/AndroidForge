@@ -153,10 +153,6 @@ class DirectoryBufferParserTests(unittest.TestCase):
             parse_file_id_both_dir_info(data)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 
 def make_extd_entry(name, *, next_offset=0, file_id=b"0123456789abcdef",
                     attributes=0, eof=12):
@@ -224,3 +220,7 @@ class ExtendedDirectoryBufferParserTests(unittest.TestCase):
         struct.pack_into("<I", first, 0, 103)
         with self.assertRaises(DirectoryBufferError):
             parse_file_id_extd_dir_info(first + make_extd_entry("b"))
+
+
+if __name__ == "__main__":
+    unittest.main()
