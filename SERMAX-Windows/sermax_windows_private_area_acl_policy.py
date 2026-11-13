@@ -26,13 +26,14 @@ def validate_private_area_acl(
     expected_owner_sid: str,
     expected_volume_serial: int,
     expected_file_id_128: str,
+    directory_identity: dict,
     directory_entries: list,
 ) -> dict:
     """Valida identidade, diretório vazio e DACL privada, sem mutação.
 
-    inspection deve vir de inspect_directory_acl() e directory_entries de
-    enumeração estável do mesmo handle. O chamador mantém o handle aberto e
-    garante que ambos os resultados se referem à mesma identidade.
+    inspection deve vir de inspect_directory_acl(), directory_identity de
+    query_handle_metadata() e directory_entries de enumeração estável do mesmo
+    handle. O chamador mantém o handle aberto e garante a mesma identidade.
     """
     if not isinstance(inspection, dict):
         raise PrivateAreaAclPolicyError("Relatório ACL inválido.")
@@ -49,7 +50,7 @@ def validate_private_area_acl(
     if not isinstance(directory_entries, list):
         raise PrivateAreaAclPolicyError("A enumeração do diretório é inválida.")
 
-    identity = inspection.get("directory_identity")
+    identity = directory_identity
     if not isinstance(identity, dict):
         raise PrivateAreaAclPolicyError("Identidade por handle ausente.")
     if identity.get("volume_serial_number") != expected_volume_serial:
