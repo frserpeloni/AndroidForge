@@ -15,7 +15,9 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-from sermax_update_inventory import (\n    InventoryError, PROTECTED_FILES, PROTECTED_DIRECTORY_SEGMENTS, _normalize_relative,\n)
+from sermax_update_inventory import (
+    InventoryError, PROTECTED_FILES, PROTECTED_DIRECTORY_SEGMENTS, _normalize_relative,
+)
 
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_FILES = 10000
