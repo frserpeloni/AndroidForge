@@ -68,8 +68,13 @@ def inspect_directory_acl(directory_handle) -> dict:
         descriptor = win32security.GetSecurityInfo(
             native, win32security.SE_FILE_OBJECT, security_info
         )
-        owner = descriptor.GetSecurityDescriptorOwner()
-        group = descriptor.GetSecurityDescriptorGroup()
+        owner_result = descriptor.GetSecurityDescriptorOwner()
+        group_result = descriptor.GetSecurityDescriptorGroup()
+        # pywin32 versions expose owner/group as (SID, defaulted).
+        # Normalize that documented shape while retaining compatibility
+        # with wrappers that return the SID directly.
+        owner = owner_result[0] if isinstance(owner_result, tuple) else owner_result
+        group = group_result[0] if isinstance(group_result, tuple) else group_result
         dacl = descriptor.GetSecurityDescriptorDacl()
         control, revision = descriptor.GetSecurityDescriptorControl()
 
