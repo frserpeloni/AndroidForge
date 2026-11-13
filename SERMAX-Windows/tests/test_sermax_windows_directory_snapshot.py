@@ -15,7 +15,7 @@ def entry(
     size=12,
     write_time=100,
     attributes=0x20,
-    short_name="FILE.TXT",
+    short_name="",
     file_index=1,
 ):
     return DirectoryEntry(
