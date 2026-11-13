@@ -27,7 +27,7 @@ PROTECTED_DIRECTORY_SEGMENTS = frozenset({
 
 def is_protected_path(relative_path: str) -> bool:
     """Identifica arquivos/diretórios pessoais que o inventário não deve ler."""
-    parts = relative_path.replace("\\\\", "/").split("/")
+    parts = relative_path.replace(chr(92), "/").split("/")
     return (
         parts[-1].casefold() in PROTECTED_FILES
         or any(part.casefold() in PROTECTED_DIRECTORY_SEGMENTS for part in parts)
