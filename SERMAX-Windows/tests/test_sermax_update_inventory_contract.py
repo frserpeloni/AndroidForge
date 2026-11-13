@@ -20,7 +20,7 @@ def file_item(path, action="replace"):
     return ManifestFile(path, 10, "b" * 64, action)
 
 
-def record(path, *, entry_type="file", classification="unknown",
+def record(path, *, entry_type="file", classification="managed",
            size=10, digest="c" * 64, file_id="00112233445566778899aabbccddeeff"):
     return {
         "path": path,
@@ -102,6 +102,13 @@ class InventoryContractTests(unittest.TestCase):
             build_inventory_plan(
                 [record("bin/SERMAX.exe")],
                 manifest(file_item("bin", "create")),
+            )
+
+    def test_rejects_unknown_file_for_replace(self):
+        with self.assertRaises(InventoryContractError):
+            build_inventory_plan(
+                [record("target", classification="unknown")],
+                manifest(file_item("target")),
             )
 
     def test_rejects_missing_current_hash_for_replace(self):
