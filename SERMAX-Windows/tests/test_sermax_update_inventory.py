@@ -28,6 +28,31 @@ class TestUpdateInventory(unittest.TestCase):
         self.assertEqual(by_path["memoria_neural_pestinha.json"]["classification"], "protected")
         self.assertEqual(by_path["documento-pessoal.txt"]["classification"], "unknown")
 
+
+    def test_protected_directories_are_not_traversed_or_hashed(self):
+        backup = self.root / "BACKUPS"
+        backup.mkdir()
+        (backup / "private.bin").write_bytes(b"private")
+        config = self.root / "Config"
+        config.mkdir()
+        (config / "settings.json").write_text('{"secret":true}', encoding="utf-8")
+
+        records = inventory_directory(self.root, managed_paths=[
+            "BACKUPS/private.bin", "Config/settings.json"
+        ])
+        by_path = {item["path"]: item for item in records}
+        self.assertEqual(by_path["BACKUPS"]["classification"], "protected")
+        self.assertEqual(by_path["Config"]["classification"], "protected")
+        self.assertNotIn("BACKUPS/private.bin", by_path)
+        self.assertNotIn("Config/settings.json", by_path)
+
+    def test_protected_file_has_no_size_or_hash(self):
+        records = inventory_directory(self.root)
+        item = next(x for x in records if x["path"] == "memoria_sermax.json")
+        self.assertEqual(item["classification"], "protected")
+        self.assertIsNone(item["size"])
+        self.assertIsNone(item["sha256"])
+
     def test_records_sha256_and_size_without_content(self):
         records = inventory_directory(self.root)
         item = next(x for x in records if x["path"] == "bin/SERMAX.exe")
