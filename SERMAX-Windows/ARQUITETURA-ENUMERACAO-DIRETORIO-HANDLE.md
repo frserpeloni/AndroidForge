@@ -136,3 +136,22 @@ inventário legado. Arquivos como `memoria_sermax.json` e
 `protected`, sem tamanho, conteúdo ou SHA-256. A rotina não abre esses
 arquivos para leitura. Um teste dedicado confirma que nomes com diferença
 entre maiúsculas e minúsculas também permanecem protegidos.
+
+
+## Exclusão de dados pessoais e diretórios protegidos
+
+A política compartilhada em `sermax_update_inventory.py` define arquivos
+protegidos de memória e segmentos de diretório como `backup`, `backups`,
+`historico`, `history`, `memoria`, `memory`, `config`, `voz`,
+`voice`, `models` e `modelos`, incluindo variações listadas no código.
+
+Os inventários legado e por handles registram diretórios protegidos sem
+percorrê-los. Arquivos protegidos recebem classificação `protected`, sem
+leitura, tamanho ou hash. O validador de manifesto compartilha a mesma lista
+de segmentos e rejeita qualquer destino dentro dessas áreas. A allowlist de
+arquivos gerenciados não sobrepõe essa proteção.
+
+Essa regra reduz o risco de coletar memória, configurações, modelos locais,
+históricos, backups e dados pessoais durante uma futura preparação de
+atualização. Os testes automatizados cobrem o bloqueio em ambos os
+inventários e a rejeição de destinos protegidos no manifesto.
