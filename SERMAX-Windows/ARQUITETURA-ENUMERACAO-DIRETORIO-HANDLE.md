@@ -102,3 +102,27 @@ volume, atributos e tamanho. Isso fecha a lacuna entre enumerar um nome e
 abrir um objeto substituto com o mesmo nome. A validação física em NTFS e
 testes concorrentes ainda são necessários antes de qualquer integração ao
 inventário de produção.
+
+
+
+## Inventário recursivo por handles
+
+O módulo `sermax_windows_handle_inventory.py` acrescenta uma rotina de
+inventário somente de leitura a partir de um handle raiz já aberto e validado.
+A rotina enumera cada diretório duas vezes, abre subdiretórios relativamente
+ao handle pai, verifica o FileId de 128 bits e calcula SHA-256 dos arquivos
+pela função de hash vinculada à entrada enumerada.
+
+Reparse points são registrados como `blocked` e nunca percorridos. Objetos
+de dispositivo também são bloqueados. Há limites explícitos de profundidade
+e quantidade de registros. Após processar os filhos, cada diretório é
+enumerado novamente e comparado com o estado inicial; divergências abortam
+o inventário completo.
+
+Limites conhecidos: esta rotina não abre a raiz por caminho, não substitui
+`sermax_update_inventory.py` e não está conectada ao atualizador. Ela não
+cria snapshot transacional do volume. O compartilhamento conservador protege
+cada arquivo enquanto seu handle de leitura permanece aberto, mas alterações
+posteriores ao fechamento e antes do fim global não equivalem a uma fotografia
+atômica. Homologação em Windows 11/NTFS e testes concorrentes continuam
+obrigatórios antes de qualquer integração de produção.
