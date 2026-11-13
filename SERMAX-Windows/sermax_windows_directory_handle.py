@@ -13,7 +13,7 @@ from ctypes import wintypes
 from sermax_windows_directory_enum import (
     DirectoryBufferError,
     DirectoryEntry,
-    parse_file_id_both_dir_info,
+    parse_file_id_extd_dir_info,
 )
 from sermax_windows_directory_snapshot import (
     DirectorySnapshotError,
@@ -25,8 +25,8 @@ from sermax_windows_handle_io import (
     query_handle_metadata,
 )
 
-FILE_ID_BOTH_DIRECTORY_INFO_CLASS = 10
-FILE_ID_BOTH_DIRECTORY_RESTART_INFO_CLASS = 11
+FILE_ID_EXTD_DIRECTORY_INFO_CLASS = 19
+FILE_ID_EXTD_DIRECTORY_RESTART_INFO_CLASS = 20
 ERROR_NO_MORE_FILES = 18
 ERROR_MORE_DATA = 234
 DEFAULT_BUFFER_SIZE = 64 * 1024
@@ -62,7 +62,7 @@ def enumerate_directory_handle(
     results: list[DirectoryEntry] = []
     seen_names: set[str] = set()
 
-    info_class = FILE_ID_BOTH_DIRECTORY_RESTART_INFO_CLASS
+    info_class = FILE_ID_EXTD_DIRECTORY_RESTART_INFO_CLASS
     for _ in range(MAX_BATCHES):
         ctypes.memset(buffer, 0, buffer_size)
         ok = query(handle, info_class, ctypes.byref(buffer), buffer_size)
@@ -75,7 +75,7 @@ def enumerate_directory_handle(
             raise HandleIoError(f"GetFileInformationByHandleEx falhou, WinError={error}")
 
         try:
-            batch = parse_file_id_both_dir_info(buffer.raw)
+            batch = parse_file_id_extd_dir_info(buffer.raw)
         except DirectoryBufferError as exc:
             raise HandleIoError(f"Buffer de enumeração inválido: {exc}") from exc
         if not batch:
@@ -91,7 +91,7 @@ def enumerate_directory_handle(
             if len(results) > MAX_ENTRIES:
                 raise HandleIoError("Limite máximo de entradas excedido.")
 
-        info_class = FILE_ID_BOTH_DIRECTORY_INFO_CLASS
+        info_class = FILE_ID_EXTD_DIRECTORY_INFO_CLASS
 
     raise HandleIoError("Limite de lotes excedido; enumeração abortada.")
 
