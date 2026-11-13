@@ -112,7 +112,7 @@ class HandleFileHashTests(unittest.TestCase):
                           side_effect=file_hash.HandleIoError("read failed")), \
              patch.object(file_hash, "close_handle") as closed:
             with self.assertRaises(file_hash.HandleIoError):
-                file_hash.hash_file_component(123, "SERMAX.exe")
+                file_hash.hash_file_component(123, file_entry())
         closed.assert_called_once_with(456)
 
 
