@@ -166,6 +166,27 @@ def open_managed_directory_for_acl(parent_handle, component: str = "SERMAX"):
     )
 
 
+
+def open_managed_directory_for_private_area(parent_handle, component: str = "SERMAX"):
+    """Abre SERMAX com o direito de criar subdiretórios por handle.
+
+    O handle retornado pode ser usado como RootDirectory por
+    create_private_directory_component(). Isso não altera ACL e não cria
+    nenhum diretório. O chamador deve manter o handle aberto durante a
+    criação relativa e fechá-lo ao terminar.
+    """
+    required_access = (
+        FILE_LIST_DIRECTORY
+        | FILE_ADD_SUBDIRECTORY
+        | FILE_READ_ATTRIBUTES
+        | SYNCHRONIZE
+    )
+    return open_managed_directory(
+        parent_handle,
+        component,
+        access_mask=required_access,
+    )
+
 def _ace_denies_child_creation_on_directory(ace, sid, win32security) -> bool:
     """Confirma uma negação efetiva no diretório e herdável por seus filhos."""
     ace_type, ace_flags = ace[0]

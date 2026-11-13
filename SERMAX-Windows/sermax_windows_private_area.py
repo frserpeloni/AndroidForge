@@ -39,8 +39,10 @@ class PrivateAreaError(RuntimeError):
 def create_private_directory_component(parent_handle, component: str):
     """Cria um diretório filho com semântica exclusiva, relativo ao handle pai.
 
-    O pai deve permanecer aberto durante a operação. O componente precisa
-    pertencer à lista fixa de nomes internos. A função falha se o nome já
+    O pai deve permanecer aberto durante a operação e ter sido aberto com
+    FILE_ADD_SUBDIRECTORY (0x00000004), além dos direitos de leitura de
+    diretório/metadados exigidos pelo chamador. O componente precisa pertencer
+    à lista fixa de nomes internos. A função falha se o nome já
     existir, se o pai não for diretório regular ou se a identidade do volume
     divergir. O handle retornado pertence ao chamador.
 

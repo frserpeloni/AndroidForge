@@ -576,3 +576,31 @@ class AceInheritanceMatchingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PrivateAreaParentAccessTests(unittest.TestCase):
+    def test_opens_managed_directory_with_child_creation_access(self):
+        parent = object()
+        child = object()
+        required = (
+            root.FILE_LIST_DIRECTORY
+            | root.FILE_ADD_SUBDIRECTORY
+            | root.FILE_READ_ATTRIBUTES
+            | root.SYNCHRONIZE
+        )
+        with mock.patch.object(
+            root, "open_managed_directory", return_value=child
+        ) as opener:
+            result = root.open_managed_directory_for_private_area(parent)
+        self.assertIs(result, child)
+        opener.assert_called_once_with(
+            parent, "SERMAX", access_mask=required
+        )
+
+    def test_private_area_open_rejects_other_component(self):
+        with mock.patch.object(root, "open_managed_directory") as opener:
+            with self.assertRaises(root.RootOpenError):
+                root.open_managed_directory_for_private_area(
+                    object(), "other"
+                )
+        opener.assert_not_called()
