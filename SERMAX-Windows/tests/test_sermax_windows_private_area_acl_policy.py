@@ -27,10 +27,6 @@ def valid_inspection():
         "dacl_auto_inherit_requested": False,
         "effective_access_evaluated": False,
         "mutated": False,
-        "directory_identity": {
-            "volume_serial_number": VOLUME,
-            "file_id_128": FILE_ID,
-        },
         "aces": [
             {"type": 0, "flags": 3, "mask": FILE_ALL_ACCESS, "sid": OWNER},
             {"type": 0, "flags": 3, "mask": FILE_ALL_ACCESS, "sid": SYSTEM},
@@ -130,9 +126,8 @@ class PrivateAreaAclPolicyTests(unittest.TestCase):
 
     def test_rejects_missing_identity(self):
         inspection = valid_inspection()
-        inspection.pop("directory_identity")
         with self.assertRaisesRegex(PrivateAreaAclPolicyError, "Identidade"):
-            self.validate(inspection)
+            self.validate(inspection, directory_identity=None)
 
     def test_rejects_invalid_file_id_format(self):
         with self.assertRaisesRegex(PrivateAreaAclPolicyError, "128 bits"):
