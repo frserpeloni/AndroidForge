@@ -1,6 +1,11 @@
-# Enumeração nativa por handle, primeira implementação isolada
+# Enumeração nativa por handle e comparação de snapshots
 
-Arquivo: `sermax_windows_directory_handle.py`.
+Arquivos:
+- `sermax_windows_directory_enum.py`: parser puro de buffers `FILE_ID_BOTH_DIR_INFO`.
+- `sermax_windows_directory_handle.py`: enumeração nativa isolada por handle.
+- `sermax_windows_directory_snapshot.py`: comparação pura de duas enumerações.
+
+## Enumeração nativa
 
 A função `enumerate_directory_handle` usa `GetFileInformationByHandleEx` com:
 - classe 11 (`FileIdBothDirectoryRestartInfo`) para reiniciar a enumeração;
@@ -8,8 +13,22 @@ A função `enumerate_directory_handle` usa `GetFileInformationByHandleEx` com:
 
 Antes da enumeração, consulta metadados pelo handle e exige diretório regular, sem reparse point e sem `DeletePending`. O buffer padrão é 64 KiB. Tamanhos aceitos: 4 KiB a 1 MiB, múltiplos de 8. Rejeita erro de buffer, lote vazio sem término, nomes duplicados e limites excessivos.
 
-## Limites de segurança
+## Comparação de duas enumerações
 
-A API não garante snapshot transacional. O código ainda não faz duas passagens independentes, não abre cada filho relativamente ao handle pai, não compara FileId com identidade reaberta e não calcula hash. O tratamento de colisões Unicode completo ainda não foi integrado. Portanto esta função é um componente experimental e não deve alimentar o inventário de produção até os testes de mutação do namespace e a validação completa de cada objeto.
+`compare_directory_snapshots(first, second)` canonicaliza cada enumeração por nome NFKC + casefold. Rejeita colisões Unicode, colisões de alias curto 8.3, registros de tipo inesperado, entrada criada/removida/renomeada e mudanças em atributos, tamanho, alocação, timestamps, EA size, short name ou FileId.
 
-A implementação deve ser validada em runner Windows x64. Testes com mocks verificam a sequência de classes e as condições de falha, mas não substituem testes nativos em NTFS.
+`FileIndex` fica fora da assinatura porque não representa identidade estável. O retorno contém os registros da primeira enumeração em ordem determinística.
+
+A comparação detecta alterações observáveis entre as duas passagens. Não fornece snapshot transacional, não elimina a possibilidade de mutação transitória entre leituras e não substitui abertura e validação de cada objeto pelo handle.
+
+## Limites de segurança e próximos passos
+
+Os componentes permanecem isolados. Ainda faltam:
+- executar duas enumerações nativas sequenciais e comparar os resultados;
+- abrir cada filho relativamente ao handle pai com direitos e compartilhamento restritos;
+- comparar volume/FileId e metadados antes/depois da leitura;
+- calcular hash pelo mesmo handle aberto;
+- tratar hardlinks explicitamente, inicialmente rejeitando `NumberOfLinks > 1`;
+- testes reais NTFS com criação, remoção, rename, reparse points, hardlinks e concorrência.
+
+Não conectar ao inventário de produção nem implementar staging/rollback antes da conclusão desses controles. Testes com mocks não substituem validação nativa no Windows x64.
