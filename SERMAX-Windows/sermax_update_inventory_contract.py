@@ -128,15 +128,29 @@ def build_inventory_plan(
             current_file_id=file_id,
         ))
 
-    # Um destino de arquivo não pode substituir um diretório que contenha
-    # componentes descendentes existentes, nem colidir com um ancestral.
-    target_keys = {entry.path.casefold() for entry in planned}
-    for target in target_keys:
-        prefix = target + "/"
+    # Um destino de arquivo não pode substituir um diretório com filhos.
+    # Também não pode ter como ancestral um arquivo, reparse ou diretório
+    # protegido/bloqueado no inventário.
+    for entry in planned:
+        target_key = entry.path.casefold()
+        prefix = target_key + "/"
         if any(existing_key.startswith(prefix) for existing_key in current):
             raise InventoryContractError(
-                f"Destino do manifesto é ancestral de entradas existentes: {target}"
+                f"Destino do manifesto é ancestral de entradas existentes: {entry.path}"
             )
+        parts = target_key.split("/")
+        for end in range(1, len(parts)):
+            ancestor = "/".join(parts[:end])
+            found = current.get(ancestor)
+            if found is None:
+                continue
+            ancestor_path, record = found
+            if record["type"] != "directory" or record["classification"] in {
+                "protected", "blocked"
+            }:
+                raise InventoryContractError(
+                    f"Ancestral impede destino do manifesto: {ancestor_path}"
+                )
 
     return InventoryPlan(
         release_version=manifest.release_version,
