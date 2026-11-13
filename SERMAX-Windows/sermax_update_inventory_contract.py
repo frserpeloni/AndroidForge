@@ -2,14 +2,14 @@
 
 Este módulo não abre arquivos, não escreve no filesystem e não instala releases.
 A entrada deve ser um inventário produzido por uma camada de leitura confiável
-e um ValidatedManifest cuja assinatura já tenha sido verificada.
+e os bytes do manifesto, autenticados dentro do construtor do plano.
 """
 from __future__ import annotations
 
 import re
 import unicodedata
 from dataclasses import dataclass
-from typing import Mapping, Sequence
+from typing import Callable, Mapping, Sequence
 
 from sermax_update_inventory import InventoryError, _normalize_relative, is_protected_path
 from sermax_update_manifest import ManifestError, validate_signed_manifest
@@ -113,7 +113,7 @@ def build_inventory_plan(
     inventory: Sequence[Mapping[str, object]],
     raw_manifest: bytes | str,
     *,
-    verify_signature,
+    verify_signature: Callable[[str, bytes, bytes], bool] | None = None,
 ) -> InventoryPlan:
     """Confronta destinos assinados com inventário e retorna plano sem mutações.
 
