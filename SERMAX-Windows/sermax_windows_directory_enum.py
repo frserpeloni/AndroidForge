@@ -1,4 +1,4 @@
-"""Parser defensivo para buffers FILE_ID_BOTH_DIR_INFO.
+"""Parser defensivo para buffers de enumeração de diretórios do Windows.
 
 Não chama APIs nativas, não enumera diretórios e não altera arquivos.
 Recebe bytes produzidos por GetFileInformationByHandleEx e valida limites,
@@ -35,7 +35,7 @@ class DirectoryEntry:
     attributes: int
     ea_size: int
     short_name: str
-    file_id: int
+    file_id: int | str
 
     @property
     def is_directory(self) -> bool:
@@ -151,6 +151,103 @@ def parse_file_id_both_dir_info(data: bytes | bytearray | memoryview) -> tuple[D
             ea_size=ea_size,
             short_name=short_name,
             file_id=file_id,
+        ))
+
+        if next_offset == 0:
+            break
+        offset += next_offset
+
+    return tuple(entries)
+
+
+
+FILE_ID_EXTD_HEADER_SIZE = 88
+FILE_ID_EXTD_NAME_OFFSET = 88
+
+
+def parse_file_id_extd_dir_info(
+    data: bytes | bytearray | memoryview,
+) -> tuple[DirectoryEntry, ...]:
+    """Decodifica FILE_ID_EXTD_DIR_INFO com FileId de 128 bits.
+
+    Layout documentado para GetFileInformationByHandleEx, classes 19 e 20.
+    O parser rejeita buffers truncados, cadeias desalinhadas e nomes inválidos.
+    """
+    if not isinstance(data, (bytes, bytearray, memoryview)):
+        raise TypeError("data deve ser bytes-like.")
+    view = memoryview(data).cast("B")
+    if not view:
+        return ()
+    if len(view) < FILE_ID_EXTD_HEADER_SIZE:
+        raise DirectoryBufferError("Buffer menor que o cabeçalho estendido de 88 bytes.")
+
+    entries: list[DirectoryEntry] = []
+    offset = 0
+    visited: set[int] = set()
+
+    while True:
+        if offset in visited:
+            raise DirectoryBufferError("Ciclo detectado na cadeia de entradas.")
+        visited.add(offset)
+        remaining = len(view) - offset
+        if remaining < FILE_ID_EXTD_HEADER_SIZE:
+            raise DirectoryBufferError("Cabeçalho estendido final truncado.")
+
+        entry = view[offset:]
+        next_offset = _u32(entry, 0)
+        file_index = _u32(entry, 4)
+        creation_time = _i64(entry, 8)
+        last_access_time = _i64(entry, 16)
+        last_write_time = _i64(entry, 24)
+        change_time = _i64(entry, 32)
+        end_of_file = _i64(entry, 40)
+        allocation_size = _i64(entry, 48)
+        attributes = _u32(entry, 56)
+        name_length = _u32(entry, 60)
+        ea_size = _u32(entry, 64)
+
+        if name_length == 0 or name_length % 2:
+            raise DirectoryBufferError("FileNameLength estendido deve ser positivo e par.")
+        if name_length > MAX_NAME_UTF16_UNITS * 2:
+            raise DirectoryBufferError("FileName estendido excede 255 unidades UTF-16.")
+        minimum_size = FILE_ID_EXTD_NAME_OFFSET + name_length
+        if minimum_size > remaining:
+            raise DirectoryBufferError("Nome estendido ultrapassa o limite do buffer.")
+        if next_offset:
+            if next_offset % ALIGNMENT:
+                raise DirectoryBufferError("NextEntryOffset estendido desalinhado.")
+            if next_offset < minimum_size:
+                raise DirectoryBufferError("NextEntryOffset estendido sobrepõe o nome.")
+            if next_offset > remaining:
+                raise DirectoryBufferError("NextEntryOffset estendido fora do buffer.")
+            if remaining - next_offset < FILE_ID_EXTD_HEADER_SIZE:
+                raise DirectoryBufferError("Próximo cabeçalho estendido truncado.")
+
+        name = _decode_utf16(
+            entry, FILE_ID_EXTD_NAME_OFFSET, name_length, "FileName estendido"
+        )
+        if unicodedata.normalize("NFC", name) != name:
+            raise DirectoryBufferError("Nome estendido não está normalizado em Unicode NFC.")
+
+        file_id_128 = bytes(entry[72:88]).hex()
+        if len(file_id_128) != 32:
+            raise DirectoryBufferError("FileId de 128 bits inválido.")
+        if end_of_file < 0 or allocation_size < 0:
+            raise DirectoryBufferError("Tamanho estendido de arquivo negativo.")
+
+        entries.append(DirectoryEntry(
+            name=name,
+            file_index=file_index,
+            creation_time=creation_time,
+            last_access_time=last_access_time,
+            last_write_time=last_write_time,
+            change_time=change_time,
+            end_of_file=end_of_file,
+            allocation_size=allocation_size,
+            attributes=attributes,
+            ea_size=ea_size,
+            short_name="",
+            file_id=file_id_128,
         ))
 
         if next_offset == 0:
