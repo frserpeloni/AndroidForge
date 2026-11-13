@@ -207,7 +207,7 @@ class ExtendedDirectoryBufferParserTests(unittest.TestCase):
 
     def test_rejects_truncated_extended_header(self):
         with self.assertRaises(DirectoryBufferError):
-            parse_file_id_extd_dir_info(b"\\x00" * (FILE_ID_EXTD_HEADER_SIZE - 1))
+            parse_file_id_extd_dir_info(b"\x00" * (FILE_ID_EXTD_HEADER_SIZE - 1))
 
     def test_rejects_name_outside_extended_buffer(self):
         data = bytearray(make_extd_entry("x"))
