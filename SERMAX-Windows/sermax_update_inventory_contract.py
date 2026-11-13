@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Mapping, Sequence
 
 from sermax_update_inventory import InventoryError, _normalize_relative, is_protected_path
-from sermax_update_manifest import ValidatedManifest
+from sermax_update_manifest import ManifestError, validate_signed_manifest
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILE_ID = re.compile(r"^[0-9a-fA-F]{32}$")
@@ -111,7 +111,9 @@ def classify_inventory(
 
 def build_inventory_plan(
     inventory: Sequence[Mapping[str, object]],
-    manifest: ValidatedManifest,
+    raw_manifest: bytes | str,
+    *,
+    verify_signature,
 ) -> InventoryPlan:
     """Confronta destinos assinados com inventário e retorna plano sem mutações.
 
@@ -121,8 +123,15 @@ def build_inventory_plan(
     """
     if not isinstance(inventory, (list, tuple)):
         raise InventoryContractError("Inventário deve ser uma sequência.")
-    if not isinstance(manifest, ValidatedManifest):
-        raise InventoryContractError("Manifesto precisa estar validado e autenticado.")
+    try:
+        manifest = validate_signed_manifest(
+            raw_manifest,
+            verify_signature=verify_signature,
+        )
+    except ManifestError as exc:
+        raise InventoryContractError(
+            "Manifesto bruto não autenticado ou inválido."
+        ) from exc
 
     current: dict[str, tuple[str, Mapping[str, object]]] = {}
     for index, record in enumerate(inventory):
