@@ -208,3 +208,61 @@ class PrivateAreaCreationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(
+    private_area.os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
+    "Criação nativa exige Windows x64.",
+)
+class PrivateAreaWindowsIntegrationTests(unittest.TestCase):
+    def test_creates_private_directory_relative_to_parent_handle(self):
+        import os
+        import shutil
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as parent_path:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path,
+                0x0080 | 0x0001 | 0x0004 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None,
+                3,
+                0x02000000 | 0x00200000,
+                None,
+            )
+            self.assertNotEqual(parent, private_area.INVALID_HANDLE_VALUE if hasattr(
+                private_area, "INVALID_HANDLE_VALUE"
+            ) else ctypes.c_void_p(-1).value)
+            child = None
+            try:
+                child = private_area.create_private_directory_component(
+                    parent, "_update"
+                )
+                metadata = private_area.query_handle_metadata(child)
+                self.assertTrue(metadata["is_directory"])
+                self.assertFalse(metadata["is_reparse_point"])
+                self.assertFalse(metadata["delete_pending"])
+                self.assertEqual(len(metadata["file_id_128"]), 32)
+                self.assertTrue(os.path.isdir(os.path.join(parent_path, "_update")))
+
+                with self.assertRaises(private_area.PrivateAreaError):
+                    private_area.create_private_directory_component(
+                        parent, "_update"
+                    )
+            finally:
+                if child is not None:
+                    private_area.close_handle(child)
+                self.assertTrue(close(parent))
+                shutil.rmtree(parent_path, ignore_errors=True)
