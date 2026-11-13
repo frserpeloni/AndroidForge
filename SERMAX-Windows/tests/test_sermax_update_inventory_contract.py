@@ -21,7 +21,7 @@ def file_item(path, action="replace"):
 
 
 def record(path, *, entry_type="file", classification="unknown",
-           size=10, digest="c" * 64, file_id="001122"):
+           size=10, digest="c" * 64, file_id="00112233445566778899aabbccddeeff"):
     return {
         "path": path,
         "type": entry_type,
@@ -41,7 +41,7 @@ class InventoryContractTests(unittest.TestCase):
         self.assertEqual(result.release_version, "1.2.3")
         self.assertEqual(len(result.entries), 1)
         self.assertEqual(result.entries[0].action, "replace")
-        self.assertEqual(result.entries[0].current_file_id, "001122")
+        self.assertEqual(result.entries[0].current_file_id, "00112233445566778899aabbccddeeff")
 
     def test_create_requires_absent_destination(self):
         result = build_inventory_plan(
@@ -108,6 +108,13 @@ class InventoryContractTests(unittest.TestCase):
         with self.assertRaises(InventoryContractError):
             build_inventory_plan(
                 [record("target", digest=None)],
+                manifest(file_item("target")),
+            )
+
+    def test_rejects_missing_128_bit_file_identity_for_replace(self):
+        with self.assertRaises(InventoryContractError):
+            build_inventory_plan(
+                [record("target", file_id=None)],
                 manifest(file_item("target")),
             )
 
