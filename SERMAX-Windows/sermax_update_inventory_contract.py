@@ -199,7 +199,7 @@ def build_inventory_plan(
     # Também não pode ter como ancestral um arquivo, reparse ou diretório
     # protegido/bloqueado no inventário.
     for entry in planned:
-        target_key = entry.path.casefold()
+        target_key = unicodedata.normalize("NFC", entry.path).casefold()
         prefix = target_key + "/"
         if any(existing_key.startswith(prefix) for existing_key in current):
             raise InventoryContractError(
