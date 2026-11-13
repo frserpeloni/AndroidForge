@@ -136,7 +136,7 @@ class ReleasePackageValidationTests(unittest.TestCase):
         # Python's ZIP writer clears the encryption bit; patch the local and central flags.
         payload = bytearray(stream.getvalue())
         payload[6:8] = (1).to_bytes(2, "little")
-        central = payload.find(b"PK\\x01\\x02")
+        central = payload.find(b"PK\x01\x02")
         if central >= 0:
             payload[central + 8:central + 10] = (1).to_bytes(2, "little")
         with self.assertRaises(PackageError):
