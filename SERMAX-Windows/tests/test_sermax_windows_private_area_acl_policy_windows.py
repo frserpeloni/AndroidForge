@@ -86,7 +86,11 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
                 # Todas as consultas usam o mesmo handle, mantido aberto.
                 inspection = inspect_directory_acl(handle)
                 metadata = query_handle_metadata(handle)
-                entries = list(enumerate_stable_directory_handle(handle))
+                entries = [
+                    entry
+                    for entry in enumerate_stable_directory_handle(handle)
+                    if entry.name not in {".", ".."}
+                ]
                 identity = {
                     "volume_serial_number": metadata["volume_serial_number"],
                     "file_id_128": metadata["file_id_128"],
