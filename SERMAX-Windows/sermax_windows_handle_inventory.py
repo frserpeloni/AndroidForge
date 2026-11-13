@@ -15,6 +15,7 @@ from sermax_windows_directory_snapshot import (
     compare_directory_snapshots,
 )
 from sermax_windows_file_hash import hash_file_component
+from sermax_update_inventory import PROTECTED_FILES
 from sermax_windows_handle_io import (
     HandleIoError,
     close_handle,
@@ -109,6 +110,19 @@ def inventory_directory_handle(
                     "sha256": None,
                     "file_id": entry.file_id,
                     "classification": "blocked",
+                })
+                continue
+
+            # Arquivos de memória contêm dados pessoais. Registre sua
+            # existência, mas nunca leia nem calcule hash neste inventário.
+            if entry.name.casefold() in PROTECTED_FILES:
+                records.append({
+                    "path": relative,
+                    "type": "file",
+                    "size": None,
+                    "sha256": None,
+                    "file_id": entry.file_id,
+                    "classification": "protected",
                 })
                 continue
 
