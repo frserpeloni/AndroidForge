@@ -1,4 +1,4 @@
-"""Abertura validada da raiz de uma unidade local e do diretório SERMAX.
+r"""Abertura validada da raiz de uma unidade local e do diretório SERMAX.
 
 A caminhada usa handles: primeiro X:\, depois o componente SERMAX relativo
 à raiz. O módulo não lê conteúdo nem altera arquivos.
@@ -53,7 +53,7 @@ def _validate_drive_root(path: str) -> str:
 
 
 def open_drive_root(path: str):
-    """Abre X:\ como diretório e valida o objeto pelo handle retornado.
+    r"""Abre X:\ como diretório e valida o objeto pelo handle retornado.
 
     O chamador deve fechar o handle com close_handle().
     """
@@ -277,5 +277,5 @@ def deny_child_creation_for_sid(directory_handle, sid) -> bool:
 
 
 def open_sermax_directory(drive_root_handle):
-    """Abre C:\SERMAX por componente relativo ao handle da raiz C:\."""
+    r"""Abre C:\SERMAX por componente relativo ao handle da raiz C:\."""
     return open_managed_directory(drive_root_handle, "SERMAX")
