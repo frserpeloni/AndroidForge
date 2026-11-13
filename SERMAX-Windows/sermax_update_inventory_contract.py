@@ -15,6 +15,7 @@ from sermax_update_inventory import InventoryError, _normalize_relative, is_prot
 from sermax_update_manifest import ValidatedManifest
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_FILE_ID = re.compile(r"^[0-9a-fA-F]{32}$")
 _ALLOWED_TYPES = {"file", "directory", "reparse", "special"}
 _ALLOWED_CLASSIFICATIONS = {"managed", "unknown", "protected", "blocked"}
 
@@ -116,7 +117,11 @@ def build_inventory_plan(
                     f"Hash atual ausente ou inválido: {existing_path}"
                 )
             raw_file_id = record.get("file_id")
-            file_id = raw_file_id if isinstance(raw_file_id, str) else None
+            if not isinstance(raw_file_id, str) or not _FILE_ID.fullmatch(raw_file_id):
+                raise InventoryContractError(
+                    f"FileId de 128 bits ausente ou inválido: {existing_path}"
+                )
+            file_id = raw_file_id.lower()
         else:
             raise InventoryContractError(f"Ação não suportada: {item.action}")
 
