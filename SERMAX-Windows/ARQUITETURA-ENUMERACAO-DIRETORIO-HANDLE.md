@@ -126,3 +126,13 @@ cada arquivo enquanto seu handle de leitura permanece aberto, mas alterações
 posteriores ao fechamento e antes do fim global não equivalem a uma fotografia
 atômica. Homologação em Windows 11/NTFS e testes concorrentes continuam
 obrigatórios antes de qualquer integração de produção.
+
+
+## Proteção de arquivos de memória pessoal
+
+O inventário por handles consulta a mesma lista `PROTECTED_FILES` do
+inventário legado. Arquivos como `memoria_sermax.json` e
+`memoria_neural_pestinha.json` são registrados com classificação
+`protected`, sem tamanho, conteúdo ou SHA-256. A rotina não abre esses
+arquivos para leitura. Um teste dedicado confirma que nomes com diferença
+entre maiúsculas e minúsculas também permanecem protegidos.
