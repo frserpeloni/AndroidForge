@@ -219,7 +219,9 @@ def build_inventory_plan(
             ancestor = "/".join(parts[:end])
             found = current.get(ancestor)
             if found is None:
-                continue
+                raise InventoryContractError(
+                    f"Diretório ancestral ausente no inventário: {ancestor}"
+                )
             ancestor_path, record = found
             if record["type"] != "directory" or record["classification"] in {
                 "protected", "blocked"
