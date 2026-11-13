@@ -73,6 +73,25 @@ class HandleInventoryTests(unittest.TestCase):
         )
         hash_file.assert_not_called()
 
+
+    def test_protected_directory_is_not_opened_or_traversed(self):
+        protected = entry("BACKUPS", attributes=0x10, size=0)
+        with (
+            patch.object(inventory, "query_handle_metadata",
+                         return_value=self._root_metadata()),
+            patch.object(inventory, "enumerate_stable_directory_handle",
+                         side_effect=((protected,), (protected,))) as enumerate_dir,
+            patch.object(inventory, "open_verified_child_component") as opened,
+            patch.object(inventory, "hash_file_component") as hashed,
+        ):
+            records = inventory.inventory_directory_handle(100)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["classification"], "protected")
+        self.assertEqual(records[0]["type"], "directory")
+        self.assertEqual(enumerate_dir.call_count, 2)
+        opened.assert_not_called()
+        hashed.assert_not_called()
+
     def test_reparse_point_is_blocked_without_opening(self):
         item = entry("junction", attributes=0x410, size=0)
         with (
