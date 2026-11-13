@@ -6,7 +6,9 @@ from sermax_windows_directory_enum import (
     FILE_ATTRIBUTE_DIRECTORY,
     FILE_ATTRIBUTE_REPARSE_POINT,
     HEADER_SIZE,
+    FILE_ID_EXTD_HEADER_SIZE,
     parse_file_id_both_dir_info,
+    parse_file_id_extd_dir_info,
 )
 
 
@@ -153,3 +155,72 @@ class DirectoryBufferParserTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+
+def make_extd_entry(name, *, next_offset=0, file_id=b"0123456789abcdef",
+                    attributes=0, eof=12):
+    encoded = name.encode("utf-16-le")
+    size = FILE_ID_EXTD_HEADER_SIZE + len(encoded)
+    total = next_offset or size
+    if next_offset and next_offset < size:
+        total = next_offset
+    data = bytearray(total)
+    struct.pack_into("<II", data, 0, next_offset, 3)
+    struct.pack_into("<qqqqqq", data, 8, 1, 2, 3, 4, eof, 16)
+    struct.pack_into("<III", data, 56, attributes, len(encoded), 0)
+    struct.pack_into("<I", data, 68, 0)
+    data[72:88] = file_id
+    data[88:88 + len(encoded)] = encoded
+    return bytes(data)
+
+
+class ExtendedDirectoryBufferParserTests(unittest.TestCase):
+    def test_parses_128_bit_file_id(self):
+        raw_id = bytes.fromhex("00112233445566778899aabbccddeeff")
+        result = parse_file_id_extd_dir_info(
+            make_extd_entry("arquivo.bin", file_id=raw_id)
+        )
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].name, "arquivo.bin")
+        self.assertEqual(result[0].file_id, raw_id.hex())
+        self.assertEqual(result[0].end_of_file, 12)
+
+    def test_parses_directory_and_reparse_attributes(self):
+        result = parse_file_id_extd_dir_info(
+            make_extd_entry(
+                "junction",
+                attributes=FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT,
+            )
+        )[0]
+        self.assertTrue(result.is_directory)
+        self.assertTrue(result.is_reparse_point)
+
+    def test_parses_multiple_entries(self):
+        first_name = "alpha"
+        first_size = FILE_ID_EXTD_HEADER_SIZE + len(first_name.encode("utf-16-le"))
+        first_offset = (first_size + 7) & ~7
+        first = make_extd_entry(first_name, next_offset=first_offset,
+                                file_id=bytes.fromhex("01" * 16))
+        first += bytes(first_offset - len(first))
+        second = make_extd_entry("beta", file_id=bytes.fromhex("02" * 16))
+        result = parse_file_id_extd_dir_info(first + second)
+        self.assertEqual([item.name for item in result], ["alpha", "beta"])
+        self.assertEqual([item.file_id for item in result],
+                         [("01" * 16), ("02" * 16)])
+
+    def test_rejects_truncated_extended_header(self):
+        with self.assertRaises(DirectoryBufferError):
+            parse_file_id_extd_dir_info(b"\\x00" * (FILE_ID_EXTD_HEADER_SIZE - 1))
+
+    def test_rejects_name_outside_extended_buffer(self):
+        data = bytearray(make_extd_entry("x"))
+        struct.pack_into("<I", data, 60, 40)
+        with self.assertRaises(DirectoryBufferError):
+            parse_file_id_extd_dir_info(data)
+
+    def test_rejects_misaligned_extended_next_offset(self):
+        first = bytearray(make_extd_entry("a", next_offset=104))
+        struct.pack_into("<I", first, 0, 103)
+        with self.assertRaises(DirectoryBufferError):
+            parse_file_id_extd_dir_info(first + make_extd_entry("b"))
