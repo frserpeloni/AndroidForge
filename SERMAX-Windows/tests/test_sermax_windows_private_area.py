@@ -184,7 +184,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
 
     def test_native_failure_is_reported_without_closing_invalid_handle(self):
         def native_create(out_handle, *args):
-            return 0xC0000035  # STATUS_OBJECT_NAME_COLLISION
+            return -1073741771  # ctypes.c_long: STATUS_OBJECT_NAME_COLLISION (0xC0000035)
 
         with (
             mock.patch.object(
