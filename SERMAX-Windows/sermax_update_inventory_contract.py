@@ -102,9 +102,9 @@ def build_inventory_plan(
                 raise InventoryContractError(
                     f"Destino replace não é arquivo regular: {existing_path}"
                 )
-            if record["classification"] in {"protected", "blocked"}:
+            if record["classification"] != "managed":
                 raise InventoryContractError(
-                    f"Destino replace bloqueado: {existing_path}"
+                    f"Destino replace não consta na allowlist managed: {existing_path}"
                 )
             size = record.get("size")
             digest = record.get("sha256")
