@@ -22,6 +22,8 @@ from sermax_windows_directory_snapshot import (
 from sermax_windows_handle_io import (
     HandleIoError,
     _native_api,
+    close_handle,
+    open_relative_component,
     query_handle_metadata,
 )
 
@@ -115,3 +117,71 @@ def enumerate_stable_directory_handle(
         return compare_directory_snapshots(first, second)
     except DirectorySnapshotError as exc:
         raise HandleIoError(f"Diretório mudou entre enumerações: {exc}") from exc
+
+
+
+FILE_LIST_DIRECTORY = 0x0001
+
+
+def open_verified_child_component(
+    parent_handle,
+    entry: DirectoryEntry,
+    *,
+    desired_access: int | None = None,
+):
+    """Abre um filho e vincula o handle ao FileId enumerado de 128 bits.
+
+    O handle do pai deve permanecer aberto durante a operação. Reparse points,
+    troca de volume, FileId divergente, atributos divergentes e tamanho
+    divergente causam falha fechada. Em erro, o handle filho é fechado.
+    """
+    if not isinstance(entry, DirectoryEntry):
+        raise HandleIoError("Entrada de diretório inválida.")
+    if entry.is_reparse_point:
+        raise HandleIoError("Entrada reparse rejeitada antes da abertura.")
+    if not isinstance(entry.file_id, str) or len(entry.file_id) != 32:
+        raise HandleIoError("A entrada não contém FileId estendido de 128 bits.")
+    try:
+        int(entry.file_id, 16)
+    except ValueError as exc:
+        raise HandleIoError("FileId estendido contém caracteres inválidos.") from exc
+
+    parent_metadata = query_handle_metadata(parent_handle)
+    if (
+        not parent_metadata["is_directory"]
+        or parent_metadata["is_reparse_point"]
+        or parent_metadata["delete_pending"]
+    ):
+        raise HandleIoError("Handle pai não é um diretório regular validado.")
+
+    access = desired_access
+    if entry.is_directory:
+        access = FILE_LIST_DIRECTORY if access is None else access | FILE_LIST_DIRECTORY
+
+    child_handle = open_relative_component(
+        parent_handle,
+        entry.name,
+        directory=entry.is_directory,
+        desired_access=access,
+    )
+    try:
+        child_metadata = query_handle_metadata(child_handle)
+        if child_metadata["is_reparse_point"] or child_metadata["delete_pending"]:
+            raise HandleIoError("Objeto filho reparse ou marcado para exclusão.")
+        if child_metadata["volume_serial_number"] != parent_metadata["volume_serial_number"]:
+            raise HandleIoError("O filho aberto pertence a outro volume.")
+        if child_metadata["file_id_128"].lower() != entry.file_id.lower():
+            raise HandleIoError("FileId do handle não corresponde à entrada enumerada.")
+        if child_metadata["attributes"] != entry.attributes:
+            raise HandleIoError("Atributos do filho mudaram desde a enumeração.")
+        if child_metadata["end_of_file"] != entry.end_of_file:
+            raise HandleIoError("Tamanho do filho mudou desde a enumeração.")
+        if bool(child_metadata["is_directory"]) != entry.is_directory:
+            raise HandleIoError("Tipo do filho diverge da entrada enumerada.")
+        return child_handle
+    except Exception:
+        try:
+            close_handle(child_handle)
+        except Exception:
+            pass
+        raise
