@@ -125,3 +125,50 @@ class AclInspectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+@unittest.skipUnless(
+    inspection.os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
+    "Inspeção nativa exige Windows x64.",
+)
+class AclInspectionWindowsIntegrationTests(unittest.TestCase):
+    def test_inspects_real_directory_acl_without_mutating_it(self):
+        import tempfile
+        from ctypes import wintypes
+
+        from sermax_windows_handle_io import close_handle
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        create_file = kernel32.CreateFileW
+        create_file.argtypes = [
+            wintypes.LPCWSTR,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            ctypes.c_void_p,
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.HANDLE,
+        ]
+        create_file.restype = wintypes.HANDLE
+
+        with tempfile.TemporaryDirectory() as directory:
+            handle = create_file(
+                directory,
+                0x00020000 | 0x00000080 | 0x00100000,  # READ_CONTROL, READ_ATTRIBUTES, SYNCHRONIZE
+                0x00000001 | 0x00000002 | 0x00000004,
+                None,
+                3,  # OPEN_EXISTING
+                0x02000000 | 0x00200000,  # BACKUP_SEMANTICS, OPEN_REPARSE_POINT
+                None,
+            )
+            invalid_handle = ctypes.c_void_p(-1).value
+            self.assertNotIn(handle, (None, 0, invalid_handle))
+            try:
+                result = inspection.inspect_directory_acl(handle)
+                self.assertTrue(result["owner_sid"])
+                self.assertIn(result["dacl_state"], ("present", "null_or_absent"))
+                self.assertIn("aces", result)
+                self.assertFalse(result["effective_access_evaluated"])
+                self.assertFalse(result["mutated"])
+            finally:
+                close_handle(handle)
+
