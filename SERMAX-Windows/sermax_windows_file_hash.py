@@ -12,10 +12,11 @@ import hashlib
 import os
 from ctypes import wintypes
 
+from sermax_windows_directory_enum import DirectoryEntry
+from sermax_windows_directory_handle import open_verified_child_component
 from sermax_windows_handle_io import (
     HandleIoError,
     close_handle,
-    open_relative_component,
     query_handle_metadata,
 )
 
@@ -117,18 +118,19 @@ def _hash_handle(handle, *, chunk_size: int = DEFAULT_CHUNK_SIZE,
     return digest.hexdigest(), total
 
 
-def hash_file_component(parent_handle, name: str, *,
+def hash_file_component(parent_handle, entry: DirectoryEntry, *,
                         chunk_size: int = DEFAULT_CHUNK_SIZE) -> tuple[str, int]:
-    """Abre um arquivo filho, calcula SHA-256 pelo handle e sempre o fecha.
+    """Abre o arquivo enumerado, valida seu FileId e calcula SHA-256.
 
-    A abertura solicita FILE_READ_DATA. O handle de arquivo não é convertido
-    novamente em caminho. O chamador mantém o handle pai aberto durante toda
-    a operação.
+    A abertura é relativa ao handle pai. O FileId de 128 bits, o volume,
+    os atributos e o tamanho precisam corresponder à entrada enumerada antes
+    da leitura. O handle é fechado mesmo quando a validação ou leitura falha.
     """
-    handle = open_relative_component(
+    if not isinstance(entry, DirectoryEntry) or entry.is_directory:
+        raise HandleIoError("hash_file_component exige uma entrada de arquivo.")
+    handle = open_verified_child_component(
         parent_handle,
-        name,
-        directory=False,
+        entry,
         desired_access=FILE_READ_DATA,
     )
     try:
