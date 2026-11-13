@@ -32,3 +32,10 @@ Os componentes permanecem isolados. Ainda faltam:
 - testes reais NTFS com criação, remoção, rename, reparse points, hardlinks e concorrência.
 
 Não conectar ao inventário de produção nem implementar staging/rollback antes da conclusão desses controles. Testes com mocks não substituem validação nativa no Windows x64.
+
+
+## Enumeração estável em duas passagens
+
+`enumerate_stable_directory_handle(handle)` executa duas enumerações completas e independentes no mesmo handle, reiniciando a consulta nativa em cada passagem. Em seguida, exige igualdade por nome NFKC + casefold, FileId, atributos, tamanhos, alocação, timestamps, EA size e alias curto. Qualquer diferença aborta com `HandleIoError`.
+
+Essa etapa reduz a janela de inconsistência do namespace, mas não oferece snapshot transacional e não resolve, sozinha, TOCTOU durante abertura/leitura dos filhos. A função permanece isolada do inventário de produção. Ainda faltam abertura e hash pelo mesmo handle, comparação de volume/FileId e metadados antes/depois da leitura, política efetiva de hardlinks e enumeração final após leitura.
