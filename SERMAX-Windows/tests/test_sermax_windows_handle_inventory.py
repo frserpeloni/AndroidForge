@@ -53,6 +53,26 @@ class HandleInventoryTests(unittest.TestCase):
         self.assertEqual(enumerate_dir.call_count, 2)
         hash_file.assert_called_once_with(100, item)
 
+
+    def test_protected_memory_files_are_never_read_or_hashed(self):
+        personal = entry("MEMORIA_SERMAX.JSON", size=4096)
+        neural = entry("memoria_neural_pestinha.json", size=8192,
+                       file_id="ff" * 16)
+        with (
+            patch.object(inventory, "query_handle_metadata",
+                         return_value=self._root_metadata()),
+            patch.object(inventory, "enumerate_stable_directory_handle",
+                         side_effect=((personal, neural), (personal, neural))),
+            patch.object(inventory, "hash_file_component") as hash_file,
+        ):
+            records = inventory.inventory_directory_handle(100)
+        self.assertEqual(
+            [(item["classification"], item["size"], item["sha256"])
+             for item in records],
+            [("protected", None, None), ("protected", None, None)],
+        )
+        hash_file.assert_not_called()
+
     def test_reparse_point_is_blocked_without_opening(self):
         item = entry("junction", attributes=0x410, size=0)
         with (
