@@ -127,6 +127,13 @@ class InventoryContractTests(unittest.TestCase):
                 manifest(file_item("bin/SERMAX.exe", "create")),
             )
 
+    def test_rejects_unicode_normalization_ancestor_collision(self):
+        with self.assertRaises(InventoryContractError):
+            build_inventory_plan(
+                [record("café/child.txt")],
+                manifest(file_item("cafe\u0301", "create")),
+            )
+
     def test_rejects_target_that_is_ancestor_of_existing_entry(self):
         with self.assertRaises(InventoryContractError):
             build_inventory_plan(
