@@ -39,3 +39,30 @@ Não conectar ao inventário de produção nem implementar staging/rollback ante
 `enumerate_stable_directory_handle(handle)` executa duas enumerações completas e independentes no mesmo handle, reiniciando a consulta nativa em cada passagem. Em seguida, exige igualdade por nome NFKC + casefold, FileId, atributos, tamanhos, alocação, timestamps, EA size e alias curto. Qualquer diferença aborta com `HandleIoError`.
 
 Essa etapa reduz a janela de inconsistência do namespace, mas não oferece snapshot transacional e não resolve, sozinha, TOCTOU durante abertura/leitura dos filhos. A função permanece isolada do inventário de produção. Ainda faltam abertura e hash pelo mesmo handle, comparação de volume/FileId e metadados antes/depois da leitura, política efetiva de hardlinks e enumeração final após leitura.
+
+
+## Hash de arquivo pelo handle
+
+`sermax_windows_file_hash.py` adiciona uma etapa isolada para abrir um filho
+relativamente ao handle do diretório pai e calcular SHA-256 usando
+`ReadFile` no mesmo handle. A abertura solicita `FILE_READ_DATA` e mantém
+o compartilhamento conservador já definido em `open_relative_component`,
+que permite leitura compartilhada e recusa compartilhamento de escrita e
+exclusão enquanto o handle estiver aberto.
+
+Antes da leitura, exige arquivo regular, sem reparse point, sem
+`DeletePending` e com `NumberOfLinks == 1`. Depois da leitura, consulta
+novamente os metadados e compara volume, FileId de 128 bits, tamanho,
+quantidade de links, atributos e estado do objeto. Também exige que a
+quantidade de bytes lidos seja igual ao tamanho inicial. O handle é fechado
+em bloco `finally`.
+
+A política rejeita hardlinks em vez de tentar inferir qual caminho adicional
+aponta para o mesmo objeto. A etapa não está conectada ao inventário de
+produção. Os testes atuais simulam a API de leitura e validam hash, tamanho,
+mudança de identidade, leitura truncada, hardlinks e fechamento do handle.
+Eles não substituem testes nativos em Windows x64/NTFS.
+
+Ainda falta integrar essa leitura a uma caminhada de diretórios inteiramente
+por handles, validar a enumeração final após a leitura e executar testes reais
+de concorrência, rename, substituição e reparse points no Windows.
