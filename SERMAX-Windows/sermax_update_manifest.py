@@ -15,7 +15,7 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Callable, Mapping
 
-from sermax_update_inventory import InventoryError, PROTECTED_FILES, _normalize_relative
+from sermax_update_inventory import (\n    InventoryError, PROTECTED_FILES, PROTECTED_DIRECTORY_SEGMENTS, _normalize_relative,\n)
 
 MAX_MANIFEST_BYTES = 1024 * 1024
 MAX_FILES = 10000
@@ -159,8 +159,9 @@ def validate_signed_manifest(
         if key in seen:
             raise ManifestError(f"Caminho duplicado ou colisão de caixa: {path}")
         seen.add(key)
-        protected_segments = {"_update", "backup", "backups", "historico", "history", "memoria", "memorias", "memory", "memories", "config", "configs", "configuracao", "configuracoes", "voice", "voz", "models", "modelos"}
-        if path.rsplit("/", 1)[-1].casefold() in protected or any(part.casefold() in protected_segments for part in path.split("/")):
+        if path.rsplit("/", 1)[-1].casefold() in protected or any(
+            part.casefold() in PROTECTED_DIRECTORY_SEGMENTS for part in path.split("/")
+        ):
             raise ManifestError(f"Destino protegido no manifesto: {path}")
         if type(item["size"]) is not int or not 0 <= item["size"] <= MAX_FILE_SIZE:
             raise ManifestError(f"Tamanho inválido para {path}.")
