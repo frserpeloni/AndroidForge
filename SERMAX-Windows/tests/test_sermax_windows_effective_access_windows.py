@@ -315,7 +315,9 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                         with self.assertRaises(PermissionError):
                             os.mkdir(os.path.join(directory, "denied-child"))
                     finally:
-                        self.assertTrue(win32security.RevertToSelf())
+                        # pywin32 retorna None quando RevertToSelf tem sucesso.
+                        # Falhas são propagadas como exceção pela chamada.
+                        win32security.RevertToSelf()
 
                     self.assertEqual(os.listdir(directory), [])
                 finally:
