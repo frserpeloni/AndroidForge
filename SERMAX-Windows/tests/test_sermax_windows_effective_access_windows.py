@@ -148,6 +148,7 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
         import win32api
         import win32net
         import win32security
+        import pywintypes
 
         file_list_directory = 0x0001
         file_add_file = 0x0002
@@ -198,6 +199,10 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                     "LogonUserW não conseguiu obter token da conta padrão",
                 )
 
+            # Converte o HANDLE ctypes retornado por LogonUserW para o
+            # PyHANDLE exigido pelas funções pywin32.
+            token = pywintypes.HANDLE(token_handle.value)
+
             with tempfile.TemporaryDirectory(
                 prefix="sermax-standard-user-access-"
             ) as parent:
@@ -246,7 +251,7 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                         win32api.CloseHandle(process_token)
 
                     standard_user = win32security.GetTokenInformation(
-                        token_handle, win32security.TokenUser
+                        token, win32security.TokenUser
                     )[0]
                     self.assertNotEqual(process_user, standard_user)
 
@@ -292,7 +297,7 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                         "write_dac": write_dac,
                     }.items():
                         result = evaluate_access_for_token(
-                            token_handle, descriptor, mask
+                            token, descriptor, mask
                         )
                         self.assertTrue(result["api_success"], name)
                         self.assertFalse(result["granted"], name)
@@ -302,7 +307,7 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
 
                     # A tentativa real ocorre sob impersonação do token
                     # distinto, sem executar processos auxiliares.
-                    win32security.ImpersonateLoggedOnUser(token_handle)
+                    win32security.ImpersonateLoggedOnUser(token)
                     try:
                         with self.assertRaises(PermissionError):
                             os.listdir(directory)
@@ -316,7 +321,11 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                     self.assertTrue(close(directory_handle))
         finally:
             if token_handle:
-                win32api.CloseHandle(token_handle)
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                close_token = kernel32.CloseHandle
+                close_token.argtypes = [wintypes.HANDLE]
+                close_token.restype = wintypes.BOOL
+                self.assertTrue(close_token(token_handle))
             if account_created:
                 win32net.NetUserDel(None, username)
 
