@@ -96,6 +96,22 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
                     "file_id_128": metadata["file_id_128"],
                 }
 
+                expected_sids = {owner_sid, "S-1-5-18", "S-1-5-32-544"}
+                self.assertEqual(
+                    len(expected_sids), 3,
+                    f"SID do proprietário colide com trustee reservado: {owner_sid}",
+                )
+                self.assertEqual(
+                    len(inspection["aces"]), 3,
+                    f"Quantidade de ACEs lida diverge; owner={owner_sid}; "
+                    f"aces={inspection['aces']!r}",
+                )
+                self.assertEqual(
+                    {ace["sid"] for ace in inspection["aces"]}, expected_sids,
+                    f"Trustees lidos divergem; owner={owner_sid}; "
+                    f"aces={inspection['aces']!r}",
+                )
+
                 result = validate_private_area_acl(
                     inspection,
                     expected_owner_sid=owner_sid,
