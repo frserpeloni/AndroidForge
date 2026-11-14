@@ -112,11 +112,14 @@ def evaluate_access_for_token(
             "Máscaras GENERIC_* devem ser mapeadas antes da avaliação."
         )
 
-    token = (
-        token_handle.value
-        if isinstance(token_handle, ctypes.c_void_p)
-        else token_handle
-    )
+    try:
+        token = (
+            token_handle.value
+            if isinstance(token_handle, ctypes.c_void_p)
+            else int(token_handle)
+        )
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise EffectiveAccessError("Handle de token inválido.") from exc
     if token is None or token == 0 or token == ctypes.c_void_p(-1).value:
         raise EffectiveAccessError("Handle de token inválido.")
 
