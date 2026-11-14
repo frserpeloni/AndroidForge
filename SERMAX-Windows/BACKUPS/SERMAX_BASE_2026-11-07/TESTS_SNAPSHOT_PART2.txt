@@ -1,0 +1,525 @@
+===== FILE: SERMAX-Windows/tests/test_sermax_jarvis_adapter.py =====
+===== GIT_BLOB_SHA: bfa0433bed52164cd720294e99061d919c358b0b =====
+import unittest
+from sermax_jarvis_adapter import JarvisAdapter
+
+
+class FakeJarvis:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.calls = []
+        self.closed = False
+
+    def ask(self, prompt, **kwargs):
+        self.calls.append((prompt, kwargs))
+        return "Resposta local"
+
+    def close(self):
+        self.closed = True
+
+
+class TestJarvisAdapter(unittest.TestCase):
+    def test_uses_simple_agent_without_tools_or_memory(self):
+        instances = []
+
+        def factory(**kwargs):
+            item = FakeJarvis(**kwargs)
+            instances.append(item)
+            return item
+
+        adapter = JarvisAdapter(model="sermax", sdk_factory=factory)
+        self.assertEqual(adapter.responder("Olá"), "Resposta local")
+        sdk = instances[0]
+        self.assertEqual(sdk.kwargs, {"engine_key": "ollama", "model": "sermax"})
+        self.assertEqual(sdk.calls[0][1]["agent"], "simple")
+        self.assertEqual(sdk.calls[0][1]["tools"], [])
+        self.assertFalse(sdk.calls[0][1]["context"])
+        self.assertTrue(sdk.closed)
+
+    def test_rejects_empty_and_oversized_prompt(self):
+        adapter = JarvisAdapter(sdk_factory=lambda **kwargs: FakeJarvis(**kwargs))
+        for prompt in (" ", "x" * 4001):
+            with self.assertRaises(ValueError):
+                adapter.responder(prompt)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_jarvis_core_integration.py =====
+===== GIT_BLOB_SHA: 648bf89b5470fcdfd12924b38491d4dd05bbabd4 =====
+import unittest
+from unittest.mock import patch
+
+import sermax_core as core
+
+
+class TestJarvisCoreIntegration(unittest.TestCase):
+    def setUp(self):
+        self.motor_original = core.MOTOR_RESPOSTA
+        self.sessao_original = list(core.sessao)
+        core.sessao.clear()
+
+    def tearDown(self):
+        core.MOTOR_RESPOSTA = self.motor_original
+        core.sessao[:] = self.sessao_original
+
+    def test_motor_jarvis_recebe_identidade_memoria_e_pergunta(self):
+        contexto = [
+            {"role": "system", "content": "IDENTIDADE SERMAX"},
+            {"role": "system", "content": "MEMORIA: carro Siena"},
+            {"role": "user", "content": "Qual óleo devo usar?"},
+        ]
+        with (
+            patch.object(core, "responder_comando_local", return_value=None),
+            patch.object(core, "responder_calculo_local", return_value=None),
+            patch.object(core, "registrar_memoria"),
+            patch.object(core, "montar_contexto", return_value=contexto),
+            patch.object(core.sermax_jarvis_adapter, "JarvisAdapter") as adapter,
+        ):
+            adapter.return_value.responder.return_value = "Resposta do Jarvis"
+            core.MOTOR_RESPOSTA = "jarvis"
+            partes = []
+            resposta = core._perguntar_impl(
+                "Qual óleo devo usar?", receber_parte=partes.append
+            )
+
+        prompt = adapter.return_value.responder.call_args.args[0]
+        self.assertIn("IDENTIDADE SERMAX", prompt)
+        self.assertIn("MEMORIA: carro Siena", prompt)
+        self.assertIn("Qual óleo devo usar?", prompt)
+        self.assertEqual(resposta, "Resposta do Jarvis")
+        self.assertEqual(partes, ["Resposta do Jarvis"])
+
+    def test_motor_ollama_permanece_padrao_e_selecionavel(self):
+        core.MOTOR_RESPOSTA = "ollama"
+        resposta = core.responder_comando_local("/motor jarvis")
+        self.assertEqual(core.MOTOR_RESPOSTA, "jarvis")
+        self.assertIn("JARVIS", resposta)
+        self.assertEqual(
+            core.responder_comando_local("/motor status").startswith(
+                "Motor de resposta atual: JARVIS"
+            ),
+            True,
+        )
+        resposta = core.responder_comando_local("/motor ollama")
+        self.assertEqual(core.MOTOR_RESPOSTA, "ollama")
+        self.assertIn("OLLAMA", resposta)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_pestinha_adapter.py =====
+===== GIT_BLOB_SHA: be485d4edf06aa617841591e002e7bb7ddaccebd =====
+import tempfile
+import unittest
+from pathlib import Path
+
+from sermax_pestinha_adapter import PestinhaAdapter
+
+
+class FakeBrain:
+    def __init__(self):
+        self.inputs = []
+        self.steps = []
+        self.loaded = []
+        self.saved = []
+
+    def load(self, path):
+        self.loaded.append(path)
+        return False
+
+    def stimulate(self, values):
+        self.inputs.append(values)
+
+    def step(self, dt):
+        self.steps.append(dt)
+
+    def motor_activity(self):
+        return {"WATCH": 4.0, "CHEER": 1.0, "FUGIR": 99.0}
+
+    def save(self, path):
+        self.saved.append(path)
+        with open(path, "w", encoding="utf-8") as state_file:
+            state_file.write("{}")
+
+
+class TestPestinhaAdapter(unittest.TestCase):
+    def test_receives_only_allowlisted_lifecycle_events(self):
+        with tempfile.TemporaryDirectory() as folder:
+            brain = FakeBrain()
+            path = str(Path(folder) / "sermax_neural_state.json")
+            adapter = PestinhaAdapter(path, brain_factory=lambda: brain)
+
+            self.assertTrue(adapter.available)
+            self.assertEqual(adapter.processar_evento("processing"), "attention")
+            self.assertEqual(brain.inputs, [{"WORK": 0.80, "TYPING": 0.20}])
+            self.assertEqual(brain.steps, [80])
+            self.assertEqual(adapter.processar_evento("error"), "error")
+            self.assertEqual(adapter.processar_evento("unknown"), "error")
+
+    def test_persistence_is_separate_and_explicit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            brain = FakeBrain()
+            path = str(Path(folder) / "sermax_neural_state.json")
+            adapter = PestinhaAdapter(path, brain_factory=lambda: brain)
+            self.assertTrue(adapter.salvar())
+            self.assertEqual(brain.saved, [path])
+
+    def test_failure_falls_back_without_crashing(self):
+        class BrokenBrain(FakeBrain):
+            def step(self, dt):
+                raise RuntimeError("neural failure")
+
+        with tempfile.TemporaryDirectory() as folder:
+            adapter = PestinhaAdapter(
+                str(Path(folder) / "state.json"), brain_factory=BrokenBrain
+            )
+            self.assertEqual(adapter.processar_evento("processing"), "processing")
+            self.assertFalse(adapter.available)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_planner_validation.py =====
+===== GIT_BLOB_SHA: 7b53aff6d9bddbbed4566097cad6f8135fadd09a =====
+import json
+import unittest
+
+import sermax_planejador
+
+
+class PlannerOutputValidationTests(unittest.TestCase):
+    def test_accepts_only_complete_allowlisted_steps(self):
+        payload = {
+            "objetivo": "organizar tarefas",
+            "etapas": [
+                {
+                    "titulo": "Consultar memória",
+                    "ferramenta": "consultar_memoria",
+                    "verificacao": "Retornar registros encontrados",
+                },
+                {
+                    "titulo": "Responder",
+                    "ferramenta": "responder",
+                    "verificacao": "Apresentar resultado ao usuário",
+                },
+            ],
+        }
+        self.assertEqual(
+            sermax_planejador.validar_resposta_plano(
+                json.dumps(payload), "organizar tarefas"
+            ),
+            [
+                ("Consultar memória", "consultar_memoria", "Retornar registros encontrados"),
+                ("Responder", "responder", "Apresentar resultado ao usuário"),
+            ],
+        )
+
+    def test_rejects_tool_injection_and_unknown_tools(self):
+        for ferramenta in ("shell", "executar_comando", "gravar_arquivo", "", None):
+            payload = {
+                "etapas": [{
+                    "titulo": "Ação",
+                    "ferramenta": ferramenta,
+                    "verificacao": "Verificar",
+                }]
+            }
+            with self.subTest(ferramenta=ferramenta):
+                with self.assertRaises(ValueError):
+                    sermax_planejador.validar_resposta_plano(
+                        json.dumps(payload), "objetivo"
+                    )
+
+    def test_rejects_missing_or_invalid_step_fields(self):
+        invalid = [
+            {"etapas": []},
+            {"etapas": [{}]},
+            {"etapas": [{"titulo": "Sem ferramenta", "verificacao": "OK"}]},
+            {"etapas": [{"titulo": "Sem verificação", "ferramenta": "responder"}]},
+            {"etapas": ["responder"]},
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload):
+                with self.assertRaises((ValueError, TypeError)):
+                    sermax_planejador.validar_resposta_plano(
+                        json.dumps(payload), "objetivo"
+                    )
+
+    def test_rejects_more_than_four_steps(self):
+        payload = {
+            "etapas": [{
+                "titulo": "Etapa",
+                "ferramenta": "responder",
+                "verificacao": "OK",
+            }] * 5
+        }
+        with self.assertRaises(ValueError):
+            sermax_planejador.validar_resposta_plano(
+                json.dumps(payload), "objetivo"
+            )
+
+    def test_rejects_oversized_and_non_json_responses(self):
+        with self.assertRaises(ValueError):
+            sermax_planejador.validar_resposta_plano("x" * 16001, "objetivo")
+        with self.assertRaises(ValueError):
+            sermax_planejador.validar_resposta_plano("sem json", "objetivo")
+
+    def test_accepts_json_inside_markdown_fence(self):
+        payload = {
+            "etapas": [{
+                "titulo": "Responder",
+                "ferramenta": "responder",
+                "verificacao": "Resposta apresentada",
+            }]
+        }
+        self.assertEqual(
+            len(sermax_planejador.validar_resposta_plano(
+                "```json\\n" + json.dumps(payload) + "\\n```",
+                "objetivo",
+            )),
+            1,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_real_jarvis.py =====
+===== GIT_BLOB_SHA: 896f84137426433e0fc55534b6b3930a91268cde =====
+import json
+import os
+import threading
+import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
+
+from sermax_jarvis_adapter import JarvisAdapter
+
+
+class OllamaMockHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path != "/api/tags":
+            self.send_error(404)
+            return
+        body = json.dumps({
+            "models": [{"name": "sermax", "model": "sermax"}]
+        }).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        request = json.loads(self.rfile.read(length) or b"{}")
+        if self.path != "/api/chat":
+            self.send_error(404)
+            return
+        self.server.last_request = request
+        payload = {
+            "model": request.get("model", "sermax"),
+            "message": {"role": "assistant", "content": "SERMAX JARVIS CI OK"},
+            "done": True,
+            "prompt_eval_count": 4,
+            "eval_count": 5,
+            "total_duration": 1000000,
+            "load_duration": 100000,
+            "prompt_eval_duration": 100000,
+            "eval_duration": 800000,
+        }
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args):
+        return
+
+
+class TestRealOpenJarvisWorker(unittest.TestCase):
+    def test_sdk_runs_in_separate_python_process_against_ollama_protocol(self):
+        python = os.environ.get("SERMAX_JARVIS_PYTHON")
+        if not python or not Path(python).is_file():
+            self.skipTest("Ambiente Python 3.13 do OpenJarvis não configurado.")
+
+        root = Path(__file__).resolve().parents[1]
+        server = ThreadingHTTPServer(("127.0.0.1", 0), OllamaMockHandler)
+        server.last_request = None
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        host = f"http://127.0.0.1:{server.server_port}"
+        try:
+            with patch.dict(os.environ, {
+                "OLLAMA_HOST": host,
+                "SERMAX_ROOT": str(root),
+                "SERMAX_JARVIS_PYTHON": python,
+            }):
+                adapter = JarvisAdapter(
+                    model="sermax",
+                    python_executable=python,
+                    worker_path=str(root / "sermax_jarvis_worker.py"),
+                    timeout=60,
+                )
+                answer = adapter.responder("Responda com uma confirmação curta.")
+            self.assertEqual(answer, "SERMAX JARVIS CI OK")
+            self.assertEqual(server.last_request["model"], "sermax")
+            self.assertFalse(server.last_request.get("tools"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_real_pestinha.py =====
+===== GIT_BLOB_SHA: d578825e53c6bf85e68ab674462b26492a5396fb =====
+import tempfile
+import unittest
+from pathlib import Path
+
+try:
+    from pestinha.core.nervous_system import LIFBrain
+except ImportError:
+    LIFBrain = None
+from sermax_pestinha_adapter import PestinhaAdapter
+from sermax_widget_state import ESTADOS_VISUAIS
+
+
+class TestRealPestinhaRuntime(unittest.TestCase):
+    @unittest.skipIf(LIFBrain is None, "Pestinha não instalado neste ambiente.")
+    def test_lifbrain_runs_and_persists_its_own_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "memoria_neural_pestinha.json"
+            adapter = PestinhaAdapter(str(path), brain_factory=LIFBrain)
+            self.assertTrue(adapter.available)
+            self.assertIn(adapter.processar_evento("processing"), ESTADOS_VISUAIS)
+            self.assertTrue(adapter.salvar())
+            self.assertTrue(path.is_file())
+            restored = PestinhaAdapter(str(path), brain_factory=LIFBrain)
+            self.assertTrue(restored.available)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_safe_calculator.py =====
+===== GIT_BLOB_SHA: 9ed0fba099347700698ee3d67eca157067b5c1dd =====
+import unittest
+
+import sermax_core
+
+
+class SafeCalculatorTests(unittest.TestCase):
+    def test_supports_arithmetic_and_localized_multiplication(self):
+        cases = {
+            "2 + 3 * 4": "Resultado: 14",
+            "125 x 87": "Resultado: 10.875",
+            "10% de 250": "Resultado: 25",
+            "(8 + 4) / 3": "Resultado: 4",
+            "2 ** 10": "Resultado: 1.024",
+        }
+        for expression, expected in cases.items():
+            with self.subTest(expression=expression):
+                self.assertEqual(
+                    sermax_core.responder_calculo_local(expression), expected
+                )
+
+    def test_rejects_python_and_attribute_execution(self):
+        expressions = [
+            "__import__('os').system('whoami')",
+            "open('memoria_sermax.json').read()",
+            "().__class__.__mro__",
+            "math.sqrt(9)",
+            "[x for x in range(5)]",
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                self.assertIsNone(
+                    sermax_core.responder_calculo_local(expression)
+                )
+
+    def test_handles_division_by_zero_without_crashing(self):
+        self.assertEqual(
+            sermax_core.responder_calculo_local("10 / 0"),
+            "Não consigo dividir por zero.",
+        )
+
+    def test_rejects_excessive_exponents_and_results(self):
+        for expression in ("2 ** 11", "1000001 ** 2", "9999999999999999 * 100"):
+            with self.subTest(expression=expression):
+                self.assertIsNone(
+                    sermax_core.responder_calculo_local(expression)
+                )
+
+    def test_rejects_empty_long_and_non_arithmetic_input(self):
+        for expression in ("", "x" * 101, "12", "2 + os.system(1)"):
+            with self.subTest(expression=expression):
+                self.assertIsNone(
+                    sermax_core.responder_calculo_local(expression)
+                )
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+===== FILE: SERMAX-Windows/tests/test_sermax_widget_neural_integration.py =====
+===== GIT_BLOB_SHA: b975efbe09dc2fb8687233cabe226b338fe4eba5 =====
+import unittest
+from sermax_widget_state import WidgetStateController
+
+
+class FakeNeuralAdapter:
+    def __init__(self, result="attention"):
+        self.result = result
+        self.events = []
+        self.saved = False
+
+    def processar_evento(self, event):
+        self.events.append(event)
+        return self.result
+
+    def salvar(self):
+        self.saved = True
+        return True
+
+
+class TestWidgetNeuralIntegration(unittest.TestCase):
+    def test_routes_events_through_optional_neural_adapter(self):
+        adapter = FakeNeuralAdapter("completed")
+        controller = WidgetStateController(neural_adapter=adapter)
+        state = controller.set_event("processing")
+        self.assertEqual(state.name, "completed")
+        self.assertEqual(adapter.events, ["processing"])
+        self.assertTrue(controller.salvar_estado_neural())
+        self.assertTrue(adapter.saved)
+
+    def test_rejects_invalid_neural_state(self):
+        adapter = FakeNeuralAdapter({"command": "run"})
+        controller = WidgetStateController(neural_adapter=adapter)
+        self.assertEqual(controller.set_event("processing").name, "error")
+
+    def test_keeps_deterministic_fallback_without_adapter(self):
+        controller = WidgetStateController()
+        self.assertEqual(controller.set_event("processing").name, "processing")
+        self.assertFalse(controller.salvar_estado_neural())
+
+
+if __name__ == "__main__":
+    unittest.main()
+
