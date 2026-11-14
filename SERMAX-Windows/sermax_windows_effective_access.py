@@ -79,8 +79,17 @@ def read_security_descriptor_binary(directory_handle) -> bytes:
                 | win32security.DACL_SECURITY_INFORMATION
             ),
         )
-        binary = descriptor.GetSecurityDescriptorBinaryForm()
-        if not isinstance(binary, bytes) or len(binary) < 20:
+        # PySECURITY_DESCRIPTOR expõe o descritor self-relative pelo buffer
+        # protocol. GetSecurityDescriptorBinaryForm() pertence ao .NET, não ao
+        # pywin32, e não existe nesse objeto.
+        try:
+            binary = memoryview(descriptor).tobytes()
+            expected_length = int(descriptor.GetLength())
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise EffectiveAccessError(
+                f"Não foi possível serializar o descritor pywin32: {exc}"
+            ) from exc
+        if len(binary) != expected_length or len(binary) < 20:
             raise EffectiveAccessError("Descritor binário inválido ou incompleto.")
         return binary
     except EffectiveAccessError:
