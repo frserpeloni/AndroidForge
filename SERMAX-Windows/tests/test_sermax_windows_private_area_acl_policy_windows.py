@@ -18,6 +18,7 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
 
     def test_reads_back_exact_protected_acl_from_same_retained_handle(self):
         import win32security
+        import win32api
 
         with tempfile.TemporaryDirectory(prefix="sermax-acl-policy-") as parent:
             directory = os.path.join(parent, "private-area")
@@ -40,6 +41,7 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
                 | 0x0080     # FILE_READ_ATTRIBUTES
                 | 0x00020000 # READ_CONTROL
                 | 0x00040000 # WRITE_DAC, somente no diretório temporário
+                | 0x00080000 # WRITE_OWNER, somente no diretório temporário
                 | 0x00100000 # SYNCHRONIZE
             )
             handle = create_file(
@@ -52,6 +54,26 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
 
             try:
                 native = handle.value if isinstance(handle, ctypes.c_void_p) else handle
+                # O runner hospedado pode criar o diretório com BUILTIN\\Administrators
+                # como proprietário. A política exige owner, SYSTEM e Administrators
+                # como três trustees distintos. No sandbox descartável, definir o owner
+                # como o usuário efetivo do processo evita depender da configuração do runner.
+                token = win32security.OpenProcessToken(
+                    win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+                )
+                try:
+                    process_user = win32security.GetTokenInformation(
+                        token, win32security.TokenUser
+                    )[0]
+                    win32security.SetSecurityInfo(
+                        native,
+                        win32security.SE_FILE_OBJECT,
+                        win32security.OWNER_SECURITY_INFORMATION,
+                        process_user, None, None, None,
+                    )
+                finally:
+                    win32api.CloseHandle(token)
+
                 initial = win32security.GetSecurityInfo(
                     native,
                     win32security.SE_FILE_OBJECT,
