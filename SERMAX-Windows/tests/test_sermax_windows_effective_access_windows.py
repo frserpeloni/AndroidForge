@@ -169,6 +169,7 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
         )
         account_created = False
         token_handle = wintypes.HANDLE()
+        token = None
 
         try:
             win32net.NetUserAdd(
@@ -320,12 +321,8 @@ class EffectiveAccessWindowsIntegrationTests(unittest.TestCase):
                 finally:
                     self.assertTrue(close(directory_handle))
         finally:
-            if token_handle:
-                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-                close_token = kernel32.CloseHandle
-                close_token.argtypes = [wintypes.HANDLE]
-                close_token.restype = wintypes.BOOL
-                self.assertTrue(close_token(token_handle))
+            if token is not None:
+                win32api.CloseHandle(token)
             if account_created:
                 win32net.NetUserDel(None, username)
 
