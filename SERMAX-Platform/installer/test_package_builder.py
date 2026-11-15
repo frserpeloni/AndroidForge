@@ -50,6 +50,23 @@ class PackageBuilderTests(unittest.TestCase):
         with self.assertRaises(BuildError):
             parse_mapping("../secrets.txt=secret.txt")
 
+
+    def test_rejects_source_root_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "app.py").write_text("x", encoding="utf-8")
+            alias = root / "source-alias"
+            try:
+                alias.symlink_to(source, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("O sistema não permite criar links simbólicos neste ambiente.")
+            with self.assertRaisesRegex(BuildError, "junction ou reparse point"):
+                build_package(alias, root / "package", "1", [
+                    (Path("app.py"), Path("app.py"))
+                ])
+
     def test_rejects_nested_source_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
