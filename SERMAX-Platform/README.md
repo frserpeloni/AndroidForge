@@ -1,24 +1,53 @@
-# SERMAX Platform, protótipo gráfico
+# SERMAX Platform
 
-Este diretório contém a primeira implementação isolada da interface gráfica da Plataforma SERMAX.
+Primeira implementação isolada da interface gráfica e do serviço local da Plataforma SERMAX.
 
-## Estado desta entrega
+## Iniciar no Windows
 
-- Interface web estática, responsiva.
-- Tela inicial e área de conversa.
-- Navegação visual entre Conversa, Projetos e Tarefas.
-- Seletor manual de modelo em estado demonstrativo.
-- Tema grafite com detalhes verde SERMAX.
-- Sem dependências externas de frontend.
+1. Tenha Python 3.12 ou superior instalado.
+2. Abra `SERMAX-Platform/backend`.
+3. Execute `run_local.bat`.
+4. Aguarde a instalação das dependências no ambiente virtual.
+5. Abra no navegador: **http://127.0.0.1:8765**
 
-## Limitações explícitas
+O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a internet e não exponha a API em rede pública.
 
-Esta versão ainda não possui backend, autenticação, banco de dados, sincronização, conexão com Ollama/OpenJarvis ou integração com o núcleo MAX. O envio de mensagem demonstra a interação da interface e informa que o serviço ainda não está conectado. Nenhuma resposta de IA é simulada.
+## Componentes
 
-## Como visualizar localmente
+- `index.html`, interface gráfica.
+- `styles.css`, identidade visual responsiva.
+- `app.js`, navegação e comunicação HTTP com a API.
+- `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
+- `backend/run_local.bat`, inicializador Windows.
+- `backend/test_api.py`, testes básicos da API.
 
-Abra `index.html` em um navegador moderno. Para desenvolvimento, sirva o diretório com um servidor HTTP estático local.
+## Integração com o núcleo
+
+O backend tenta carregar o núcleo existente de `SERMAX-Windows/sermax_core.py` sob demanda. A chamada é serializada por bloqueio global porque o núcleo atual mantém sessão e histórico globais. Isso evita concorrência, mas ainda não oferece isolamento de conversas.
+
+O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarvis/Ollama. A Plataforma grava seu próprio histórico em `%USERPROFILE%\\.sermax-platform\\platform.sqlite3`. Não altere nem copie manualmente os arquivos de memória do núcleo.
+
+## Limitações conhecidas
+
+- A primeira versão é local e de usuário único.
+- Não há autenticação nem acesso remoto.
+- Não há streaming de tokens.
+- Projetos, anexos e tarefas em segundo plano ainda não estão conectados.
+- Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
+- Compatibilidade real com o ambiente Python do computador precisa ser testada.
+- Não é hospedagem pública nem instalador validado.
+
+## Testes
+
+No diretório `backend`:
+
+```powershell
+python -m pip install -r requirements.txt
+python -m unittest -v test_api.py
+```
+
+Os testes ainda precisam ser executados em CI e no ambiente Windows de destino.
 
 ## Proteções
 
-A implementação está em diretório e branch separados. Não altera o núcleo SERMAX, o Terminal original, memórias, backups ou a branch `main`. Não inclui Drive Connect nem execução de comandos no host.
+A implementação está em branch e diretório separados. Não altera a branch `main`, núcleo, Terminal original, arquivos de memória ou backups. Drive Connect permanece fora do escopo.
