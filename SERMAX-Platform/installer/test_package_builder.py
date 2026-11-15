@@ -58,7 +58,10 @@ class PackageBuilderTests(unittest.TestCase):
             source.mkdir()
             (source / "nested").mkdir()
             outside.write_text("outside", encoding="utf-8")
-            (source / "nested" / "link.txt").symlink_to(outside)
+            try:
+                (source / "nested" / "link.txt").symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("O sistema não permite criar links simbólicos neste ambiente.")
             with self.assertRaisesRegex(BuildError, "Links simbólicos"):
                 build_package(source, root / "package", "1", [
                     (Path("nested/link.txt"), Path("nested/link.txt"))
