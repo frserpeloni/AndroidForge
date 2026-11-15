@@ -302,16 +302,19 @@ def chat(payload: ChatInput):
         conversation_id = payload.conversation_id or str(uuid.uuid4())
         now = utc_now()
         with database() as conn:
-            if payload.project_id:
-                project_or_404(conn, payload.project_id)
             existing = conn.execute("SELECT id,project_id FROM conversations WHERE id=?", (conversation_id,)).fetchone()
+            effective_project_id = payload.project_id
             if existing is None:
+                if effective_project_id:
+                    project_or_404(conn, effective_project_id)
                 conn.execute(
                     "INSERT INTO conversations(id,title,created_at,updated_at,project_id) VALUES(?,?,?,?,?)",
-                    (conversation_id, message[:72], now, now, payload.project_id),
+                    (conversation_id, message[:72], now, now, effective_project_id),
                 )
-            elif payload.project_id and existing["project_id"] != payload.project_id:
-                raise HTTPException(status_code=409, detail="A conversa já pertence a outro projeto.")
+            else:
+                if effective_project_id and existing["project_id"] != effective_project_id:
+                    raise HTTPException(status_code=409, detail="A conversa já pertence a outro projeto.")
+                effective_project_id = existing["project_id"]
             cursor = conn.execute(
                 "INSERT INTO messages(conversation_id,role,content,created_at,status) VALUES(?,?,?,?,?)",
                 (conversation_id, "user", message, now, "pending"),
@@ -334,8 +337,8 @@ def chat(payload: ChatInput):
                     (conversation_id, user_message_id),
                 ).fetchall()
                 project = None
-                if payload.project_id:
-                    project = project_or_404(conn, payload.project_id)
+                if effective_project_id:
+                    project = project_or_404(conn, effective_project_id, include_archived=True)
             conversation_context = [dict(row) for row in reversed(prior)]
             if project and project["instructions"].strip():
                 conversation_context.insert(0, {
