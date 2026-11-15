@@ -116,7 +116,7 @@
       activeProjectName = "";
       if (activeProjectId) {
         const projectResponse = await fetch("/api/projects/" + encodeURIComponent(activeProjectId));
-        if (projectResponse.ok) activeProjectName = (await projectResponse.json()).name;
+        if (projectResponse.ok) activeProjectName = (await projectResponse.json()).name;\n        else activeProjectId = null;
       }
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
