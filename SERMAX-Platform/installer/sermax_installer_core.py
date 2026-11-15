@@ -70,6 +70,21 @@ def _assert_no_reparse_components(path: Path, *, include_leaf: bool = True) -> N
             raise PackageError(f"Link simbólico, junction ou reparse point não permitido: {cursor}")
 
 
+def _revalidate_install_path(root: Path, path: Path) -> None:
+    """Recheck lexical containment and current reparse-point components.
+
+    This narrows, but does not eliminate, TOCTOU races. Windows handle-relative
+    operations are required for a stronger guarantee against concurrent swaps.
+    """
+    root_abs = Path(os.path.abspath(root))
+    path_abs = Path(os.path.abspath(path))
+    try:
+        path_abs.relative_to(root_abs)
+    except ValueError as exc:
+        raise PackageError(f"Caminho saiu da pasta de instalação: {path}.") from exc
+    _assert_no_reparse_components(path_abs)
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -346,18 +361,25 @@ def _install_package_locked(package_dir: Path, install_dir: Path,
                     raise PackageError(f"Destino existente não é arquivo: {target}.")
                 backup = backup_dir / item.target_relative
                 backup.parent.mkdir(parents=True, exist_ok=True)
+                _revalidate_install_path(root, target)
+                _assert_no_reparse_components(backup.parent)
                 shutil.copy2(target, backup)
                 previous = backup
             fd, temp_name = tempfile.mkstemp(prefix=".sermax-install-", dir=target.parent)
             os.close(fd)
             temp_path = Path(temp_name)
             staged.append((target, previous, temp_path))
+            _assert_no_reparse_components(item.source)
+            _revalidate_install_path(root, target.parent)
+            _assert_no_reparse_components(temp_path)
             shutil.copy2(item.source, temp_path)
             if temp_path.stat().st_size != item.size_bytes or _sha256(temp_path) != item.sha256:
                 raise PackageError(f"Integridade alterada durante cópia: {item.source.name}.")
             report("staging", index, len(files), item.target_relative.as_posix())
 
         for index, (target, _previous, temp_path) in enumerate(staged, start=1):
+            _revalidate_install_path(root, target.parent)
+            _assert_no_reparse_components(temp_path)
             os.replace(temp_path, target)
             completed.append(target)
             report("installing", index, len(staged), target.name)
@@ -371,7 +393,10 @@ def _install_package_locked(package_dir: Path, install_dir: Path,
         marker_tmp = root / ".sermax-install.json.tmp"
         _assert_no_reparse_components(marker_tmp)
         _assert_no_reparse_components(marker)
+        _revalidate_install_path(root, marker_tmp)
         marker_tmp.write_text(json.dumps(marker_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        _revalidate_install_path(root, marker_tmp)
+        _revalidate_install_path(root, marker)
         os.replace(marker_tmp, marker)
         report("complete", len(completed), len(completed), "")
     except Exception as install_error:
