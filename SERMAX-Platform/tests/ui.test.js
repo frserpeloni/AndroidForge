@@ -113,7 +113,7 @@ test("nova conversa envia o projeto ativo e reabre o histórico", async () => {
   state.projects.push({ id: "7", name: "Projeto Teste", description: "", instructions: "", archived: false });
   win.document.querySelector('[data-view="projects"]').click();
   await tick();
-  win.document.querySelector(".project-card .primary-button").click();
+  [...win.document.querySelectorAll(".project-card button")].find(button => button.textContent === "Usar no MAX").click();
   await tick();
   win.document.getElementById("messageInput").value = "Verificar integração";
   win.document.getElementById("sendButton").click();
