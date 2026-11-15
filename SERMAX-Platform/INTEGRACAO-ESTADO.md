@@ -2,6 +2,12 @@
 
 ## Implementado nesta etapa
 
+- Conexões SQLite fechadas em todas as operações, com commit e rollback explícitos.
+- Migração compatível do histórico antigo para incluir estado da mensagem (`pending`, `complete`, `error`).
+- Mensagens do usuário preservadas com estado de erro quando o núcleo falha.
+- Lista de conversas recentes carregada pela interface e reabertura de conversas persistidas.
+- Testes adicionais para gravação, reabertura e falha do núcleo.
+
 - API FastAPI separada da interface.
 - Bind previsto exclusivamente em `127.0.0.1:8765`.
 - Health check.
@@ -34,4 +40,4 @@
 7. Reiniciar serviço e conferir persistência SQLite.
 8. Confirmar que o serviço permanece limitado a loopback.
 
-Nenhum desses testes é declarado aprovado por este documento.
+Nenhum desses testes é declarado aprovado por este documento. Os testes adicionais foram escritos, mas aguardam execução no GitHub Actions ou em ambiente Windows validado.
