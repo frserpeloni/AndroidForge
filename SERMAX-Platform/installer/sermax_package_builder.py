@@ -18,6 +18,30 @@ class BuildError(Exception):
     pass
 
 
+def _is_reparse_point(path: Path) -> bool:
+    """Detect symlinks and Windows junction/reparse points without following the leaf."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise BuildError(f"Não foi possível inspecionar o caminho {path}: {exc}") from exc
+    attributes = getattr(info, "st_file_attributes", 0)
+    reparse_flag = getattr(__import__("stat"), "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return path.is_symlink() or bool(attributes & reparse_flag)
+
+
+def _assert_no_reparse_components(path: Path) -> None:
+    """Reject existing symlink/junction/reparse components in an absolute path."""
+    absolute = Path(os.path.abspath(path))
+    parts = absolute.parts
+    cursor = Path(parts[0])
+    for part in parts[1:]:
+        cursor = cursor / part
+        if _is_reparse_point(cursor):
+            raise BuildError(f"Link simbólico, junction ou reparse point não permitido: {cursor}")
+
+
 def safe_relative(value: str) -> Path:
     normalized = value.replace("\\", "/")
     path = PurePosixPath(normalized)
@@ -51,10 +75,12 @@ def parse_mapping(value: str) -> tuple[Path, Path]:
 def build_package(source_root: Path, output_dir: Path, version: str,
                   mappings: list[tuple[Path, Path]],
                   preserve_paths: list[str] | None = None) -> dict:
-    source_root = source_root.expanduser().resolve(strict=True)
+    source_root = Path(os.path.abspath(source_root.expanduser()))
+    _assert_no_reparse_components(source_root)
     if not source_root.is_dir():
         raise BuildError("A origem precisa ser uma pasta.")
-    output_dir = output_dir.expanduser().resolve()
+    output_dir = Path(os.path.abspath(output_dir.expanduser()))
+    _assert_no_reparse_components(output_dir)
     if output_dir == source_root or source_root in output_dir.parents:
         raise BuildError("A pasta de saída não pode ficar dentro da origem.")
     if not version.strip():
@@ -65,7 +91,9 @@ def build_package(source_root: Path, output_dir: Path, version: str,
     seen: set[str] = set()
     staged_entries = []
     temp_parent = output_dir.parent
+    _assert_no_reparse_components(temp_parent)
     temp_parent.mkdir(parents=True, exist_ok=True)
+    _assert_no_reparse_components(temp_parent)
     temp_dir = Path(tempfile.mkdtemp(prefix=".sermax-package-", dir=temp_parent))
     try:
         payload = temp_dir / "payload"
@@ -74,9 +102,12 @@ def build_package(source_root: Path, output_dir: Path, version: str,
             cursor = source_root
             for part in source_rel.parts:
                 cursor = cursor / part
-                if cursor.is_symlink():
-                    raise BuildError(f"Links simbólicos não são aceitos: {source_rel}")
-            source = source_candidate.resolve(strict=True)
+                if _is_reparse_point(cursor):
+                    raise BuildError(f"Links simbólicos, junctions ou reparse points não são aceitos: {source_rel}")
+            source = Path(os.path.abspath(source_candidate))
+            _assert_no_reparse_components(source)
+            if not source.exists():
+                raise BuildError(f"Arquivo de origem ausente: {source_rel}")
             try:
                 source.relative_to(source_root)
             except ValueError as exc:
@@ -89,6 +120,7 @@ def build_package(source_root: Path, output_dir: Path, version: str,
             seen.add(key)
             target = payload / target_rel
             target.parent.mkdir(parents=True, exist_ok=True)
+            _assert_no_reparse_components(target.parent)
             shutil.copy2(source, target)
             staged_entries.append({
                 "source": f"payload/{target_rel.as_posix()}",
