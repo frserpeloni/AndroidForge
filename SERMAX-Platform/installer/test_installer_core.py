@@ -7,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from sermax_installer_core import PackageError, _installation_lock, _revalidate_install_path, detect_installation, install_package, load_package, preflight
+from sermax_installer_core import PackageError, _installation_lock, _revalidate_install_path, detect_installation, install_package, load_package, package_snapshot, preflight
 
 
 def write_package(root: Path, files: dict[str, str], preserve=None):
@@ -104,6 +104,30 @@ class InstallerCoreTests(unittest.TestCase):
             result = preflight(package, destination)
             self.assertEqual(result["file_count"], 1)
             self.assertFalse((destination / "app/start.txt").exists())
+
+    def test_install_rejects_package_changed_after_confirmation_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/start.txt": "confirmed"})
+            snapshot = package_snapshot(package, destination)
+            (package / "payload" / "app" / "start.txt").write_text("changed", encoding="utf-8")
+            with self.assertRaisesRegex(PackageError, "mudou depois da confirmação"):
+                install_package(package, destination, expected_snapshot=snapshot)
+            self.assertFalse((destination / "app" / "start.txt").exists())
+
+    def test_install_rejects_destination_changed_after_confirmation_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/start.txt": "confirmed"})
+            snapshot = package_snapshot(package, destination)
+            other_destination = root / "OTHER"
+            with self.assertRaisesRegex(PackageError, "mudou depois da confirmação"):
+                install_package(package, other_destination, expected_snapshot=snapshot)
+            self.assertFalse((other_destination / "app" / "start.txt").exists())
 
     def test_install_copies_only_manifest_files_and_preserves_user_data(self):
         with tempfile.TemporaryDirectory() as tmp:
