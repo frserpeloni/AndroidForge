@@ -24,8 +24,8 @@
         <button class="nav-item" data-view="memory"><span>◇</span> Memória</button>
       </nav>
       <div class="side-section">
-        <div class="side-heading">RECENTES <span>•••</span></div>
-        <button class="recent-item" id="recentConversation"><span class="recent-dot"></span> Nova conversa</button>
+        <div class="side-heading">RECENTES</div>
+        <div id="recentList" aria-label="Conversas recentes"><p class="recent-item">Carregando histórico...</p></div>
       </div>
       <div class="sidebar-bottom">
         <div class="service-state"><span class="state-dot"></span><div><b>Interface local</b><small>Serviço MAX não conectado</small></div></div>
@@ -52,7 +52,6 @@
             <button class="quick-card" data-prompt="Quero iniciar uma tarefa."><span>◷</span><b>Iniciar uma tarefa</b><small>Acompanhar atividades</small></button>
           </div>
         </div>
-
         <div class="conversation" id="conversation" aria-live="polite"></div>
         <div class="composer-wrap">
           <div class="composer">
@@ -65,7 +64,7 @@
               <button class="send-button" id="sendButton" aria-label="Enviar mensagem">↑</button>
             </div>
           </div>
-          <p class="composer-note">Protótipo de interface. O MAX ainda não está conectado a este ambiente.</p>
+          <p class="composer-note">Protótipo local. O roteamento do núcleo permanece automático.</p>
         </div>
       </section>
 
@@ -73,12 +72,10 @@
         <div class="page-heading"><div><p class="eyebrow">ESPAÇO DE TRABALHO</p><h1>Projetos</h1><p>Organize conversas, arquivos e instruções por projeto.</p></div><button class="primary-button" id="newProject">＋ Novo projeto</button></div>
         <div class="empty-panel"><div class="empty-icon">▦</div><h2>Nenhum projeto nesta demonstração</h2><p>A criação e persistência de projetos serão ativadas com o backend.</p></div>
       </section>
-
       <section class="view placeholder-view" id="tasksView">
         <div class="page-heading"><div><p class="eyebrow">CENTRAL DE EXECUÇÃO</p><h1>Tarefas</h1><p>Acompanhe atividades em fila, execução e conclusão.</p></div></div>
         <div class="empty-panel"><div class="empty-icon">◷</div><h2>Gerenciador ainda não conectado</h2><p>A fila persistente será integrada ao serviço MAX.</p></div>
       </section>
-
       <section class="view placeholder-view" id="memoryView">
         <div class="page-heading"><div><p class="eyebrow">CONTEXTO DO MAX</p><h1>Memória</h1><p>Memória geral e memória específica de cada projeto.</p></div></div>
         <div class="empty-panel"><div class="empty-icon">◇</div><h2>Memória protegida</h2><p>A interface não acessa nem altera os arquivos de memória existentes.</p></div>
