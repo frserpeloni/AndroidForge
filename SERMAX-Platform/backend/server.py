@@ -341,7 +341,7 @@ def chat(payload: ChatInput):
                     project = project_or_404(conn, effective_project_id, include_archived=True)
             conversation_context = [dict(row) for row in reversed(prior)]
             if project and project["instructions"].strip():
-                conversation_context.insert(0, {
+                conversation_context.append({
                     "role": "system",
                     "content": (
                         "INSTRUÇÕES DO PROJETO. Considere estas instruções nesta conversa, "
