@@ -237,7 +237,7 @@ def _installation_lock(root: Path):
     locked = False
     try:
         if os.fstat(stream.fileno()).st_size == 0:
-            stream.write(b"\\0")
+            stream.write(b"\0")
             stream.flush()
         stream.seek(0)
         if os.name == "nt":
