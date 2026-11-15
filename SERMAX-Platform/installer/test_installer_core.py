@@ -146,6 +146,52 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), "old-one")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-two")
 
+    def test_rejects_manifest_size_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "package"
+            package.mkdir()
+            write_package(package, {"app.txt": "content"})
+            manifest = json.loads((package / "manifest.json").read_text())
+            manifest["files"][0]["size_bytes"] += 1
+            (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(PackageError, "Tamanho divergente"):
+                load_package(package)
+
+    def test_rejects_non_hex_sha256(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "package"
+            package.mkdir()
+            write_package(package, {"app.txt": "content"})
+            manifest = json.loads((package / "manifest.json").read_text())
+            manifest["files"][0]["sha256"] = "z" * 64
+            (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(PackageError, "SHA-256 inválido"):
+                load_package(package)
+
+    def test_rejects_windows_reserved_target_names(self):
+        for target in ("CON.txt", "folder/NUL", "bad:name.txt", "trailing./file"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                package = Path(tmp) / "package"
+                package.mkdir()
+                write_package(package, {"app.txt": "content"})
+                manifest = json.loads((package / "manifest.json").read_text())
+                manifest["files"][0]["target"] = target
+                (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises(PackageError):
+                    load_package(package)
+
+    def test_rejects_conflicting_parent_and_child_targets_case_insensitively(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            package = Path(tmp) / "package"
+            package.mkdir()
+            write_package(package, {"one.txt": "one", "two.txt": "two"})
+            manifest = json.loads((package / "manifest.json").read_text())
+            manifest["files"][0]["target"] = "App"
+            manifest["files"][1]["target"] = "app/child.txt"
+            (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaisesRegex(PackageError, "conflitante"):
+                load_package(package)
+
     def test_rejects_package_targets_that_overwrite_user_data(self):
         protected_targets = [
             "memoria_sermax.json",
