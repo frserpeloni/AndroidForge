@@ -312,8 +312,6 @@ def chat(payload: ChatInput):
                 )
             elif payload.project_id and existing["project_id"] != payload.project_id:
                 raise HTTPException(status_code=409, detail="A conversa já pertence a outro projeto.")
-            elif existing["project_id"] and payload.project_id and existing["project_id"] != payload.project_id:
-                raise HTTPException(status_code=409, detail="Projeto incompatível com a conversa.")
             cursor = conn.execute(
                 "INSERT INTO messages(conversation_id,role,content,created_at,status) VALUES(?,?,?,?,?)",
                 (conversation_id, "user", message, now, "pending"),
