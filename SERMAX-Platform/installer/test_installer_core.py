@@ -112,7 +112,7 @@ class InstallerCoreTests(unittest.TestCase):
             package.mkdir()
             write_package(package, {"app/start.txt": "confirmed"})
             snapshot = package_snapshot(package, destination)
-            (package / "payload" / "app" / "start.txt").write_text("changed", encoding="utf-8")
+            (package / "payload" / "app" / "start.txt").write_text("tampered!", encoding="utf-8")
             with self.assertRaisesRegex(PackageError, "mudou depois da confirmação"):
                 install_package(package, destination, expected_snapshot=snapshot)
             self.assertFalse((destination / "app" / "start.txt").exists())
