@@ -234,5 +234,42 @@ class PlatformApiTests(unittest.TestCase):
         ))
 
 
+    def test_sqlite_data_survives_service_restart(self):
+        project = self.client.post(
+            "/api/projects",
+            json={"name": "Persistência após reinício", "instructions": "Contexto persistente"},
+            headers=self.headers,
+        ).json()
+        server.CORE_MODULE = FakeCore
+        response = self.client.post(
+            "/api/chat",
+            json={"message": "Mensagem antes do reinício", "project_id": project["id"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        conversation_id = response.json()["conversation_id"]
+
+        self.client.close()
+        # Reabre a aplicação usando o mesmo arquivo SQLite, como em um novo processo.
+        server.initialize_database()
+        restarted_client = TestClient(server.app)
+        try:
+            projects = restarted_client.get("/api/projects", headers=self.headers).json()
+            self.assertEqual(projects[0]["id"], project["id"])
+            history = restarted_client.get(
+                f"/api/conversations/{conversation_id}", headers=self.headers
+            )
+            self.assertEqual(history.status_code, 200)
+            saved = history.json()
+            self.assertEqual(saved["conversation"]["project_id"], project["id"])
+            self.assertEqual(
+                [item["content"] for item in saved["messages"]],
+                ["Mensagem antes do reinício", "Resposta de teste: Mensagem antes do reinício"],
+            )
+            self.assertTrue(all(item["status"] == "complete" for item in saved["messages"]))
+        finally:
+            restarted_client.close()
+
+
 if __name__ == "__main__":
     unittest.main()
