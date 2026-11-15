@@ -64,7 +64,7 @@ jobs:
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_package_builder.py
       - name: Check installer and builder syntax
-        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py
+        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py SERMAX-Platform/sermax_platform_launcher.py
 
   windows-validation:
     runs-on: windows-latest
