@@ -19,7 +19,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador Windows.
-- `backend/test_api.py`, testes automatizados da API e dos projetos persistentes.
+- `backend/test_api.py`, testes automatizados da API, projetos e persistência após reinício.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
 - `package.json`, dependências e comando dos testes de interface.
 
@@ -57,7 +57,7 @@ python -m pip install -r requirements.txt
 python -m unittest -v test_api.py
 ```
 
-O GitHub Actions executa os testes da API em Python 3.12 e 3.14, verifica a sintaxe de `app.js` com `node --check` e executa testes de interação da interface com DOM simulado (`npm test`). Execução: `43718460991`, commit `887917a7a764c87c5e60526873b68ff4be22a44d`. Isso valida os testes automatizados em Linux e a sintaxe JavaScript. Os testes de interface simulam o DOM e as respostas da API. Não substituem teste visual em navegador real, execução no Windows do usuário, integração com o núcleo real ou persistência após reinício.
+O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
 
 ## Proteções
 
