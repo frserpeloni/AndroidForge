@@ -4,6 +4,7 @@
   const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",memory:"memoryView"};
   const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",memory:"Memória"};
   let conversationId = null;
+  let activeProjectId = null;
   let sending = false;
 
   const toast = message => {
@@ -18,6 +19,7 @@
     nav.forEach(item => item.classList.toggle("active", item.dataset.view === name));
     $("sectionName").textContent = names[name];
     $("sidebar").classList.remove("open");
+    if (name === "projects") refreshProjects();
   }
   async function refreshHealth() {
     try {
@@ -39,6 +41,13 @@
   $("openSidebar").addEventListener("click", () => $("sidebar").classList.add("open"));
   $("closeSidebar").addEventListener("click", () => $("sidebar").classList.remove("open"));
 
+  function updateProjectContext() {
+    const label = $("activeProjectLabel");
+    if (!label) return;
+    label.textContent = activeProjectName ? "Projeto: " + activeProjectName : "";
+    label.hidden = !activeProjectName;
+  }
+  let activeProjectName = "";
   function resetChat() {
     if (sending) return;
     $("conversation").replaceChildren();
@@ -46,6 +55,7 @@
     $("welcome").style.display = "";
     $("messageInput").value = "";
     conversationId = null;
+    updateProjectContext();
     switchView("chat");
   }
   $("newChat").addEventListener("click", resetChat);
@@ -102,10 +112,17 @@
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Falha ao abrir conversa.");
       conversationId = data.conversation.id;
+      activeProjectId = data.conversation.project_id || null;
+      activeProjectName = "";
+      if (activeProjectId) {
+        const projectResponse = await fetch("/api/projects/" + encodeURIComponent(activeProjectId));
+        if (projectResponse.ok) activeProjectName = (await projectResponse.json()).name;
+      }
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
       $("welcome").style.display = "none";
       data.messages.forEach(message => appendMessage(message.role, message.content, message.status));
+      updateProjectContext();
       switchView("chat");
       await refreshRecent();
     } catch (error) {
@@ -126,13 +143,10 @@
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({message, conversation_id:conversationId})
+        body: JSON.stringify({message, conversation_id:conversationId, project_id:activeProjectId})
       });
       const data = await response.json();
-      if (!response.ok) {
-        if (data.detail) throw new Error(data.detail);
-        throw new Error("Falha na solicitação.");
-      }
+      if (!response.ok) throw new Error(data.detail || "Falha na solicitação.");
       conversationId = data.conversation_id;
       appendMessage("assistant", data.answer);
     } catch (error) {
@@ -160,8 +174,113 @@
     submitMessage(button.dataset.prompt);
   }));
   $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
-  $("newProject").addEventListener("click", () => toast("Projetos ainda não foram ativados no backend."));
   $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático."));
+
+  async function refreshProjects() {
+    const list = $("projectList");
+    if (!list) return;
+    try {
+      const response = await fetch("/api/projects");
+      if (!response.ok) throw new Error("Falha ao consultar projetos.");
+      const projects = await response.json();
+      list.replaceChildren();
+      if (!projects.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-panel";
+        empty.innerHTML = '<div class="empty-icon">▦</div><h2>Nenhum projeto cadastrado</h2><p>Crie um projeto para separar conversas e instruções.</p>';
+        list.appendChild(empty);
+        return;
+      }
+      projects.forEach(project => {
+        const card = document.createElement("article");
+        card.className = "project-card";
+        const title = document.createElement("h2");
+        title.textContent = project.name;
+        const description = document.createElement("p");
+        description.textContent = project.description || "Sem descrição";
+        const meta = document.createElement("small");
+        meta.textContent = project.instructions ? "Instruções configuradas" : "Sem instruções específicas";
+        const actions = document.createElement("div");
+        actions.className = "project-actions";
+        const open = document.createElement("button");
+        open.className = "primary-button";
+        open.textContent = "Abrir projeto";
+        open.addEventListener("click", () => {
+          activeProjectId = project.id;
+          activeProjectName = project.name;
+          conversationId = null;
+          $("conversation").replaceChildren();
+          $("conversation").classList.remove("has-messages");
+          $("welcome").style.display = "";
+          updateProjectContext();
+          switchView("chat");
+          toast("Projeto ativo. Novas conversas serão associadas a ele.");
+        });
+        const edit = document.createElement("button");
+        edit.className = "secondary-button";
+        edit.textContent = "Editar";
+        edit.addEventListener("click", () => editProject(project));
+        const archive = document.createElement("button");
+        archive.className = "secondary-button";
+        archive.textContent = "Arquivar";
+        archive.addEventListener("click", () => archiveProject(project));
+        actions.append(open, edit, archive);
+        card.append(title, description, meta, actions);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  async function createProject() {
+    const name = window.prompt("Nome do projeto:");
+    if (name === null) return;
+    if (!name.trim()) return toast("Informe um nome para o projeto.");
+    const description = window.prompt("Descrição do projeto (opcional):") || "";
+    const instructions = window.prompt("Instruções específicas do projeto (opcional):") || "";
+    try {
+      const response = await fetch("/api/projects", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name, description, instructions})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao criar projeto.");
+      toast("Projeto salvo.");
+      await refreshProjects();
+    } catch (error) { toast(error.message); }
+  }
+  async function editProject(project) {
+    const name = window.prompt("Nome do projeto:", project.name);
+    if (name === null) return;
+    const description = window.prompt("Descrição:", project.description || "");
+    if (description === null) return;
+    const instructions = window.prompt("Instruções:", project.instructions || "");
+    if (instructions === null) return;
+    try {
+      const response = await fetch("/api/projects/" + encodeURIComponent(project.id), {
+        method:"PUT", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({name, description, instructions})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao atualizar projeto.");
+      if (activeProjectId === project.id) { activeProjectName = data.name; updateProjectContext(); }
+      toast("Projeto atualizado.");
+      await refreshProjects();
+    } catch (error) { toast(error.message); }
+  }
+  async function archiveProject(project) {
+    if (!window.confirm('Arquivar "' + project.name + '"? As conversas serão preservadas.')) return;
+    try {
+      const response = await fetch("/api/projects/" + encodeURIComponent(project.id) + "/archive", {method:"POST"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao arquivar projeto.");
+      if (activeProjectId === project.id) { activeProjectId = null; activeProjectName = ""; conversationId = null; updateProjectContext(); }
+      toast("Projeto arquivado. Conversas preservadas.");
+      await refreshProjects();
+    } catch (error) { toast(error.message); }
+  }
+  $("newProject").addEventListener("click", createProject);
   refreshHealth();
   refreshRecent();
   setInterval(refreshHealth, 15000);
