@@ -64,6 +64,21 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
     if not isinstance(raw_files, list) or not raw_files:
         raise PackageError("Manifesto sem arquivos de instalação.")
 
+    preserve = manifest.get("preserve_paths", [])
+    if not isinstance(preserve, list):
+        raise PackageError("preserve_paths deve ser uma lista.")
+    protected = {
+        "memoria_sermax.json",
+        "memoria_neural_pestinha.json",
+        "data",
+        "config",
+        "credentials",
+        "secrets",
+        ".sermax-backups",
+    }
+    for entry in preserve:
+        protected.add(_safe_relative(entry).as_posix().casefold())
+
     files: list[PackageFile] = []
     seen: set[str] = set()
     for item in raw_files:
@@ -80,8 +95,10 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
             ".sermax-install.json.tmp",
             ".sermax-install.json.rollback",
         }
-        if key in reserved or key == ".sermax-backups" or key.startswith(".sermax-backups/"):
+        if key in reserved:
             raise PackageError(f"Destino reservado pelo instalador: {target_rel}.")
+        if any(key == path or key.startswith(path + "/") for path in protected):
+            raise PackageError(f"Destino protegido para preservar dados do usuário: {target_rel}.")
         if key in seen:
             raise PackageError(f"Destino duplicado no manifesto: {target_rel}.")
         seen.add(key)
@@ -97,11 +114,6 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
             raise PackageError(f"Falha de integridade SHA-256: {source_rel}.")
         files.append(PackageFile(source, target_rel, actual_hash))
 
-    preserve = manifest.get("preserve_paths", [])
-    if not isinstance(preserve, list):
-        raise PackageError("preserve_paths deve ser uma lista.")
-    for entry in preserve:
-        _safe_relative(entry)
     return manifest, files
 
 
