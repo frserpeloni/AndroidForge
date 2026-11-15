@@ -233,11 +233,10 @@ def install_package(package_dir: Path, install_dir: Path,
             fd, temp_name = tempfile.mkstemp(prefix=".sermax-install-", dir=target.parent)
             os.close(fd)
             temp_path = Path(temp_name)
-            shutil.copy2(item.source, temp_path)
-            if _sha256(temp_path) != item.sha256:
-                temp_path.unlink(missing_ok=True)
-                raise PackageError(f"Integridade alterada durante cópia: {item.source.name}.")
             staged.append((target, previous, temp_path))
+            shutil.copy2(item.source, temp_path)
+            if temp_path.stat().st_size != item.size_bytes or _sha256(temp_path) != item.sha256:
+                raise PackageError(f"Integridade alterada durante cópia: {item.source.name}.")
             report("staging", index, len(files), item.target_relative.as_posix())
 
         for index, (target, _previous, temp_path) in enumerate(staged, start=1):
@@ -255,23 +254,51 @@ def install_package(package_dir: Path, install_dir: Path,
         marker_tmp.write_text(json.dumps(marker_data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(marker_tmp, marker)
         report("complete", len(completed), len(completed), "")
-    except Exception:
+    except Exception as install_error:
+        rollback_errors: list[str] = []
         for target, previous, _temp_path in reversed(staged):
-            if target in completed:
+            if target not in completed:
+                continue
+            try:
                 if previous and previous.exists():
-                    restore = target.with_name(target.name + ".sermax-restore")
-                    shutil.copy2(previous, restore)
-                    os.replace(restore, target)
+                    fd, restore_name = tempfile.mkstemp(prefix=".sermax-restore-", dir=target.parent)
+                    os.close(fd)
+                    restore = Path(restore_name)
+                    try:
+                        shutil.copy2(previous, restore)
+                        os.replace(restore, target)
+                    finally:
+                        restore.unlink(missing_ok=True)
                 else:
                     target.unlink(missing_ok=True)
+            except Exception as exc:
+                rollback_errors.append(
+                    f"{target}: {type(exc).__name__}: {exc}; backup mantido em {previous}"
+                )
         for _target, _previous, temp_path in staged:
-            temp_path.unlink(missing_ok=True)
+            try:
+                temp_path.unlink(missing_ok=True)
+            except OSError as exc:
+                rollback_errors.append(f"Temporário {temp_path}: {exc}")
         marker_tmp = root / ".sermax-install.json.rollback"
-        if marker_existed and marker_previous is not None:
-            marker_tmp.write_bytes(marker_previous)
-            os.replace(marker_tmp, marker)
-        else:
-            marker.unlink(missing_ok=True)
+        try:
+            if marker_existed and marker_previous is not None:
+                fd, marker_temp_name = tempfile.mkstemp(prefix=".sermax-marker-rollback-", dir=root)
+                os.close(fd)
+                marker_tmp = Path(marker_temp_name)
+                marker_tmp.write_bytes(marker_previous)
+                os.replace(marker_tmp, marker)
+            else:
+                marker.unlink(missing_ok=True)
+        except Exception as exc:
+            rollback_errors.append(
+                f"Marcador {marker}: {type(exc).__name__}: {exc}; cópia anterior disponível em memória durante esta execução"
+            )
+        if rollback_errors and hasattr(install_error, "add_note"):
+            install_error.add_note(
+                "ATENÇÃO: rollback incompleto. Não remova a pasta de backup. "
+                + " | ".join(rollback_errors)
+            )
         raise
 
     return {
