@@ -1,5 +1,6 @@
 import json
 import threading
+import urllib.error
 import unittest
 from unittest.mock import patch
 
@@ -37,6 +38,24 @@ class LauncherHealthTests(unittest.TestCase):
         with patch.object(launcher.urllib.request, "urlopen",
                           return_value=_Response({"service": "different-service"})), \
              patch.object(launcher.time, "monotonic", side_effect=[0.0, 0.1, 1.0]), \
+             patch.object(launcher.time, "sleep"):
+            self.assertFalse(launcher.wait_for_health("http://127.0.0.1:8765", stop, timeout=0.5))
+
+    def test_wait_for_health_retries_after_malformed_json(self):
+        stop = threading.Event()
+        responses = [
+            _Response(None),
+            _Response({"service": "sermax-platform-api"}),
+        ]
+        with patch.object(launcher.urllib.request, "urlopen",
+                          side_effect=responses), patch.object(launcher.time, "sleep"):
+            self.assertTrue(launcher.wait_for_health("http://127.0.0.1:8765", stop, timeout=1.0))
+
+    def test_wait_for_health_times_out_after_unavailable_service(self):
+        stop = threading.Event()
+        with patch.object(launcher.time, "monotonic", side_effect=[0.0, 0.6]), \
+             patch.object(launcher.urllib.request, "urlopen",
+                          side_effect=urllib.error.URLError("offline")), \
              patch.object(launcher.time, "sleep"):
             self.assertFalse(launcher.wait_for_health("http://127.0.0.1:8765", stop, timeout=0.5))
 
