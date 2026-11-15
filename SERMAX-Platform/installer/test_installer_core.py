@@ -148,6 +148,37 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), "old-one")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-two")
 
+
+    def test_os_replace_failure_on_second_program_file_restores_first(self):
+        from unittest.mock import patch
+        import sermax_installer_core
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/one.txt": "new-one", "app/two.txt": "new-two"})
+            first = destination / "app/one.txt"
+            second = destination / "app/two.txt"
+            first.parent.mkdir(parents=True)
+            first.write_text("old-one", encoding="utf-8")
+            second.write_text("old-two", encoding="utf-8")
+            real_replace = os.replace
+            calls = {"count": 0}
+
+            def fail_second_replace(source, target):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise OSError("simulated second os.replace failure")
+                return real_replace(source, target)
+
+            with patch.object(sermax_installer_core.os, "replace", side_effect=fail_second_replace):
+                with self.assertRaisesRegex(OSError, "second os.replace failure"):
+                    install_package(package, destination)
+
+            self.assertEqual(first.read_text(encoding="utf-8"), "old-one")
+            self.assertEqual(second.read_text(encoding="utf-8"), "old-two")
+
     def test_rejects_manifest_size_mismatch(self):
         with tempfile.TemporaryDirectory() as tmp:
             package = Path(tmp) / "package"
