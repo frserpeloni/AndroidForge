@@ -1,13 +1,14 @@
 (() => {
-  const $ = (id) => document.getElementById(id);
+  const $ = id => document.getElementById(id);
   const nav = [...document.querySelectorAll(".nav-item")];
   const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",memory:"memoryView"};
   const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",memory:"Memória"};
-  const toast = (message) => {
+  let conversationId = null;
+  const toast = message => {
     $("toast").textContent = message;
     $("toast").classList.add("show");
     clearTimeout(toast.timer);
-    toast.timer = setTimeout(() => $("toast").classList.remove("show"), 2600);
+    toast.timer = setTimeout(() => $("toast").classList.remove("show"), 3000);
   };
   function switchView(name) {
     Object.values(views).forEach(id => $(id).classList.remove("active"));
@@ -15,6 +16,22 @@
     nav.forEach(item => item.classList.toggle("active", item.dataset.view === name));
     $("sectionName").textContent = names[name];
     $("sidebar").classList.remove("open");
+  }
+  async function refreshHealth() {
+    try {
+      const response = await fetch("/api/health");
+      if (!response.ok) throw new Error("API indisponível");
+      const data = await response.json();
+      document.querySelectorAll(".connection").forEach(el => {
+        el.innerHTML = '<span class="state-dot" style="background:#9be34b"></span> Serviço local online';
+      });
+      const state = document.querySelector(".service-state");
+      if (state) state.innerHTML = '<span class="state-dot" style="background:#9be34b"></span><div><b>API local online</b><small>Núcleo: ' + data.core + '</small></div>';
+    } catch {
+      document.querySelectorAll(".connection").forEach(el => {
+        el.innerHTML = '<span class="state-dot"></span> Serviço desconectado';
+      });
+    }
   }
   nav.forEach(item => item.addEventListener("click", () => switchView(item.dataset.view)));
   $("openSidebar").addEventListener("click", () => $("sidebar").classList.add("open"));
@@ -24,27 +41,45 @@
     $("conversation").classList.remove("has-messages");
     $("welcome").style.display = "";
     $("messageInput").value = "";
+    conversationId = null;
     switchView("chat");
   }
   $("newChat").addEventListener("click", resetChat);
   $("recentConversation").addEventListener("click", resetChat);
-  function submitMessage(value) {
-    const message = value.trim();
-    if (!message) return;
+  function appendMessage(role, text) {
     $("welcome").style.display = "none";
     const area = $("conversation");
     area.classList.add("has-messages");
-    const user = document.createElement("div");
-    user.className = "message";
-    user.textContent = message;
-    area.appendChild(user);
-    const note = document.createElement("div");
-    note.className = "system-note";
-    note.textContent = "Mensagem registrada somente nesta demonstração visual. O serviço MAX ainda não está conectado. Nenhuma resposta de IA foi gerada ou enviada ao núcleo SERMAX.";
-    area.appendChild(note);
+    const item = document.createElement("div");
+    item.className = role === "user" ? "message" : "system-note";
+    item.textContent = text;
+    area.appendChild(item);
+    area.scrollTop = area.scrollHeight;
+  }
+  async function submitMessage(value) {
+    const message = value.trim();
+    if (!message) return;
+    appendMessage("user", message);
     $("messageInput").value = "";
     $("messageInput").style.height = "auto";
-    area.scrollTop = area.scrollHeight;
+    $("sendButton").disabled = true;
+    $("sendButton").textContent = "…";
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({message, conversation_id:conversationId})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha na solicitação.");
+      conversationId = data.conversation_id;
+      appendMessage("assistant", data.answer);
+    } catch (error) {
+      appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message);
+    } finally {
+      $("sendButton").disabled = false;
+      $("sendButton").textContent = "↑";
+    }
   }
   $("sendButton").addEventListener("click", () => submitMessage($("messageInput").value));
   $("messageInput").addEventListener("keydown", event => {
@@ -61,7 +96,9 @@
     switchView("chat");
     submitMessage(button.dataset.prompt);
   }));
-  $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após a integração segura com o backend."));
-  $("newProject").addEventListener("click", () => toast("Projetos serão persistidos quando o backend estiver conectado."));
-  $("modelSelect").addEventListener("change", event => toast("Seleção visual: " + event.target.value + ". Motor ainda não conectado."));
+  $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
+  $("newProject").addEventListener("click", () => toast("Projetos ainda não foram ativados no backend."));
+  $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático. A seleção manual será integrada após validar os adaptadores."));
+  refreshHealth();
+  setInterval(refreshHealth, 15000);
 })();
