@@ -2,6 +2,8 @@ import hashlib
 import json
 import tempfile
 import unittest
+import subprocess
+import os
 from pathlib import Path
 
 from sermax_package_builder import BuildError, build_package, parse_mapping
@@ -82,6 +84,27 @@ class PackageBuilderTests(unittest.TestCase):
             with self.assertRaisesRegex(BuildError, "Links simbólicos"):
                 build_package(source, root / "package", "1", [
                     (Path("nested/link.txt"), Path("nested/link.txt"))
+                ])
+
+    @unittest.skipUnless(os.name == "nt", "Junction é específico do Windows.")
+    def test_rejects_nested_source_junction(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            outside = root / "outside"
+            source.mkdir()
+            outside.mkdir()
+            (outside / "payload.txt").write_text("external", encoding="utf-8")
+            junction = source / "linked"
+            result = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(junction), str(outside)],
+                capture_output=True, text=True, check=False
+            )
+            if result.returncode != 0:
+                self.skipTest("Runner Windows não permitiu criar junction.")
+            with self.assertRaisesRegex(BuildError, "junction ou reparse point"):
+                build_package(source, root / "package", "1", [
+                    (Path("linked/payload.txt"), Path("payload.txt"))
                 ])
 
     def test_rejects_parent_child_target_conflicts(self):
