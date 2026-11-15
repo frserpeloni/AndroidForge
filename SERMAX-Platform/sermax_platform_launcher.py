@@ -1,6 +1,7 @@
 """Launcher isolado da Plataforma SERMAX. Ainda em fase de desenvolvimento."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -40,7 +41,8 @@ def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> b
     while time.monotonic() < deadline and not stop.is_set():
         try:
             with urllib.request.urlopen(health_url, timeout=1.5) as response:
-                if response.status == 200:
+                payload = json.loads(response.read().decode("utf-8"))
+                if response.status == 200 and payload.get("service") == "sermax-platform-api":
                     return True
         except (urllib.error.URLError, TimeoutError, OSError):
             time.sleep(0.25)
@@ -49,17 +51,17 @@ def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> b
 
 def main() -> int:
     root = platform_root()
-    backend = root / "backend"
-    if not (backend / "server.py").is_file():
-        # Source-tree entrypoint lives at SERMAX-Platform/ and backend is a child.
-        backend = root / "backend"
-    if not (backend / "server.py").is_file():
-        raise FileNotFoundError(f"Backend da Plataforma não encontrado: {backend}")
+    backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
+    backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
+    if backend is None:
+        raise FileNotFoundError("Backend da Plataforma não encontrado nas pastas esperadas.")
 
     data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
     configure_logging(data_dir)
     os.environ.setdefault("SERMAX_PLATFORM_DATA", str(data_dir))
-    os.environ.setdefault("SERMAX_CORE_DIR", str(root.parent / "SERMAX-Windows"))
+    core_candidates = (root / "SERMAX-Windows", root.parent / "SERMAX-Windows")
+    core_dir = next((candidate for candidate in core_candidates if (candidate / "sermax_core.py").is_file()), core_candidates[0])
+    os.environ.setdefault("SERMAX_CORE_DIR", str(core_dir))
 
     sys.path.insert(0, str(backend))
     os.chdir(backend)
