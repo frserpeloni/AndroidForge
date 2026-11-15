@@ -23,7 +23,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 
 ## Integração com o núcleo
 
-O backend tenta carregar o núcleo existente de `SERMAX-Windows/sermax_core.py` sob demanda. A chamada é serializada por bloqueio global porque o núcleo atual mantém sessão e histórico globais. Isso evita concorrência, mas ainda não oferece isolamento de conversas.
+O backend tenta carregar o núcleo existente de `SERMAX-Windows/sermax_core.py` sob demanda. A chamada é serializada por bloqueio global porque o núcleo atual mantém sessão e histórico globais. Antes de cada chamada, o backend reconstrói temporariamente a sessão com o histórico da conversa selecionada e as instruções do projeto, quando houver. Ao final, restaura a sessão global original. Isso separa o contexto transitório das conversas nesta integração, mas não isola a memória persistente geral do núcleo, que continua compartilhada.
 
 O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarvis/Ollama. A Plataforma grava seu próprio histórico em `%USERPROFILE%\\.sermax-platform\\platform.sqlite3`. Não altere nem copie manualmente os arquivos de memória do núcleo.
 
@@ -54,7 +54,7 @@ python -m pip install -r requirements.txt
 python -m unittest -v test_api.py
 ```
 
-Validação automatizada: GitHub Actions executou os testes com sucesso em Python 3.12 e 3.14 no commit `15842233ce8a8a19f3e724445fd9402adfa40180`. Isso valida os testes da API em Linux. A execução no Windows do usuário e a integração com o núcleo real continuam pendentes.
+Validação automatizada: GitHub Actions executou os 11 testes da API com sucesso em Python 3.12 e 3.14 no commit `d7dc788c456830b8793173912e650ac8edc73d6c` (execução `43716401255`). Isso valida os testes automatizados em Linux. A execução no Windows do usuário, a integração com o núcleo real e a persistência após reinício continuam pendentes.
 
 ## Proteções
 
