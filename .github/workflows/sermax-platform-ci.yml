@@ -60,6 +60,8 @@ jobs:
       - name: Run installer safety tests
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_installer_core.py
+      - name: Check installer GUI syntax
+        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py
 
   windows-validation:
     runs-on: windows-latest
@@ -89,6 +91,8 @@ jobs:
       - name: Run installer safety tests on Windows
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_installer_core.py
+      - name: Check installer GUI syntax on Windows
+        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py
       - name: Verify Windows launcher is present
         run: |
           if (!(Test-Path "SERMAX-Platform/backend/run_local.bat")) { throw "run_local.bat ausente" }
