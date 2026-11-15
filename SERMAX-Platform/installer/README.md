@@ -8,12 +8,14 @@ Camada de instalação e atualização da Plataforma SERMAX.
 
 ### Motor
 - Lê manifesto versionado.
-- Valida caminhos e bloqueia traversal.
-- Verifica SHA-256 de cada arquivo.
+- Valida caminhos relativos, traversal, nomes reservados do Windows e conflitos de destino sem diferenciar maiúsculas/minúsculas.
+- Rejeita links simbólicos nas origens do pacote e nos caminhos de destino já existentes.
+- Confere SHA-256 e tamanho real de cada arquivo contra o manifesto.
 - Verifica espaço em disco sem criar a pasta de destino na pré-validação.
 - Copia somente arquivos listados no manifesto.
 - Faz backup de arquivos de programa substituídos.
-- Usa temporários e substituição atômica por arquivo.
+- Prepara cópias temporárias e substitui cada arquivo por operação atômica individual.
+- Tenta restaurar arquivos e marcador após falha; se a restauração falhar, mantém os backups e anexa detalhes de recuperação à exceção. Isso não equivale a uma transação global atômica.
 - Informa progresso por etapa e arquivo.
 - Grava `.sermax-install.json` com versão instalada.
 - Detecta instalação existente e versão registrada.
@@ -59,13 +61,14 @@ Exemplo de manifesto:
     {
       "source": "payload/Platform/index.html",
       "target": "SERMAX-Platform/index.html",
-      "sha256": "HASH_SHA256_REAL"
+      "sha256": "HASH_SHA256_REAL",
+      "size_bytes": 1234
     }
   ]
 }
 ```
 
-O hash deve ser calculado sobre o arquivo real durante a montagem do pacote. O exemplo não é instalável.
+O hash e o tamanho devem corresponder ao arquivo real durante a montagem do pacote. O exemplo não é instalável.
 
 ## Construtor de pacotes
 
