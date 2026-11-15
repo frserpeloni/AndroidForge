@@ -63,7 +63,10 @@ jobs:
       - name: Run package builder tests
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_package_builder.py
-      - name: Check installer and builder syntax
+      - name: Run platform launcher tests
+        working-directory: SERMAX-Platform
+        run: python -m unittest discover -s tests -p "test_platform_launcher.py" -v
+      - name: Check installer, builder and launcher syntax
         run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py SERMAX-Platform/sermax_platform_launcher.py
 
   windows-validation:
@@ -97,8 +100,11 @@ jobs:
       - name: Run package builder tests on Windows
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_package_builder.py
-      - name: Check installer and builder syntax on Windows
-        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py
+      - name: Run platform launcher tests on Windows
+        working-directory: SERMAX-Platform
+        run: python -m unittest discover -s tests -p "test_platform_launcher.py" -v
+      - name: Check installer, builder and launcher syntax on Windows
+        run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py SERMAX-Platform/sermax_platform_launcher.py
       - name: Verify Windows launcher is present
         run: |
           if (!(Test-Path "SERMAX-Platform/backend/run_local.bat")) { throw "run_local.bat ausente" }
