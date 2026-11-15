@@ -67,5 +67,38 @@ class LauncherHealthTests(unittest.TestCase):
         open_url.assert_not_called()
 
 
+class LauncherShutdownTests(unittest.TestCase):
+    def test_shutdown_requests_exit_and_joins_worker(self):
+        class Server:
+            should_exit = False
+
+        class Worker:
+            joined = None
+            def join(self, timeout):
+                self.joined = timeout
+            def is_alive(self):
+                return False
+
+        server = Server()
+        worker = Worker()
+        self.assertTrue(launcher.shutdown_server(server, worker, timeout=7))
+        self.assertTrue(server.should_exit)
+        self.assertEqual(worker.joined, 7)
+
+    def test_shutdown_reports_worker_that_did_not_stop(self):
+        class Server:
+            should_exit = False
+
+        class Worker:
+            def join(self, timeout):
+                pass
+            def is_alive(self):
+                return True
+
+        server = Server()
+        self.assertFalse(launcher.shutdown_server(server, Worker(), timeout=0))
+        self.assertTrue(server.should_exit)
+
+
 if __name__ == "__main__":
     unittest.main()
