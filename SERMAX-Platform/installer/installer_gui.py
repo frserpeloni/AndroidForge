@@ -1,9 +1,4 @@
-"""SERMAX graphical setup wizard (Windows Tkinter).
-
-Run from a prepared package with:
-    py installer_gui.py --package <package-folder>
-This is a development preview, not a signed/distributable setup executable.
-"""
+"""SERMAX setup wizard. Development preview, not a distributable installer."""
 from __future__ import annotations
 
 import argparse
@@ -13,52 +8,51 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from sermax_installer_core import PackageError, install_package, preflight
+from sermax_installer_core import install_package, preflight
 
 
 class SermaxSetup(tk.Tk):
     def __init__(self, package: Path | None):
         super().__init__()
         self.title("Instalação do SERMAX")
-        self.geometry("590x390")
-        self.minsize(590, 390)
+        self.geometry("610x420")
+        self.minsize(610, 420)
         self.configure(bg="#f2f3f5")
         self.package = tk.StringVar(value=str(package or ""))
         self.destination = tk.StringVar(value=str(Path.home() / "SERMAX"))
-        self.mode = tk.StringVar(value="Instalação / Atualização")
+        self.mode = tk.StringVar(value="Detecção automática")
         self.events: queue.Queue = queue.Queue()
         self.busy = False
         self._build()
-        self.after(120, self._poll)
+        self.after(100, self._poll)
 
     def _build(self):
         outer = ttk.Frame(self, padding=18)
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text="SERMAX", font=("Segoe UI", 17, "bold")).pack(anchor="w")
-        ttk.Label(outer, text="Assistente de instalação e atualização",
-                  font=("Segoe UI", 10)).pack(anchor="w", pady=(0, 16))
+        ttk.Label(outer, text="SERMAX", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(outer, text="Assistente de instalação e atualização").pack(anchor="w", pady=(0, 14))
 
         ttk.Label(outer, text="Tipo de operação").pack(anchor="w")
         ttk.Combobox(outer, textvariable=self.mode, state="readonly",
-                     values=["Instalação inicial", "Atualização existente"]).pack(fill="x", pady=(3, 12))
+                     values=["Detecção automática", "Instalação inicial", "Atualização existente"]).pack(fill="x", pady=(3, 10))
 
         ttk.Label(outer, text="Pasta do pacote").pack(anchor="w")
         line = ttk.Frame(outer)
-        line.pack(fill="x", pady=(3, 12))
+        line.pack(fill="x", pady=(3, 10))
         ttk.Entry(line, textvariable=self.package).pack(side="left", fill="x", expand=True)
         ttk.Button(line, text="Procurar...", command=self._choose_package).pack(side="left", padx=(8, 0))
 
         ttk.Label(outer, text="Pasta de instalação").pack(anchor="w")
         line = ttk.Frame(outer)
-        line.pack(fill="x", pady=(3, 14))
+        line.pack(fill="x", pady=(3, 10))
         ttk.Entry(line, textvariable=self.destination).pack(side="left", fill="x", expand=True)
         ttk.Button(line, text="Alterar...", command=self._choose_destination).pack(side="left", padx=(8, 0))
 
         self.status = tk.StringVar(value="Aguardando seleção do pacote.")
-        ttk.Label(outer, textvariable=self.status).pack(anchor="w", pady=(4, 5))
-        self.progress = ttk.Progressbar(outer, mode="indeterminate")
+        ttk.Label(outer, textvariable=self.status).pack(anchor="w", pady=(5, 5))
+        self.progress = ttk.Progressbar(outer, mode="determinate", maximum=100)
         self.progress.pack(fill="x")
-        self.details = tk.Text(outer, height=5, state="disabled", wrap="word")
+        self.details = tk.Text(outer, height=7, state="disabled", wrap="word")
         self.details.pack(fill="both", expand=True, pady=(10, 12))
 
         buttons = ttk.Frame(outer)
@@ -93,37 +87,71 @@ class SermaxSetup(tk.Tk):
         except Exception as exc:
             messagebox.showerror("Verificação do pacote", str(exc))
             return
+
+        installed = report["installation"]
+        detected = "Atualização existente" if installed["installed"] else "Instalação inicial"
+        selected = self.mode.get()
+        if selected == "Detecção automática":
+            selected = detected
+        if selected == "Instalação inicial" and installed["installed"]:
+            messagebox.showerror("Instalação inicial", "Já existe uma instalação nesta pasta. Escolha outro destino ou selecione atualização.")
+            return
+        if selected == "Atualização existente" and not installed["installed"]:
+            messagebox.showerror("Atualização", "Nenhuma instalação SERMAX foi identificada nesta pasta.")
+            return
+
+        current_version = installed.get("version") or "não identificada"
         summary = (
-            f"Versão: {report['version']}\n"
+            f"Operação: {selected}\n"
+            f"Versão do pacote: {report['version']}\n"
+            f"Versão instalada: {current_version}\n"
             f"Arquivos: {report['file_count']}\n"
             f"Espaço necessário: {report['required_bytes']:,} bytes\n\n"
-            "Os arquivos existentes que forem substituídos terão backup. "
-            "Arquivos fora do manifesto serão preservados. Prosseguir?"
+            "Os arquivos substituídos terão backup. Arquivos fora do manifesto serão preservados. Prosseguir?"
         )
         if not messagebox.askyesno("Confirmar operação", summary):
             return
+
+        self.mode.set(selected)
         self.busy = True
         self.install_button.configure(state="disabled")
-        self.progress.start(12)
-        self.status.set("Instalando arquivos do pacote...")
-        self._log(f"Iniciando {self.mode.get()} para {destination}")
+        self.progress.configure(value=0)
+        self.status.set("Preparando instalação...")
+        self._log(f"Iniciando {selected} em {destination}")
         threading.Thread(target=self._worker, args=(package, destination), daemon=True).start()
 
     def _worker(self, package: Path, destination: Path):
         try:
-            result = install_package(package, destination)
+            def on_progress(phase, current, total, name):
+                self.events.put(("progress", (phase, current, total, name)))
+            result = install_package(package, destination, progress=on_progress)
             self.events.put(("success", result))
-        except (PackageError, OSError, Exception) as exc:
+        except Exception as exc:
             self.events.put(("error", f"{type(exc).__name__}: {exc}"))
 
     def _poll(self):
         try:
             while True:
                 kind, payload = self.events.get_nowait()
-                self.progress.stop()
+                if kind == "progress":
+                    phase, current, total, name = payload
+                    percent = int((current / total) * 100) if total else 0
+                    self.progress.configure(value=percent)
+                    labels = {
+                        "preparing": "Preparando arquivos...",
+                        "staging": "Validando e preparando cópias...",
+                        "installing": "Instalando arquivos...",
+                        "complete": "Finalizando..."
+                    }
+                    self.status.set(f"{labels.get(phase, phase)} {percent}%")
+                    if name:
+                        self._log(f"{phase}: {name}")
+                    continue
+
                 self.busy = False
                 self.install_button.configure(state="normal")
                 if kind == "success":
+                    self.progress.configure(value=100)
                     self.status.set("Operação concluída.")
                     self._log(f"Versão instalada: {payload['version']}")
                     self._log(f"Arquivos instalados: {payload['installed_files']}")
@@ -135,7 +163,7 @@ class SermaxSetup(tk.Tk):
                     messagebox.showerror("Falha na instalação", payload)
         except queue.Empty:
             pass
-        self.after(120, self._poll)
+        self.after(100, self._poll)
 
 
 def main():
