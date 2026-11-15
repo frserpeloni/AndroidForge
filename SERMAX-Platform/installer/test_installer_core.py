@@ -17,6 +17,7 @@ def write_package(root: Path, files: dict[str, str], preserve=None):
             "source": f"payload/{name}",
             "target": name,
             "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            "size_bytes": len(content.encode("utf-8")),
         })
     (root / "manifest.json").write_text(json.dumps({
         "schema_version": 1,
