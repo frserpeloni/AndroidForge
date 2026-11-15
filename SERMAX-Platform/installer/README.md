@@ -67,6 +67,25 @@ Exemplo de manifesto:
 
 O hash deve ser calculado sobre o arquivo real durante a montagem do pacote. O exemplo não é instalável.
 
+## Construtor de pacotes
+
+`sermax_package_builder.py` monta um pacote a partir de uma lista explícita de arquivos. Não varre automaticamente o repositório. Isso evita incluir memória, banco de dados, logs, credenciais e backups por acidente.
+
+Exemplo em PowerShell:
+
+```powershell
+python sermax_package_builder.py `
+  --source C:\SERMAX-WORKTREE `
+  --output C:\SERMAX-BUILD\SERMAX-PACKAGE-1.0.0 `
+  --version 1.0.0 `
+  --map SERMAX-Platform/index.html=SERMAX-Platform/index.html `
+  --map SERMAX-Platform/app.js=SERMAX-Platform/app.js
+```
+
+Cada `--map origem=destino` inclui um arquivo. O construtor calcula SHA-256, registra tamanho e cria `manifest.json`. A pasta de saída precisa ser nova. Links simbólicos, caminhos fora da origem, destinos duplicados e saída dentro da origem são bloqueados.
+
+O exemplo inclui dois arquivos de interface, não representa um pacote completo instalável. A seleção oficial de componentes só será definida após auditoria e aprovação da composição do pacote.
+
 ## Testes
 
 ```powershell
