@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -133,6 +134,7 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
             ".sermax-install.json",
             ".sermax-install.json.tmp",
             ".sermax-install.json.rollback",
+            ".sermax-install.lock",
         }
         if key in reserved:
             raise PackageError(f"Destino reservado pelo instalador: {target_rel}.")
@@ -220,8 +222,80 @@ def preflight(package_dir: Path, install_dir: Path) -> dict[str, Any]:
     }
 
 
+@contextmanager
+def _installation_lock(root: Path):
+    """Hold an OS-level exclusive lock for this installation directory.
+
+    The lock file is intentionally persistent. The operating system releases
+    the lock when the process exits, so a crash does not leave a stale lock.
+    """
+    lock_path = root / ".sermax-install.lock"
+    _assert_no_reparse_components(lock_path)
+    flags = os.O_CREAT | os.O_RDWR
+    descriptor = os.open(lock_path, flags, 0o600)
+    stream = os.fdopen(descriptor, "r+b", buffering=0)
+    locked = False
+    try:
+        if os.fstat(stream.fileno()).st_size == 0:
+            stream.write(b"\\0")
+            stream.flush()
+        stream.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            try:
+                msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+                locked = True
+            except OSError as exc:
+                raise PackageError(
+                    "Já existe outra instalação ou atualização em andamento nesta pasta."
+                ) from exc
+        else:
+            import fcntl
+            try:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+            except OSError as exc:
+                raise PackageError(
+                    "Já existe outra instalação ou atualização em andamento nesta pasta."
+                ) from exc
+        stream.seek(0)
+        stream.truncate()
+        stream.write(
+            json.dumps({
+                "pid": os.getpid(),
+                "started_at_utc": datetime.now(timezone.utc).isoformat(),
+            }).encode("utf-8")
+        )
+        stream.flush()
+        yield
+    finally:
+        if locked:
+            try:
+                stream.seek(0)
+                if os.name == "nt":
+                    import msvcrt
+                    msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        stream.close()
+
+
 def install_package(package_dir: Path, install_dir: Path,
                     progress: ProgressCallback | None = None) -> dict[str, Any]:
+    """Validate, acquire the destination lock, then install the package."""
+    root = Path(os.path.abspath(install_dir.expanduser()))
+    preflight(package_dir, root)
+    _assert_no_reparse_components(root)
+    root.mkdir(parents=True, exist_ok=True)
+    with _installation_lock(root):
+        return _install_package_locked(package_dir, root, progress)
+
+
+def _install_package_locked(package_dir: Path, install_dir: Path,
+                            progress: ProgressCallback | None = None) -> dict[str, Any]:
     """Install only manifest-listed files, backing up replaced files first."""
     manifest, files = load_package(package_dir)
     root = Path(os.path.abspath(install_dir.expanduser()))
