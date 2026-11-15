@@ -50,6 +50,33 @@ class PackageBuilderTests(unittest.TestCase):
         with self.assertRaises(BuildError):
             parse_mapping("../secrets.txt=secret.txt")
 
+    def test_rejects_nested_source_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            outside = root / "outside.txt"
+            source.mkdir()
+            (source / "nested").mkdir()
+            outside.write_text("outside", encoding="utf-8")
+            (source / "nested" / "link.txt").symlink_to(outside)
+            with self.assertRaisesRegex(BuildError, "Links simbólicos"):
+                build_package(source, root / "package", "1", [
+                    (Path("nested/link.txt"), Path("nested/link.txt"))
+                ])
+
+    def test_rejects_parent_child_target_conflicts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            (source / "a.txt").write_text("a", encoding="utf-8")
+            (source / "b.txt").write_text("b", encoding="utf-8")
+            with self.assertRaisesRegex(BuildError, "conflitante"):
+                build_package(source, root / "package", "1", [
+                    (Path("a.txt"), Path("App")),
+                    (Path("b.txt"), Path("app/child.txt")),
+                ])
+
     def test_refuses_to_overwrite_existing_package_directory(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
