@@ -63,6 +63,9 @@ jobs:
       - name: Run package builder tests
         working-directory: SERMAX-Platform/installer
         run: python -m unittest -v test_package_builder.py
+      - name: Run installer GUI policy tests
+        working-directory: SERMAX-Platform/installer
+        run: python -m unittest -v test_installer_gui.py
       - name: Run platform launcher tests
         working-directory: SERMAX-Platform
         run: python -m unittest discover -s tests -p "test_platform_launcher.py" -v
