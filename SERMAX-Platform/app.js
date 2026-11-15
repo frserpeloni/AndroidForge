@@ -177,6 +177,99 @@
   $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
   $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático."));
 
+  async function showProjectDetails(project) {
+    const detail = $("projectDetail");
+    const grid = $("projectList");
+    detail.hidden = false;
+    grid.hidden = true;
+    detail.replaceChildren();
+    const header = document.createElement("div");
+    header.className = "project-detail-header";
+    const back = document.createElement("button");
+    back.className = "secondary-button";
+    back.textContent = "← Voltar aos projetos";
+    back.addEventListener("click", () => { detail.hidden = true; grid.hidden = false; });
+    const heading = document.createElement("div");
+    heading.className = "project-detail-heading";
+    const title = document.createElement("h2");
+    title.textContent = project.name;
+    const description = document.createElement("p");
+    description.textContent = project.description || "Sem descrição cadastrada.";
+    const instructions = document.createElement("div");
+    instructions.className = "project-instructions";
+    const instructionsTitle = document.createElement("b");
+    instructionsTitle.textContent = "Instruções do projeto";
+    const instructionsText = document.createElement("p");
+    instructionsText.textContent = project.instructions || "Nenhuma instrução específica cadastrada.";
+    instructions.append(instructionsTitle, instructionsText);
+    heading.append(title, description, instructions);
+    header.append(back, heading);
+    const actions = document.createElement("div");
+    actions.className = "project-detail-actions";
+    const activate = document.createElement("button");
+    activate.className = "primary-button";
+    activate.textContent = "Nova conversa neste projeto";
+    activate.addEventListener("click", () => {
+      activeProjectId = project.id;
+      activeProjectName = project.name;
+      conversationId = null;
+      $("conversation").replaceChildren();
+      $("conversation").classList.remove("has-messages");
+      $("welcome").style.display = "";
+      updateProjectContext();
+      switchView("chat");
+      toast("Projeto ativo. A próxima conversa será vinculada a ele.");
+    });
+    const edit = document.createElement("button");
+    edit.className = "secondary-button";
+    edit.textContent = "Editar projeto";
+    edit.addEventListener("click", async () => { await editProject(project); await showProjectDetails({...project, ...(await fetchProject(project.id))}); });
+    actions.append(activate, edit);
+    const conversationSection = document.createElement("div");
+    conversationSection.className = "project-conversation-section";
+    const listTitle = document.createElement("h3");
+    listTitle.textContent = "Conversas vinculadas";
+    const list = document.createElement("div");
+    list.className = "project-conversation-list";
+    list.textContent = "Carregando conversas...";
+    conversationSection.append(listTitle, list);
+    detail.append(header, actions, conversationSection);
+    try {
+      const response = await fetch("/api/projects/" + encodeURIComponent(project.id) + "/conversations");
+      const conversations = await response.json();
+      if (!response.ok) throw new Error(conversations.detail || "Falha ao consultar conversas.");
+      list.replaceChildren();
+      if (!conversations.length) {
+        const empty = document.createElement("p");
+        empty.className = "project-empty";
+        empty.textContent = "Este projeto ainda não possui conversas.";
+        list.appendChild(empty);
+      } else {
+        conversations.forEach(conversation => {
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "project-conversation-item";
+          const name = document.createElement("b");
+          name.textContent = conversation.title || "Conversa";
+          const date = document.createElement("small");
+          date.textContent = new Date(conversation.updated_at).toLocaleString("pt-BR");
+          item.append(name, date);
+          item.addEventListener("click", () => openConversation(conversation.id));
+          list.appendChild(item);
+        });
+      }
+    } catch (error) {
+      list.textContent = error.message;
+    }
+  }
+
+  async function fetchProject(id) {
+    const response = await fetch("/api/projects/" + encodeURIComponent(id));
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Falha ao consultar projeto.");
+    return data;
+  }
+
   async function refreshProjects() {
     const list = $("projectList");
     if (!list) return;
@@ -185,6 +278,8 @@
       if (!response.ok) throw new Error("Falha ao consultar projetos.");
       const projects = await response.json();
       list.replaceChildren();
+      $("projectDetail").hidden = true;
+      list.hidden = false;
       if (!projects.length) {
         const empty = document.createElement("div");
         empty.className = "empty-panel";
@@ -206,7 +301,11 @@
         const open = document.createElement("button");
         open.className = "primary-button";
         open.textContent = "Abrir projeto";
-        open.addEventListener("click", () => {
+        open.addEventListener("click", () => showProjectDetails(project));
+        const activate = document.createElement("button");
+        activate.className = "secondary-button";
+        activate.textContent = "Usar no MAX";
+        activate.addEventListener("click", () => {
           activeProjectId = project.id;
           activeProjectName = project.name;
           conversationId = null;
@@ -225,7 +324,7 @@
         archive.className = "secondary-button";
         archive.textContent = "Arquivar";
         archive.addEventListener("click", () => archiveProject(project));
-        actions.append(open, edit, archive);
+        actions.append(open, activate, edit, archive);
         card.append(title, description, meta, actions);
         list.appendChild(card);
       });
