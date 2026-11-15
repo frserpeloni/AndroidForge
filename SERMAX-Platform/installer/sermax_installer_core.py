@@ -44,6 +44,31 @@ def _safe_relative(value: str) -> Path:
     return Path(*posix.parts)
 
 
+def _is_reparse_point(path: Path) -> bool:
+    """Detect symlinks and Windows reparse points without following the leaf."""
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise PackageError(f"Não foi possível inspecionar o caminho {path}: {exc}") from exc
+    attributes = getattr(info, "st_file_attributes", 0)
+    reparse_flag = getattr(__import__("stat"), "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return path.is_symlink() or bool(attributes & reparse_flag)
+
+
+def _assert_no_reparse_components(path: Path, *, include_leaf: bool = True) -> None:
+    """Reject existing symlink/junction/reparse components in an absolute path."""
+    absolute = Path(os.path.abspath(path))
+    parts = absolute.parts
+    limit = len(parts) if include_leaf else max(1, len(parts) - 1)
+    cursor = Path(parts[0])
+    for part in parts[1:limit]:
+        cursor = cursor / part
+        if _is_reparse_point(cursor):
+            raise PackageError(f"Link simbólico, junction ou reparse point não permitido: {cursor}")
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -53,8 +78,12 @@ def _sha256(path: Path) -> str:
 
 
 def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
-    package_dir = package_dir.resolve(strict=True)
+    package_dir = Path(os.path.abspath(package_dir))
+    _assert_no_reparse_components(package_dir)
+    if not package_dir.is_dir():
+        raise PackageError("A pasta do pacote não é um diretório válido.")
     manifest_path = package_dir / "manifest.json"
+    _assert_no_reparse_components(manifest_path)
     if not manifest_path.is_file():
         raise PackageError("manifest.json não encontrado.")
     try:
@@ -116,9 +145,12 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         cursor = package_dir
         for part in source_rel.parts:
             cursor = cursor / part
-            if cursor.is_symlink():
-                raise PackageError(f"Links simbólicos não são aceitos no pacote: {source_rel}.")
-        source = source_candidate.resolve(strict=True)
+            if _is_reparse_point(cursor):
+                raise PackageError(f"Links simbólicos, junctions ou reparse points não são aceitos: {source_rel}.")
+        source = Path(os.path.abspath(source_candidate))
+        _assert_no_reparse_components(source)
+        if not source.exists():
+            raise PackageError(f"Arquivo de origem ausente: {source_rel}.")
         try:
             source.relative_to(package_dir)
         except ValueError as exc:
@@ -138,8 +170,12 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
 
 def detect_installation(install_dir: Path) -> dict[str, Any]:
     """Read installer metadata without modifying the destination."""
-    root = install_dir.expanduser().resolve()
+    root = Path(os.path.abspath(install_dir.expanduser()))
+    _assert_no_reparse_components(root)
     marker = root / ".sermax-install.json"
+    _assert_no_reparse_components(marker)
+    if marker.exists() and not marker.is_file():
+        return {"installed": True, "version": None, "marker": str(marker), "metadata_error": True}
     if marker.is_file():
         try:
             data = json.loads(marker.read_text(encoding="utf-8"))
@@ -156,7 +192,8 @@ def detect_installation(install_dir: Path) -> dict[str, Any]:
 
 def preflight(package_dir: Path, install_dir: Path) -> dict[str, Any]:
     manifest, files = load_package(package_dir)
-    root = install_dir.expanduser().resolve()
+    root = Path(os.path.abspath(install_dir.expanduser()))
+    _assert_no_reparse_components(root)
     probe = root
     while not probe.exists() and probe != probe.parent:
         probe = probe.parent
@@ -187,7 +224,8 @@ def install_package(package_dir: Path, install_dir: Path,
                     progress: ProgressCallback | None = None) -> dict[str, Any]:
     """Install only manifest-listed files, backing up replaced files first."""
     manifest, files = load_package(package_dir)
-    root = install_dir.expanduser().resolve()
+    root = Path(os.path.abspath(install_dir.expanduser()))
+    _assert_no_reparse_components(root)
     preflight(package_dir, root)
     root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
@@ -195,6 +233,9 @@ def install_package(package_dir: Path, install_dir: Path,
     staged: list[tuple[Path, Path | None, Path]] = []
     completed: list[Path] = []
     marker = root / ".sermax-install.json"
+    _assert_no_reparse_components(marker)
+    if marker.exists() and not marker.is_file():
+        raise PackageError("Marcador de instalação não é um arquivo regular.")
     marker_existed = marker.is_file()
     marker_previous = marker.read_bytes() if marker_existed else None
 
@@ -205,24 +246,27 @@ def install_package(package_dir: Path, install_dir: Path,
     try:
         report("preparing", 0, len(files), "")
         backup_root = root / ".sermax-backups"
-        if backup_root.is_symlink():
-            raise PackageError("A pasta de backups é um link simbólico. Instalação bloqueada.")
+        _assert_no_reparse_components(backup_root)
+        if backup_root.exists() and not backup_root.is_dir():
+            raise PackageError("O caminho de backups não é um diretório regular.")
         for index, item in enumerate(files, start=1):
             target = root / item.target_relative
             cursor = root
             for part in item.target_relative.parts[:-1]:
                 cursor = cursor / part
-                if cursor.is_symlink():
-                    raise PackageError(f"Pasta de destino é link simbólico: {cursor}.")
-            if target.is_symlink():
-                raise PackageError(f"Arquivo de destino é link simbólico: {target}.")
+                if _is_reparse_point(cursor):
+                    raise PackageError(f"Pasta de destino é link/junction/reparse point: {cursor}.")
+            if _is_reparse_point(target):
+                raise PackageError(f"Arquivo de destino é link/junction/reparse point: {target}.")
             target.parent.mkdir(parents=True, exist_ok=True)
-            resolved_parent = target.parent.resolve()
+            _assert_no_reparse_components(target.parent)
+            resolved_parent = Path(os.path.abspath(target.parent))
             try:
                 resolved_parent.relative_to(root)
             except ValueError as exc:
                 raise PackageError(f"Destino fora da instalação: {item.target_relative}.") from exc
             previous: Path | None = None
+            _assert_no_reparse_components(target)
             if target.exists():
                 if not target.is_file():
                     raise PackageError(f"Destino existente não é arquivo: {target}.")
@@ -251,6 +295,8 @@ def install_package(package_dir: Path, install_dir: Path,
             "installed_files": len(completed),
         }
         marker_tmp = root / ".sermax-install.json.tmp"
+        _assert_no_reparse_components(marker_tmp)
+        _assert_no_reparse_components(marker)
         marker_tmp.write_text(json.dumps(marker_data, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(marker_tmp, marker)
         report("complete", len(completed), len(completed), "")
