@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sermax_installer_core import PackageError, install_package, load_package, preflight
+from sermax_installer_core import PackageError, detect_installation, install_package, load_package, preflight
 
 
 def write_package(root: Path, files: dict[str, str], preserve=None):
