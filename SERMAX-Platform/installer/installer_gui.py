@@ -24,6 +24,7 @@ class SermaxSetup(tk.Tk):
         self.events: queue.Queue = queue.Queue()
         self.busy = False
         self._build()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.after(100, self._poll)
 
     def _build(self):
@@ -59,7 +60,17 @@ class SermaxSetup(tk.Tk):
         buttons.pack(fill="x")
         self.install_button = ttk.Button(buttons, text="Verificar e instalar", command=self._start)
         self.install_button.pack(side="right")
-        ttk.Button(buttons, text="Fechar", command=self.destroy).pack(side="right", padx=(0, 8))
+        self.close_button = ttk.Button(buttons, text="Fechar", command=self._on_close)
+        self.close_button.pack(side="right", padx=(0, 8))
+
+    def _on_close(self):
+        if self.busy:
+            messagebox.showwarning(
+                "Instalação em andamento",
+                "Aguarde o término da operação antes de fechar o assistente."
+            )
+            return
+        self.destroy()
 
     def _choose_package(self):
         selected = filedialog.askdirectory(title="Selecione a pasta do pacote SERMAX")
@@ -115,6 +126,7 @@ class SermaxSetup(tk.Tk):
         self.mode.set(selected)
         self.busy = True
         self.install_button.configure(state="disabled")
+        self.close_button.configure(state="disabled")
         self.progress.configure(value=0)
         self.status.set("Preparando instalação...")
         self._log(f"Iniciando {selected} em {destination}")
@@ -150,6 +162,7 @@ class SermaxSetup(tk.Tk):
 
                 self.busy = False
                 self.install_button.configure(state="normal")
+                self.close_button.configure(state="normal")
                 if kind == "success":
                     self.progress.configure(value=100)
                     self.status.set("Operação concluída.")
