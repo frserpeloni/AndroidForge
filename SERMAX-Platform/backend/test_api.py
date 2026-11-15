@@ -8,8 +8,14 @@ import server
 
 
 class FakeCore:
-    @staticmethod
-    def perguntar(message):
+    sessao = []
+
+    @classmethod
+    def perguntar(cls, message):
+        cls.sessao.extend([
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": "Resposta de teste: " + message},
+        ])
         return "Resposta de teste: " + message
 
 
@@ -134,6 +140,61 @@ class PlatformApiTests(unittest.TestCase):
             headers=self.headers,
         )
         self.assertEqual(response.status_code, 404)
+
+
+    def test_project_instructions_are_scoped_to_project_conversation(self):
+        project = self.client.post(
+            "/api/projects",
+            json={"name": "Projeto Contexto", "instructions": "Use o padrão técnico do Projeto Contexto."},
+            headers=self.headers,
+        ).json()
+        server.CORE_MODULE = FakeCore
+        original_session = [{"role": "assistant", "content": "sessão externa preservada"}]
+        FakeCore.sessao = original_session.copy()
+        response = self.client.post(
+            "/api/chat",
+            json={"message": "Faça uma análise", "project_id": project["id"]},
+            headers=self.headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FakeCore.sessao, original_session)
+        history = self.client.get(
+            f"/api/conversations/{response.json()['conversation_id']}",
+            headers=self.headers,
+        ).json()
+        self.assertEqual(history["messages"][0]["content"], "Faça uma análise")
+
+    def test_project_context_does_not_leak_into_unrelated_conversation(self):
+        project = self.client.post(
+            "/api/projects",
+            json={"name": "Projeto Isolado", "instructions": "SEGREDO DO PROJETO"},
+            headers=self.headers,
+        ).json()
+        server.CORE_MODULE = FakeCore
+        seen = []
+        class InspectingCore:
+            sessao = []
+            @classmethod
+            def perguntar(cls, message):
+                seen.append(list(cls.sessao))
+                cls.sessao.extend([
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": "ok"},
+                ])
+                return "ok"
+        server.CORE_MODULE = InspectingCore
+        self.client.post(
+            "/api/chat",
+            json={"message": "Pergunta privada", "project_id": project["id"]},
+            headers=self.headers,
+        )
+        self.client.post(
+            "/api/chat",
+            json={"message": "Pergunta geral"},
+            headers=self.headers,
+        )
+        self.assertTrue(any("SEGREDO DO PROJETO" in item.get("content", "") for item in seen[0]))
+        self.assertFalse(any("SEGREDO DO PROJETO" in item.get("content", "") for item in seen[1]))
 
 
 if __name__ == "__main__":
