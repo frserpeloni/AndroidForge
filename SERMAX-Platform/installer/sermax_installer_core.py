@@ -185,6 +185,35 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
     return manifest, files
 
 
+
+def package_snapshot(package_dir: Path, install_dir: Path) -> dict[str, Any]:
+    """Capture the exact package identity and destination confirmed by the user."""
+    package_root = Path(os.path.abspath(package_dir.expanduser()))
+    install_root = Path(os.path.abspath(install_dir.expanduser()))
+    _assert_no_reparse_components(package_root)
+    manifest_path = package_root / "manifest.json"
+    manifest_digest = _sha256(manifest_path)
+    manifest, files = load_package(package_root)
+    entries = []
+    for item in files:
+        source_relative = item.source.relative_to(package_root).as_posix()
+        entries.append({
+            "source": source_relative,
+            "target": item.target_relative.as_posix(),
+            "sha256": item.sha256.lower(),
+            "size_bytes": item.size_bytes,
+        })
+    entries.sort(key=lambda item: item["target"].casefold())
+    return {
+        "package_dir": str(package_root),
+        "install_dir": str(install_root),
+        "manifest_sha256": manifest_digest,
+        "version": manifest["version"],
+        "files": entries,
+    }
+
+
+
 def detect_installation(install_dir: Path) -> dict[str, Any]:
     """Read installer metadata without modifying the destination."""
     root = Path(os.path.abspath(install_dir.expanduser()))
@@ -299,13 +328,21 @@ def _installation_lock(root: Path):
 
 
 def install_package(package_dir: Path, install_dir: Path,
-                    progress: ProgressCallback | None = None) -> dict[str, Any]:
-    """Validate, acquire the destination lock, then install the package."""
+                    progress: ProgressCallback | None = None,
+                    expected_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Validate, lock destination, and optionally enforce the confirmed package snapshot."""
     root = Path(os.path.abspath(install_dir.expanduser()))
     preflight(package_dir, root)
     _assert_no_reparse_components(root)
     root.mkdir(parents=True, exist_ok=True)
     with _installation_lock(root):
+        if expected_snapshot is not None:
+            current_snapshot = package_snapshot(package_dir, root)
+            if current_snapshot != expected_snapshot:
+                raise PackageError(
+                    "O pacote ou o destino mudou depois da confirmação. "
+                    "A instalação foi cancelada; verifique o pacote novamente."
+                )
         return _install_package_locked(package_dir, root, progress)
 
 
