@@ -65,12 +65,15 @@ def build_package(source_root: Path, output_dir: Path, version: str,
     try:
         payload = temp_dir / "payload"
         for source_rel, target_rel in mappings:
-            source = (source_root / source_rel).resolve(strict=True)
+            source_candidate = source_root / source_rel
+            if source_candidate.is_symlink():
+                raise BuildError(f"Links simbólicos não são aceitos: {source_rel}")
+            source = source_candidate.resolve(strict=True)
             try:
                 source.relative_to(source_root)
             except ValueError as exc:
                 raise BuildError(f"Origem fora da pasta autorizada: {source_rel}") from exc
-            if source.is_symlink() or not source.is_file():
+            if not source.is_file():
                 raise BuildError(f"Origem não é arquivo regular: {source_rel}")
             key = target_rel.as_posix().casefold()
             if key in seen:
