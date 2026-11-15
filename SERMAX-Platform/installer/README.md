@@ -62,7 +62,7 @@ Executar testes:
 python -m unittest -v test_installer_core.py
 ```
 
-## Limites atuais
+## Interface gráfica em desenvolvimento\n\nFoi adicionada uma primeira janela Tkinter em `installer_gui.py`, com seleção da pasta do pacote, destino, tipo de operação, pré-verificação, confirmação, barra de atividade e relatório. A barra indica atividade durante a cópia, não percentual por arquivo. Para abrir em ambiente de desenvolvimento:\n\n```powershell\npython installer_gui.py --package C:\\caminho\\para\\pacote\n```\n\nA janela ainda não é um executável distribuível nem um instalador integrado ao `SERMAX.exe`.\n\n## Limites atuais
 
 - Ainda não há interface gráfica do instalador.
 - Ainda não há pacote de instalação com todos os componentes do SERMAX.
