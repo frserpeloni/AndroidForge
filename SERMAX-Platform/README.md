@@ -19,7 +19,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador Windows.
-- `backend/test_api.py`, testes básicos da API.
+- `backend/test_api.py`, testes da API e dos projetos persistentes.
 
 ## Integração com o núcleo
 
@@ -32,10 +32,18 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - A primeira versão é local e de usuário único.
 - Não há autenticação nem acesso remoto.
 - Não há streaming de tokens.
-- Projetos, anexos e tarefas em segundo plano ainda não estão conectados.
+- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento e associação de conversas. Anexos e tarefas em segundo plano seguem pendentes.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
 - Compatibilidade real com o ambiente Python do computador precisa ser testada.
 - Não é hospedagem pública nem instalador validado.
+
+## Projetos
+
+Os projetos ficam na tabela `projects` do banco local. Cada registro contém nome, descrição, instruções, estado de arquivamento e datas. Conversas guardam uma referência opcional ao projeto. Arquivar não apaga o projeto nem suas conversas. Não há operação de exclusão nesta versão.
+
+Endpoints locais: `GET/POST /api/projects`, `GET/PUT /api/projects/{id}`, `POST /api/projects/{id}/archive` e `GET /api/projects/{id}/conversations`.
+
+O contexto de instruções fica armazenado, mas ainda não é injetado no prompt do núcleo. A associação organiza dados e conversas, sem prometer isolamento de memória do núcleo.
 
 ## Testes
 
