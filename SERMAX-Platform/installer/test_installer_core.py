@@ -66,6 +66,34 @@ class InstallerCoreTests(unittest.TestCase):
             with _installation_lock(destination):
                 self.assertTrue((destination / ".sermax-install.lock").is_file())
 
+    def test_existing_malformed_lock_metadata_is_replaced_after_lock_acquisition(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "SERMAX"
+            destination.mkdir()
+            lock_path = destination / ".sermax-install.lock"
+            lock_path.write_bytes(b"stale non-json metadata")
+            with _installation_lock(destination):
+                metadata = json.loads(lock_path.read_text(encoding="utf-8"))
+                self.assertEqual(metadata["pid"], os.getpid())
+                self.assertIn("started_at_utc", metadata)
+
+    def test_installation_lock_rejects_symlink_lock_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            destination = base / "SERMAX"
+            outside = base / "outside.lock"
+            destination.mkdir()
+            outside.write_text("external", encoding="utf-8")
+            lock_path = destination / ".sermax-install.lock"
+            try:
+                lock_path.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest("O sistema não permite criar links simbólicos neste ambiente.")
+            with self.assertRaises(PackageError):
+                with _installation_lock(destination):
+                    pass
+            self.assertEqual(outside.read_text(encoding="utf-8"), "external")
+
     def test_preflight_validates_package_without_installing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
