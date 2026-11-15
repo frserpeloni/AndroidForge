@@ -42,7 +42,7 @@ def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> b
         try:
             with urllib.request.urlopen(health_url, timeout=1.5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-                if response.status == 200 and payload.get("service") == "sermax-platform-api":
+                if response.status == 200 and isinstance(payload, dict) and payload.get("service") == "sermax-platform-api":
                     return True
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             time.sleep(0.25)
