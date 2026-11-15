@@ -1,31 +1,46 @@
-# SERMAX Installer Core
+# SERMAX Installer
 
-Este diretório contém a primeira camada programável de instalação e atualização segura da Plataforma SERMAX.
+Camada de instalação e atualização da Plataforma SERMAX.
 
-## Estado
+## Estado atual
 
-**Motor de cópia transacional em desenvolvimento. Não é um instalador executável pronto.**
+**Protótipo de desenvolvimento. Não é instalador distribuível nem pacote completo do SERMAX.**
 
-O motor:
-- Lê um `manifest.json` versionado.
-- Valida caminhos relativos e bloqueia tentativa de sair do pacote ou da pasta de instalação.
-- Confere SHA-256 de cada arquivo do pacote.
-- Faz pré-verificação de espaço em disco.
-- Copia somente arquivos declarados no manifesto.
-- Faz cópia de segurança dos arquivos de programa que serão substituídos.
-- Usa arquivo temporário e substituição atômica por arquivo.
+### Motor
+- Lê manifesto versionado.
+- Valida caminhos e bloqueia traversal.
+- Verifica SHA-256 de cada arquivo.
+- Verifica espaço em disco sem criar a pasta de destino na pré-validação.
+- Copia somente arquivos listados no manifesto.
+- Faz backup de arquivos de programa substituídos.
+- Usa temporários e substituição atômica por arquivo.
+- Informa progresso por etapa e arquivo.
+- Grava `.sermax-install.json` com versão instalada.
+- Detecta instalação existente e versão registrada.
 - Não possui operação de exclusão.
-- Não apaga diretórios de dados, memória, histórico ou arquivos não listados.
 
-## Estrutura esperada de um pacote futuro
+### Interface gráfica
+`installer_gui.py` usa Tkinter e oferece:
+- Seleção do pacote e destino.
+- Detecção automática de instalação inicial ou atualização.
+- Opção manual de operação com validação contra o estado encontrado.
+- Pré-validação, confirmação e progresso por arquivo.
+- Relatório de arquivos, versão e backup.
+
+Executar no ambiente de desenvolvimento:
+
+```powershell
+python installer_gui.py --package C:\caminho\para\pacote
+```
+
+## Formato do pacote
 
 ```text
 package/
   manifest.json
   payload/
-    platform/
-    core/
-    terminal/
+    Platform/
+    SERMAX-Windows/
 ```
 
 Exemplo de manifesto:
@@ -42,35 +57,34 @@ Exemplo de manifesto:
   ],
   "files": [
     {
-      "source": "payload/platform/index.html",
-      "target": "Platform/index.html",
-      "sha256": "<SHA-256 real do arquivo>"
+      "source": "payload/Platform/index.html",
+      "target": "SERMAX-Platform/index.html",
+      "sha256": "HASH_SHA256_REAL"
     }
   ]
 }
 ```
 
-O manifesto deve conter hashes reais gerados durante a montagem do pacote. Não usar valores ilustrativos em pacotes distribuídos.
+O hash deve ser calculado sobre o arquivo real durante a montagem do pacote. O exemplo não é instalável.
 
-## Uso interno e testes
-
-O módulo `sermax_installer_core.py` não executa operações ao ser importado. As alterações no disco só ocorrem quando `install_package()` é chamado.
-
-Executar testes:
+## Testes
 
 ```powershell
 python -m unittest -v test_installer_core.py
+python -m py_compile installer_gui.py
 ```
 
-## Interface gráfica em desenvolvimento\n\nFoi adicionada uma primeira janela Tkinter em `installer_gui.py`, com seleção da pasta do pacote, destino, tipo de operação, pré-verificação, confirmação, barra de atividade e relatório. A barra indica atividade durante a cópia, não percentual por arquivo. Para abrir em ambiente de desenvolvimento:\n\n```powershell\npython installer_gui.py --package C:\\caminho\\para\\pacote\n```\n\nA janela ainda não é um executável distribuível nem um instalador integrado ao `SERMAX.exe`.\n\n## Limites atuais
+## Limites e proteções
 
-- Ainda não há interface gráfica do instalador.
-- Ainda não há pacote de instalação com todos os componentes do SERMAX.
-- Ainda não há integração com Inno Setup ou WiX.
-- Ainda não há desinstalador.
-- Ainda não há validação de assinatura digital do pacote.
-- A instalação real no computador do usuário não foi executada.
-- Não substitui backup completo do banco e dos dados do usuário.
-- Não autoriza modificar arquivos críticos do núcleo ou Terminal sem auditoria e autorização.
+- Não há pacote completo com núcleo, Plataforma, Terminal e dependências.
+- Não há integração com Inno Setup ou WiX.
+- Não há assinatura digital nem verificação de editor.
+- Não há desinstalador.
+- Não foi executado no computador do usuário.
+- A barra mede arquivos processados, não bytes transferidos.
+- O marcador de versão é metadado local, não prova de integridade de toda a instalação.
+- A cópia de segurança dos arquivos listados não substitui backup completo de banco e dados.
+- O motor não apaga arquivos não listados.
+- Não modificar núcleo, Terminal, memórias ou dados sem autorização específica.
 
-O instalador final deverá incluir pré-validação, confirmação do usuário, backup verificável, instalação, verificação pós-instalação e recuperação em caso de falha. A interface gráfica será adicionada após estabilizar o formato do pacote e o layout definitivo dos dados.
+O próximo estágio exige definir o manifesto oficial e a composição do pacote completo antes de gerar executável de instalação.
