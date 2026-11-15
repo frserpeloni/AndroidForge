@@ -86,7 +86,7 @@ test("cria, edita e arquiva projeto preservando o registro", async () => {
   assert.equal(state.projects[0].name, "Projeto Alfa");
 
   state.prompts.push("Projeto Beta", "Descrição revisada", "Instruções revisadas");
-  win.document.querySelector(".project-card .secondary-button").click();
+  [...win.document.querySelectorAll(".project-card button")].find(button => button.textContent === "Editar").click();
   await tick();
   assert.equal(state.projects[0].name, "Projeto Beta");
   assert.equal(state.projects[0].description, "Descrição revisada");
@@ -103,7 +103,7 @@ test("cancelar edição mantém os dados e não simula atualização", async () 
   win.document.querySelector('[data-view="projects"]').click();
   await tick();
   state.prompts.push(null);
-  win.document.querySelector(".project-card .secondary-button").click();
+  [...win.document.querySelectorAll(".project-card button")].find(button => button.textContent === "Editar").click();
   await tick();
   assert.equal(state.projects[0].name, "Projeto Original");
 });
@@ -136,7 +136,6 @@ test("conversa de projeto arquivado mantém o contexto e informa o estado", asyn
   state.projects.push({ id: "9", name: "Projeto Arquivado", description: "", instructions: "", archived: true });
   state.conversations.push({ id: "22", title: "Histórico antigo", project_id: "9", updated_at: new Date().toISOString() });
   await tick();
-  await win.eval("openConversation")?.catch?.(() => {});
   const recent = win.document.querySelector("#recentList button");
   assert.ok(recent);
   recent.click();
