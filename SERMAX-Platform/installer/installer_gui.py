@@ -8,7 +8,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from sermax_installer_core import install_package, preflight
+from sermax_installer_core import install_package, package_snapshot, preflight
 
 
 def close_block_message(busy: bool) -> str | None:
@@ -100,6 +100,10 @@ class SermaxSetup(tk.Tk):
         destination = Path(self.destination.get()).expanduser()
         try:
             report = preflight(package, destination)
+            confirmed_snapshot = package_snapshot(package, destination)
+            if (report["version"] != confirmed_snapshot["version"] or
+                    report["file_count"] != len(confirmed_snapshot["files"])):
+                raise RuntimeError("O pacote mudou durante a verificação. Repita a operação.")
         except Exception as exc:
             messagebox.showerror("Verificação do pacote", str(exc))
             return
@@ -135,13 +139,13 @@ class SermaxSetup(tk.Tk):
         self.progress.configure(value=0)
         self.status.set("Preparando instalação...")
         self._log(f"Iniciando {selected} em {destination}")
-        threading.Thread(target=self._worker, args=(package, destination), daemon=True).start()
+        threading.Thread(target=self._worker, args=(package, destination, confirmed_snapshot), daemon=True).start()
 
-    def _worker(self, package: Path, destination: Path):
+    def _worker(self, package: Path, destination: Path, expected_snapshot: dict):
         try:
             def on_progress(phase, current, total, name):
                 self.events.put(("progress", (phase, current, total, name)))
-            result = install_package(package, destination, progress=on_progress)
+            result = install_package(package, destination, progress=on_progress,\n                                      expected_snapshot=expected_snapshot)
             self.events.put(("success", result))
         except Exception as exc:
             self.events.put(("error", f"{type(exc).__name__}: {exc}"))
