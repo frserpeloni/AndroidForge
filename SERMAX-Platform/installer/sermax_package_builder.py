@@ -23,8 +23,13 @@ def safe_relative(value: str) -> Path:
     path = PurePosixPath(normalized)
     if not value.strip() or path.is_absolute() or any(p in ("", ".", "..") for p in path.parts):
         raise BuildError(f"Caminho relativo inválido: {value!r}")
-    if path.parts and ":" in path.parts[0]:
-        raise BuildError(f"Caminho com unidade não permitido: {value!r}")
+    for part in path.parts:
+        stem = part.split(".", 1)[0].upper()
+        if (":" in part or part.endswith((" ", ".")) or
+                stem in {"CON", "PRN", "AUX", "NUL"} or
+                (stem.startswith("COM") and stem[3:].isdigit()) or
+                (stem.startswith("LPT") and stem[3:].isdigit())):
+            raise BuildError(f"Componente de caminho inválido no Windows: {value!r}")
     return Path(*path.parts)
 
 
@@ -66,8 +71,11 @@ def build_package(source_root: Path, output_dir: Path, version: str,
         payload = temp_dir / "payload"
         for source_rel, target_rel in mappings:
             source_candidate = source_root / source_rel
-            if source_candidate.is_symlink():
-                raise BuildError(f"Links simbólicos não são aceitos: {source_rel}")
+            cursor = source_root
+            for part in source_rel.parts:
+                cursor = cursor / part
+                if cursor.is_symlink():
+                    raise BuildError(f"Links simbólicos não são aceitos: {source_rel}")
             source = source_candidate.resolve(strict=True)
             try:
                 source.relative_to(source_root)
@@ -76,8 +84,8 @@ def build_package(source_root: Path, output_dir: Path, version: str,
             if not source.is_file():
                 raise BuildError(f"Origem não é arquivo regular: {source_rel}")
             key = target_rel.as_posix().casefold()
-            if key in seen:
-                raise BuildError(f"Destino duplicado: {target_rel}")
+            if any(key == old or key.startswith(old + "/") or old.startswith(key + "/") for old in seen):
+                raise BuildError(f"Destino duplicado ou conflitante: {target_rel}")
             seen.add(key)
             target = payload / target_rel
             target.parent.mkdir(parents=True, exist_ok=True)
