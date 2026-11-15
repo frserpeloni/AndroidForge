@@ -40,4 +40,4 @@
 7. Reiniciar serviço e conferir persistência SQLite.
 8. Confirmar que o serviço permanece limitado a loopback.
 
-Nenhum desses testes é declarado aprovado por este documento. Os testes adicionais foram escritos, mas aguardam execução no GitHub Actions ou em ambiente Windows validado.
+Os testes automatizados da API foram executados com sucesso no GitHub Actions em Python 3.12 e 3.14, no commit `15842233ce8a8a19f3e724445fd9402adfa40180`. A validação em Linux não substitui os testes no Windows nem comprova a integração com o núcleo real. Permanecem pendentes os itens 4 a 8 da lista acima no ambiente de destino, além da validação de dependências do núcleo.
