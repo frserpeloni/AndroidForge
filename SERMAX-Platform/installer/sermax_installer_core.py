@@ -186,19 +186,13 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
 
 
 
-def package_snapshot(package_dir: Path, install_dir: Path) -> dict[str, Any]:
-    """Capture the exact package identity and destination confirmed by the user."""
-    package_root = Path(os.path.abspath(package_dir.expanduser()))
-    install_root = Path(os.path.abspath(install_dir.expanduser()))
-    _assert_no_reparse_components(package_root)
-    manifest_path = package_root / "manifest.json"
-    manifest_digest = _sha256(manifest_path)
-    manifest, files = load_package(package_root)
+def _snapshot_from_loaded(package_root: Path, install_root: Path,
+                           manifest: dict[str, Any], files: list[PackageFile],
+                           manifest_digest: str) -> dict[str, Any]:
     entries = []
     for item in files:
-        source_relative = item.source.relative_to(package_root).as_posix()
         entries.append({
-            "source": source_relative,
+            "source": item.source.relative_to(package_root).as_posix(),
             "target": item.target_relative.as_posix(),
             "sha256": item.sha256.lower(),
             "size_bytes": item.size_bytes,
@@ -212,6 +206,17 @@ def package_snapshot(package_dir: Path, install_dir: Path) -> dict[str, Any]:
         "files": entries,
     }
 
+
+def package_snapshot(package_dir: Path, install_dir: Path) -> dict[str, Any]:
+    """Capture the exact package identity and destination confirmed by the user."""
+    package_root = Path(os.path.abspath(package_dir.expanduser()))
+    install_root = Path(os.path.abspath(install_dir.expanduser()))
+    _assert_no_reparse_components(package_root)
+    manifest, files = load_package(package_root)
+    manifest_digest = _sha256(package_root / "manifest.json")
+    return _snapshot_from_loaded(
+        package_root, install_root, manifest, files, manifest_digest
+    )
 
 
 def detect_installation(install_dir: Path) -> dict[str, Any]:
@@ -336,22 +341,29 @@ def install_package(package_dir: Path, install_dir: Path,
     _assert_no_reparse_components(root)
     root.mkdir(parents=True, exist_ok=True)
     with _installation_lock(root):
-        if expected_snapshot is not None:
-            current_snapshot = package_snapshot(package_dir, root)
-            if current_snapshot != expected_snapshot:
-                raise PackageError(
-                    "O pacote ou o destino mudou depois da confirmação. "
-                    "A instalação foi cancelada; verifique o pacote novamente."
-                )
-        return _install_package_locked(package_dir, root, progress)
+        return _install_package_locked(
+            package_dir, root, progress, expected_snapshot=expected_snapshot
+        )
 
 
 def _install_package_locked(package_dir: Path, install_dir: Path,
-                            progress: ProgressCallback | None = None) -> dict[str, Any]:
+                            progress: ProgressCallback | None = None,
+                            expected_snapshot: dict[str, Any] | None = None) -> dict[str, Any]:
     """Install only manifest-listed files, backing up replaced files first."""
-    manifest, files = load_package(package_dir)
+    package_root = Path(os.path.abspath(package_dir.expanduser()))
+    manifest, files = load_package(package_root)
     root = Path(os.path.abspath(install_dir.expanduser()))
     _assert_no_reparse_components(root)
+    if expected_snapshot is not None:
+        current_snapshot = _snapshot_from_loaded(
+            package_root, root, manifest, files,
+            _sha256(package_root / "manifest.json")
+        )
+        if current_snapshot != expected_snapshot:
+            raise PackageError(
+                "O pacote ou o destino mudou depois da confirmação. "
+                "A instalação foi cancelada; verifique o pacote novamente."
+            )
     preflight(package_dir, root)
     root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
