@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -29,6 +30,7 @@ CORE_MODULE: Any = None
 CORE_ERROR: str | None = None
 
 app = FastAPI(title="SERMAX Platform API", version="0.1.0", docs_url=None, redoc_url=None)
+WEB_DIR = ROOT / "SERMAX-Platform"
 # A interface inicial e a API devem compartilhar a mesma origem. CORS aberto é proibido.
 app.add_middleware(
     CORSMiddleware,
@@ -107,11 +109,26 @@ def startup() -> None:
 async def local_origin_guard(request: Request, call_next):
     host = request.headers.get("host", "")
     if host not in {"127.0.0.1:8765", "localhost:8765"}:
-        raise HTTPException(status_code=403, detail="A API aceita somente acesso local.")
+        return JSONResponse(status_code=403, content={"detail": "A API aceita somente acesso local."})
     origin = request.headers.get("origin")
     if origin and origin not in {"http://127.0.0.1:8765", "http://localhost:8765"}:
-        raise HTTPException(status_code=403, detail="Origem não autorizada.")
+        return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
     return await call_next(request)
+
+
+@app.get("/", include_in_schema=False)
+def index():
+    return FileResponse(WEB_DIR / "index.html")
+
+
+@app.get("/styles.css", include_in_schema=False)
+def stylesheet():
+    return FileResponse(WEB_DIR / "styles.css", media_type="text/css")
+
+
+@app.get("/app.js", include_in_schema=False)
+def javascript():
+    return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
 
 
 @app.get("/api/health")
