@@ -75,6 +75,9 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         if not isinstance(expected_hash, str) or len(expected_hash) != 64:
             raise PackageError(f"SHA-256 inválido para {source_rel}.")
         key = target_rel.as_posix().casefold()
+        reserved = {".sermax-install.json", ".sermax-install.json.tmp"}
+        if key in reserved or key == ".sermax-backups" or key.startswith(".sermax-backups/"):
+            raise PackageError(f"Destino reservado pelo instalador: {target_rel}.")
         if key in seen:
             raise PackageError(f"Destino duplicado no manifesto: {target_rel}.")
         seen.add(key)
@@ -150,6 +153,9 @@ def install_package(package_dir: Path, install_dir: Path,
     backup_dir = root / ".sermax-backups" / stamp
     staged: list[tuple[Path, Path | None, Path]] = []
     completed: list[Path] = []
+    marker = root / ".sermax-install.json"
+    marker_existed = marker.is_file()
+    marker_previous = marker.read_bytes() if marker_existed else None
 
     def report(phase: str, current: int, total: int, name: str = "") -> None:
         if progress:
@@ -187,7 +193,6 @@ def install_package(package_dir: Path, install_dir: Path,
             completed.append(target)
             report("installing", index, len(staged), target.name)
 
-        marker = root / ".sermax-install.json"
         marker_data = {
             "schema_version": 1,
             "version": manifest["version"],
@@ -209,6 +214,12 @@ def install_package(package_dir: Path, install_dir: Path,
                     target.unlink(missing_ok=True)
         for _target, _previous, temp_path in staged:
             temp_path.unlink(missing_ok=True)
+        marker_tmp = root / ".sermax-install.json.rollback"
+        if marker_existed and marker_previous is not None:
+            marker_tmp.write_bytes(marker_previous)
+            os.replace(marker_tmp, marker)
+        else:
+            marker.unlink(missing_ok=True)
         raise
 
     return {
