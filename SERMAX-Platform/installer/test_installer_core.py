@@ -7,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from sermax_installer_core import PackageError, _installation_lock, detect_installation, install_package, load_package, preflight
+from sermax_installer_core import PackageError, _installation_lock, _revalidate_install_path, detect_installation, install_package, load_package, preflight
 
 
 def write_package(root: Path, files: dict[str, str], preserve=None):
@@ -104,6 +104,30 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(target.read_text(), "new")
             backup = Path(result["backup_directory"]) / "app/core.txt"
             self.assertEqual(backup.read_text(), "old")
+
+    def test_revalidate_rejects_path_outside_install_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "SERMAX"
+            outside = Path(tmp) / "outside"
+            root.mkdir()
+            outside.mkdir()
+            with self.assertRaisesRegex(PackageError, "saiu da pasta"):
+                _revalidate_install_path(root, outside / "file.txt")
+
+    def test_revalidate_rejects_symlink_in_destination_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            root = base / "SERMAX"
+            outside = base / "outside"
+            root.mkdir()
+            outside.mkdir()
+            link = root / "linked"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("O sistema não permite criar links simbólicos neste ambiente.")
+            with self.assertRaises(PackageError):
+                _revalidate_install_path(root, link / "file.txt")
 
     def test_rejects_path_traversal(self):
         with tempfile.TemporaryDirectory() as tmp:
