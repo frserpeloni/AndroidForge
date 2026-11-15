@@ -145,7 +145,8 @@ class SermaxSetup(tk.Tk):
         try:
             def on_progress(phase, current, total, name):
                 self.events.put(("progress", (phase, current, total, name)))
-            result = install_package(package, destination, progress=on_progress,\n                                      expected_snapshot=expected_snapshot)
+            result = install_package(package, destination, progress=on_progress,
+                                      expected_snapshot=expected_snapshot)
             self.events.put(("success", result))
         except Exception as exc:
             self.events.put(("error", f"{type(exc).__name__}: {exc}"))
