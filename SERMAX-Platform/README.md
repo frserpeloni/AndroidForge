@@ -43,7 +43,7 @@ Os projetos ficam na tabela `projects` do banco local. Cada registro contém nom
 
 Endpoints locais: `GET/POST /api/projects`, `GET/PUT /api/projects/{id}`, `POST /api/projects/{id}/archive` e `GET /api/projects/{id}/conversations`.
 
-O contexto de instruções fica armazenado, mas ainda não é injetado no prompt do núcleo. A associação organiza dados e conversas, sem prometer isolamento de memória do núcleo.
+As instruções do projeto entram como contexto de sistema em cada solicitação vinculada. A API reconstrói temporariamente a sessão do núcleo com o histórico daquela conversa e restaura a sessão global anterior ao final da chamada. O bloqueio global impede chamadas simultâneas durante essa troca. A memória persistente geral do núcleo continua compartilhada, conforme o comportamento original do SERMAX. Conversas de projetos arquivados preservam o vínculo e as instruções ao serem retomadas.
 
 ## Testes
 
