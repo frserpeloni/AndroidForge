@@ -9,7 +9,7 @@ Camada de instalação e atualização da Plataforma SERMAX.
 ### Motor
 - Lê manifesto versionado.
 - Valida caminhos relativos, traversal, nomes reservados do Windows e conflitos de destino sem diferenciar maiúsculas/minúsculas.
-- Rejeita links simbólicos nas origens do pacote e nos caminhos de destino já existentes.
+- Rejeita links simbólicos e reparse points detectados nas origens do pacote e nos caminhos de destino já existentes. A checagem por caminho ainda não elimina condições de corrida TOCTOU.
 - Confere SHA-256 e tamanho real de cada arquivo contra o manifesto.
 - Verifica espaço em disco sem criar a pasta de destino na pré-validação.
 - Copia somente arquivos listados no manifesto.
@@ -93,7 +93,8 @@ O exemplo inclui dois arquivos de interface, não representa um pacote completo 
 
 ```powershell
 python -m unittest -v test_installer_core.py
-python -m py_compile installer_gui.py
+python -m unittest -v test_package_builder.py
+python -m py_compile installer_gui.py sermax_installer_core.py sermax_package_builder.py
 ```
 
 ## Limites e proteções
@@ -106,6 +107,8 @@ python -m py_compile installer_gui.py
 - A barra mede arquivos processados, não bytes transferidos.
 - O marcador de versão é metadado local, não prova de integridade de toda a instalação.
 - A cópia de segurança dos arquivos listados não substitui backup completo de banco e dados.
+- As verificações de reparse point são baseadas em inspeção de caminhos. Ainda falta endurecer operações com handles e validar concorrência/TOCTOU contra troca de diretórios durante a instalação.
+- A matriz de falhas cobre cenários selecionados de staging, substituição e marcador. Ainda faltam testes de interrupção abrupta do processo, falha de disco real e recuperação após reinicialização.
 - O motor não apaga arquivos não listados.
 - Não modificar núcleo, Terminal, memórias ou dados sem autorização específica.
 
