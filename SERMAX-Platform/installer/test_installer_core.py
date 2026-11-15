@@ -2,6 +2,8 @@ import hashlib
 import json
 import tempfile
 import unittest
+import os
+import subprocess
 from pathlib import Path
 
 from sermax_installer_core import PackageError, detect_installation, install_package, load_package, preflight
@@ -224,6 +226,41 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(len(backups), 1)
             self.assertEqual(backups[0].read_text(encoding="utf-8"), "old")
             self.assertTrue(any("rollback incompleto" in note for note in getattr(caught.exception, "__notes__", [])))
+
+
+    def test_rejects_installation_marker_symlink(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / 'package', root / 'SERMAX'
+            package.mkdir()
+            destination.mkdir()
+            write_package(package, {'app.txt': 'new'})
+            outside = root / 'outside-marker.json'
+            outside.write_text('{"schema_version":1,"version":"external"}', encoding='utf-8')
+            marker = destination / '.sermax-install.json'
+            try:
+                marker.symlink_to(outside)
+            except (OSError, NotImplementedError):
+                self.skipTest('O sistema não permite criar links simbólicos neste ambiente.')
+            with self.assertRaises(PackageError):
+                detect_installation(destination)
+
+    @unittest.skipUnless(os.name == 'nt', 'Junction é específico do Windows.')
+    def test_rejects_windows_junction_in_install_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / 'package', root / 'SERMAX'
+            package.mkdir()
+            write_package(package, {'app/child.txt': 'new'})
+            external = root / 'external'
+            external.mkdir()
+            junction = destination / 'app'
+            destination.mkdir()
+            result = subprocess.run(['cmd', '/c', 'mklink', '/J', str(junction), str(external)], capture_output=True, text=True, check=False)
+            if result.returncode != 0:
+                self.skipTest('Runner Windows não permitiu criar junction.')
+            with self.assertRaises(PackageError):
+                install_package(package, destination)
 
     def test_rejects_package_targets_that_overwrite_user_data(self):
         protected_targets = [
