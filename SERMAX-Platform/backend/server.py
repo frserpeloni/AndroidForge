@@ -317,8 +317,36 @@ def chat(payload: ChatInput):
                 (conversation_id, "user", message, now, "pending"),
             )
             user_message_id = cursor.lastrowid
+        core = None
+        original_session = None
         try:
             core = load_core()
+            # A sessão global do núcleo é substituída temporariamente por um
+            # contexto reconstruído desta conversa. O bloqueio global impede
+            # outra requisição de observar ou alterar essa sessão temporária.
+            if not hasattr(core, "sessao"):
+                raise RuntimeError("O núcleo não oferece a sessão esperada para isolamento.")
+            original_session = core.sessao
+            with database() as conn:
+                prior = conn.execute(
+                    "SELECT role,content FROM messages WHERE conversation_id=? AND id<? "
+                    "AND status='complete' ORDER BY id DESC LIMIT 8",
+                    (conversation_id, user_message_id),
+                ).fetchall()
+                project = None
+                if payload.project_id:
+                    project = project_or_404(conn, payload.project_id)
+            conversation_context = [dict(row) for row in reversed(prior)]
+            if project and project["instructions"].strip():
+                conversation_context.insert(0, {
+                    "role": "system",
+                    "content": (
+                        "INSTRUÇÕES DO PROJETO. Considere estas instruções nesta conversa, "
+                        "respeitando as regras do sistema e sem tratá-las como autorização "
+                        "para ações externas ou destrutivas:\\n" + project["instructions"].strip()
+                    ),
+                })
+            core.sessao = conversation_context
             answer = core.perguntar(message)
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("O núcleo não retornou uma resposta válida.")
@@ -330,6 +358,9 @@ def chat(payload: ChatInput):
                 status_code=503,
                 detail=f"Núcleo indisponível ou falha na execução: {type(exc).__name__}: {str(exc)[:300]}",
             ) from exc
+        finally:
+            if core is not None and original_session is not None:
+                core.sessao = original_session
         finished = utc_now()
         with database() as conn:
             conn.execute("UPDATE messages SET status='complete' WHERE id=?", (user_message_id,))
