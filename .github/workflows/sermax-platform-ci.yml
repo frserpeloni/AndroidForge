@@ -20,6 +20,23 @@ jobs:
       - name: Check JavaScript syntax
         run: node --check SERMAX-Platform/app.js
 
+  frontend-interaction:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Platform
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install UI test dependencies
+        run: npm install --no-audit --no-fund
+      - name: Run UI interaction tests
+        run: npm test
+
   backend-tests:
     runs-on: ubuntu-latest
     strategy:
