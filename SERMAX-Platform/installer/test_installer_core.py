@@ -192,6 +192,39 @@ class InstallerCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(PackageError, "conflitante"):
                 load_package(package)
 
+    def test_failed_rollback_keeps_recovery_backup_and_reports_it(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/core.txt": "new"})
+            target = destination / "app/core.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("old", encoding="utf-8")
+            original_copy2 = __import__("shutil").copy2
+            calls = {"count": 0}
+
+            def fail_during_restore(source, dest, *args, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 3:
+                    raise OSError("simulated restore disk failure")
+                return original_copy2(source, dest, *args, **kwargs)
+
+            def fail_after_replace(phase, current, total, name):
+                if phase == "installing":
+                    raise RuntimeError("simulated post-replacement failure")
+
+            with patch("sermax_installer_core.shutil.copy2", side_effect=fail_during_restore):
+                with self.assertRaisesRegex(RuntimeError, "post-replacement") as caught:
+                    install_package(package, destination, progress=fail_after_replace)
+
+            backups = list((destination / ".sermax-backups").rglob("core.txt"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(encoding="utf-8"), "old")
+            self.assertTrue(any("rollback incompleto" in note for note in getattr(caught.exception, "__notes__", [])))
+
     def test_rejects_package_targets_that_overwrite_user_data(self):
         protected_targets = [
             "memoria_sermax.json",
