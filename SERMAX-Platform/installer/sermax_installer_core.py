@@ -21,6 +21,7 @@ class PackageFile:
     source: Path
     target_relative: Path
     sha256: str
+    size_bytes: int
 
 
 ProgressCallback = Callable[[str, int, int, str], None]
@@ -33,8 +34,13 @@ def _safe_relative(value: str) -> Path:
     posix = PurePosixPath(normalized)
     if posix.is_absolute() or any(part in ("", ".", "..") for part in posix.parts):
         raise PackageError(f"Caminho inseguro no manifesto: {value!r}")
-    if posix.parts and ":" in posix.parts[0]:
-        raise PackageError(f"Caminho com unidade não permitido: {value!r}")
+    for part in posix.parts:
+        stem = part.split(".", 1)[0].upper()
+        if (":" in part or part.endswith((" ", ".")) or
+                stem in {"CON", "PRN", "AUX", "NUL"} or
+                (stem.startswith("COM") and stem[3:].isdigit()) or
+                (stem.startswith("LPT") and stem[3:].isdigit())):
+            raise PackageError(f"Componente de caminho inválido no Windows: {value!r}")
     return Path(*posix.parts)
 
 
@@ -87,8 +93,12 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         source_rel = _safe_relative(item.get("source"))
         target_rel = _safe_relative(item.get("target"))
         expected_hash = item.get("sha256")
-        if not isinstance(expected_hash, str) or len(expected_hash) != 64:
+        if (not isinstance(expected_hash, str) or len(expected_hash) != 64 or
+                any(char not in "0123456789abcdefABCDEF" for char in expected_hash)):
             raise PackageError(f"SHA-256 inválido para {source_rel}.")
+        expected_size = item.get("size_bytes")
+        if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 0:
+            raise PackageError(f"size_bytes inválido para {source_rel}.")
         key = target_rel.as_posix().casefold()
         reserved = {
             ".sermax-install.json",
@@ -99,20 +109,29 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
             raise PackageError(f"Destino reservado pelo instalador: {target_rel}.")
         if any(key == path or key.startswith(path + "/") for path in protected):
             raise PackageError(f"Destino protegido para preservar dados do usuário: {target_rel}.")
-        if key in seen:
-            raise PackageError(f"Destino duplicado no manifesto: {target_rel}.")
+        if any(key == old or key.startswith(old + "/") or old.startswith(key + "/") for old in seen):
+            raise PackageError(f"Destino duplicado ou conflitante no manifesto: {target_rel}.")
         seen.add(key)
-        source = (package_dir / source_rel).resolve(strict=True)
+        source_candidate = package_dir / source_rel
+        cursor = package_dir
+        for part in source_rel.parts:
+            cursor = cursor / part
+            if cursor.is_symlink():
+                raise PackageError(f"Links simbólicos não são aceitos no pacote: {source_rel}.")
+        source = source_candidate.resolve(strict=True)
         try:
             source.relative_to(package_dir)
         except ValueError as exc:
             raise PackageError(f"Origem fora do pacote: {source_rel}.") from exc
         if not source.is_file():
             raise PackageError(f"Arquivo de origem ausente: {source_rel}.")
+        actual_size = source.stat().st_size
+        if actual_size != expected_size:
+            raise PackageError(f"Tamanho divergente no manifesto: {source_rel}.")
         actual_hash = _sha256(source)
         if actual_hash.lower() != expected_hash.lower():
             raise PackageError(f"Falha de integridade SHA-256: {source_rel}.")
-        files.append(PackageFile(source, target_rel, actual_hash))
+        files.append(PackageFile(source, target_rel, actual_hash, actual_size))
 
     return manifest, files
 
@@ -141,7 +160,13 @@ def preflight(package_dir: Path, install_dir: Path) -> dict[str, Any]:
     probe = root
     while not probe.exists() and probe != probe.parent:
         probe = probe.parent
-    required = sum(item.source.stat().st_size for item in files)
+    backup_bytes = 0
+    if root.exists():
+        for item in files:
+            existing = root / item.target_relative
+            if existing.is_file() and not existing.is_symlink():
+                backup_bytes += existing.stat().st_size
+    required = sum(item.size_bytes for item in files) * 2 + backup_bytes
     free = shutil.disk_usage(probe).free
     if free < required:
         raise PackageError(
@@ -179,13 +204,24 @@ def install_package(package_dir: Path, install_dir: Path,
 
     try:
         report("preparing", 0, len(files), "")
+        backup_root = root / ".sermax-backups"
+        if backup_root.is_symlink():
+            raise PackageError("A pasta de backups é um link simbólico. Instalação bloqueada.")
         for index, item in enumerate(files, start=1):
-            target = (root / item.target_relative).resolve()
+            target = root / item.target_relative
+            cursor = root
+            for part in item.target_relative.parts[:-1]:
+                cursor = cursor / part
+                if cursor.is_symlink():
+                    raise PackageError(f"Pasta de destino é link simbólico: {cursor}.")
+            if target.is_symlink():
+                raise PackageError(f"Arquivo de destino é link simbólico: {target}.")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            resolved_parent = target.parent.resolve()
             try:
-                target.relative_to(root)
+                resolved_parent.relative_to(root)
             except ValueError as exc:
                 raise PackageError(f"Destino fora da instalação: {item.target_relative}.") from exc
-            target.parent.mkdir(parents=True, exist_ok=True)
             previous: Path | None = None
             if target.exists():
                 if not target.is_file():
