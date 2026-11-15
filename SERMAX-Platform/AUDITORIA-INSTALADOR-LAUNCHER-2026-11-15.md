@@ -122,3 +122,23 @@ Esta auditoria não alterou núcleo, Terminal, memórias, bancos, backups, branc
 5. Desenvolver launcher novo isolado para a Plataforma.
 6. Fechar inventário e matriz oficial de arquivos e dependências.
 7. Somente então montar pacote de teste completo e executar instalação inicial e atualização em ambiente Windows descartável.
+
+
+## Aditivo de revalidação, 2026-11-15
+
+Após a auditoria-base, a implementação recebeu os seguintes controles e testes na mesma branch isolada:
+
+- Detecção de reparse points do Windows por atributos de arquivo, além de symlinks, em componentes existentes de origem e destino.
+- Verificações aplicadas à raiz do pacote, manifesto, arquivos de origem, raiz de instalação, marcador, pasta de backup e caminhos de destino.
+- Revalidação de contenção lexical e componentes reparse antes de operações críticas de backup, staging, substituição e gravação do marcador.
+- Testes Windows de rejeição de junction no construtor de pacotes.
+- Teste multiprocesso do lock de instalação, incluindo bloqueio concorrente e liberação após saída do processo.
+- Documentação específica das garantias e limitações em `installer/SECURITY_NOTES.md`.
+
+Os itens P0 relativos à detecção de junctions/reparse points e à revalidação antes de operações críticas foram parcialmente tratados por essas mudanças. A proteção TOCTOU permanece incompleta: as operações ainda usam caminhos convencionais do Python, sem uma cadeia de operações relativa a handles Windows. Portanto, não classificar como proteção contra processo local hostil concorrente.
+
+A proteção do marcador, da raiz e dos diretórios de backup foi ampliada com verificações de reparse points. Ainda faltam testes específicos de troca concorrente do marcador, falha real de gravação de backup, interrupção abrupta e recuperação após reinicialização. A pré-validação continua sendo uma passagem separada da instalação e ainda não existe plano imutável vinculado à confirmação da GUI.
+
+O CI dos commits `54f52e4`, `af4a349` e `4fb6793` concluiu com sucesso nos cinco jobs. O commit `60fa336` adicionou testes para metadados de lock preexistentes e rejeição de lock como symlink; no momento deste aditivo, o job Windows ainda estava em execução. Não antecipar o resultado desse fluxo.
+
+A matriz oficial de arquivos, dependências e licenças continua pendente. Nenhum pacote oficial ou instalador distribuível foi gerado.
