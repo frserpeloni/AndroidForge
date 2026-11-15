@@ -134,7 +134,7 @@ def install_package(package_dir: Path, install_dir: Path) -> dict[str, Any]:
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup_dir = install_dir / ".sermax-backups" / stamp
-    staged: list[tuple[Path, Path | None]] = []
+    staged: list[tuple[Path, Path | None, Path]] = []
     completed: list[Path] = []
 
     try:
