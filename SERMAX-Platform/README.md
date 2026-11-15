@@ -46,7 +46,7 @@ python -m pip install -r requirements.txt
 python -m unittest -v test_api.py
 ```
 
-Os testes ainda precisam ser executados em CI e no ambiente Windows de destino.
+Validação automatizada: GitHub Actions executou os testes com sucesso em Python 3.12 e 3.14 no commit `15842233ce8a8a19f3e724445fd9402adfa40180`. Isso valida os testes da API em Linux. A execução no Windows do usuário e a integração com o núcleo real continuam pendentes.
 
 ## Proteções
 
