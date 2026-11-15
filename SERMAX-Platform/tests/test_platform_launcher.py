@@ -36,7 +36,7 @@ class LauncherHealthTests(unittest.TestCase):
         stop = threading.Event()
         with patch.object(launcher.urllib.request, "urlopen",
                           return_value=_Response({"service": "different-service"})), \
-             patch.object(launcher.time, "monotonic", side_effect=[0.0, 1.0]), \
+             patch.object(launcher.time, "monotonic", side_effect=[0.0, 0.1, 1.0]), \
              patch.object(launcher.time, "sleep"):
             self.assertFalse(launcher.wait_for_health("http://127.0.0.1:8765", stop, timeout=0.5))
 
