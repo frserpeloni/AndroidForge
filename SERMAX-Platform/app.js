@@ -117,7 +117,7 @@
       if (activeProjectId) {
         const projectResponse = await fetch("/api/projects/" + encodeURIComponent(activeProjectId));
         if (projectResponse.ok) activeProjectName = (await projectResponse.json()).name;
-        else activeProjectId = null;
+        else activeProjectName = "Projeto arquivado";
       }
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
@@ -223,7 +223,15 @@
     const edit = document.createElement("button");
     edit.className = "secondary-button";
     edit.textContent = "Editar projeto";
-    edit.addEventListener("click", async () => { await editProject(project); await showProjectDetails({...project, ...(await fetchProject(project.id))}); });
+    edit.addEventListener("click", async () => {
+      const updated = await editProject(project);
+      if (!updated) return;
+      try {
+        await showProjectDetails({...project, ...(await fetchProject(project.id))});
+      } catch (error) {
+        toast(error.message);
+      }
+    });
     actions.append(activate, edit);
     const conversationSection = document.createElement("div");
     conversationSection.className = "project-conversation-section";
@@ -352,11 +360,12 @@
   }
   async function editProject(project) {
     const name = window.prompt("Nome do projeto:", project.name);
-    if (name === null) return;
+    if (name === null) return false;
+    if (!name.trim()) { toast("Informe um nome para o projeto."); return false; }
     const description = window.prompt("Descrição:", project.description || "");
-    if (description === null) return;
+    if (description === null) return false;
     const instructions = window.prompt("Instruções:", project.instructions || "");
-    if (instructions === null) return;
+    if (instructions === null) return false;
     try {
       const response = await fetch("/api/projects/" + encodeURIComponent(project.id), {
         method:"PUT", headers:{"Content-Type":"application/json"},
@@ -367,7 +376,8 @@
       if (activeProjectId === project.id) { activeProjectName = data.name; updateProjectContext(); }
       toast("Projeto atualizado.");
       await refreshProjects();
-    } catch (error) { toast(error.message); }
+      return true;
+    } catch (error) { toast(error.message); return false; }
   }
   async function archiveProject(project) {
     if (!window.confirm('Arquivar "' + project.name + '"? As conversas serão preservadas.')) return;
