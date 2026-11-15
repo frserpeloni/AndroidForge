@@ -123,6 +123,28 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(target.read_text(encoding="utf-8"), "old")
             self.assertEqual(marker.read_text(encoding="utf-8"), previous_marker)
 
+    def test_failure_during_file_replacement_rolls_back_all_completed_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/one.txt": "new-one", "app/two.txt": "new-two"})
+            first = destination / "app/one.txt"
+            second = destination / "app/two.txt"
+            first.parent.mkdir(parents=True)
+            first.write_text("old-one", encoding="utf-8")
+            second.write_text("old-two", encoding="utf-8")
+
+            def fail_after_first_replacement(phase, current, total, name):
+                if phase == "installing" and current == 1:
+                    raise RuntimeError("simulated replacement failure")
+
+            with self.assertRaisesRegex(RuntimeError, "simulated replacement failure"):
+                install_package(package, destination, progress=fail_after_first_replacement)
+
+            self.assertEqual(first.read_text(encoding="utf-8"), "old-one")
+            self.assertEqual(second.read_text(encoding="utf-8"), "old-two")
+
 
 if __name__ == "__main__":
     unittest.main()
