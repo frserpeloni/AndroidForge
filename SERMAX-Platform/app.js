@@ -4,6 +4,8 @@
   const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",memory:"memoryView"};
   const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",memory:"Memória"};
   let conversationId = null;
+  let sending = false;
+
   const toast = message => {
     $("toast").textContent = message;
     $("toast").classList.add("show");
@@ -36,8 +38,10 @@
   nav.forEach(item => item.addEventListener("click", () => switchView(item.dataset.view)));
   $("openSidebar").addEventListener("click", () => $("sidebar").classList.add("open"));
   $("closeSidebar").addEventListener("click", () => $("sidebar").classList.remove("open"));
+
   function resetChat() {
-    $("conversation").innerHTML = "";
+    if (sending) return;
+    $("conversation").replaceChildren();
     $("conversation").classList.remove("has-messages");
     $("welcome").style.display = "";
     $("messageInput").value = "";
@@ -45,20 +49,74 @@
     switchView("chat");
   }
   $("newChat").addEventListener("click", resetChat);
-  $("recentConversation").addEventListener("click", resetChat);
-  function appendMessage(role, text) {
+
+  function appendMessage(role, text, status="complete") {
     $("welcome").style.display = "none";
     const area = $("conversation");
     area.classList.add("has-messages");
     const item = document.createElement("div");
-    item.className = role === "user" ? "message" : "system-note";
+    item.className = role === "user" ? "message" : (role === "error" ? "system-note error" : "system-note");
     item.textContent = text;
+    if (status === "error") item.title = "Mensagem registrada, mas o núcleo não concluiu a solicitação.";
     area.appendChild(item);
     area.scrollTop = area.scrollHeight;
   }
+
+  async function refreshRecent() {
+    const list = $("recentList");
+    try {
+      const response = await fetch("/api/conversations");
+      if (!response.ok) throw new Error("Histórico indisponível");
+      const conversations = await response.json();
+      list.replaceChildren();
+      if (!conversations.length) {
+        const empty = document.createElement("p");
+        empty.className = "recent-item";
+        empty.textContent = "Nenhuma conversa";
+        list.appendChild(empty);
+        return;
+      }
+      conversations.forEach(conversation => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "recent-item" + (conversation.id === conversationId ? " active" : "");
+        const dot = document.createElement("span");
+        dot.className = "recent-dot";
+        const title = document.createElement("span");
+        title.textContent = conversation.title || "Conversa";
+        title.className = "recent-title";
+        button.append(dot, title);
+        button.title = conversation.title || "Abrir conversa";
+        button.addEventListener("click", () => openConversation(conversation.id));
+        list.appendChild(button);
+      });
+    } catch {
+      list.textContent = "Histórico indisponível";
+    }
+  }
+
+  async function openConversation(id) {
+    if (sending) return;
+    try {
+      const response = await fetch("/api/conversations/" + encodeURIComponent(id));
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao abrir conversa.");
+      conversationId = data.conversation.id;
+      $("conversation").replaceChildren();
+      $("conversation").classList.remove("has-messages");
+      $("welcome").style.display = "none";
+      data.messages.forEach(message => appendMessage(message.role, message.content, message.status));
+      switchView("chat");
+      await refreshRecent();
+    } catch (error) {
+      toast("Não foi possível abrir a conversa. " + error.message);
+    }
+  }
+
   async function submitMessage(value) {
     const message = value.trim();
-    if (!message) return;
+    if (!message || sending) return;
+    sending = true;
     appendMessage("user", message);
     $("messageInput").value = "";
     $("messageInput").style.height = "auto";
@@ -71,14 +129,19 @@
         body: JSON.stringify({message, conversation_id:conversationId})
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Falha na solicitação.");
+      if (!response.ok) {
+        if (data.detail) throw new Error(data.detail);
+        throw new Error("Falha na solicitação.");
+      }
       conversationId = data.conversation_id;
       appendMessage("assistant", data.answer);
     } catch (error) {
-      appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message);
+      appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message, "error");
     } finally {
+      sending = false;
       $("sendButton").disabled = false;
       $("sendButton").textContent = "↑";
+      await refreshRecent();
     }
   }
   $("sendButton").addEventListener("click", () => submitMessage($("messageInput").value));
@@ -98,7 +161,8 @@
   }));
   $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
   $("newProject").addEventListener("click", () => toast("Projetos ainda não foram ativados no backend."));
-  $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático. A seleção manual será integrada após validar os adaptadores."));
+  $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático."));
   refreshHealth();
+  refreshRecent();
   setInterval(refreshHealth, 15000);
 })();
