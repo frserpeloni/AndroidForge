@@ -49,6 +49,13 @@ def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> b
     return False
 
 
+def shutdown_server(server, worker: threading.Thread, timeout: float = 15.0) -> bool:
+    """Request Uvicorn shutdown and report whether its worker stopped in time."""
+    server.should_exit = True
+    worker.join(timeout=timeout)
+    return not worker.is_alive()
+
+
 def main() -> int:
     root = platform_root()
     backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
@@ -96,8 +103,8 @@ def main() -> int:
 
     if not wait_for_health(URL, stop):
         logging.error("API não ficou saudável dentro do prazo.")
-        server.should_exit = True
-        worker.join(timeout=10)
+        if not shutdown_server(server, worker, timeout=10):
+            logging.error("Servidor não encerrou após falha no health check.")
         return 2
 
     logging.info("API saudável. Abrindo interface.")
@@ -109,9 +116,7 @@ def main() -> int:
     except KeyboardInterrupt:
         request_shutdown()
 
-    server.should_exit = True
-    worker.join(timeout=15)
-    if worker.is_alive():
+    if not shutdown_server(server, worker, timeout=15):
         logging.error("Servidor não encerrou dentro do prazo.")
         return 3
     logging.info("Plataforma encerrada.")
