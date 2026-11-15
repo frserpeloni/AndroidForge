@@ -73,9 +73,10 @@ class InstallerCoreTests(unittest.TestCase):
             lock_path = destination / ".sermax-install.lock"
             lock_path.write_bytes(b"stale non-json metadata")
             with _installation_lock(destination):
-                metadata = json.loads(lock_path.read_text(encoding="utf-8"))
-                self.assertEqual(metadata["pid"], os.getpid())
-                self.assertIn("started_at_utc", metadata)
+                self.assertTrue(lock_path.is_file())
+            metadata = json.loads(lock_path.read_text(encoding="utf-8"))
+            self.assertEqual(metadata["pid"], os.getpid())
+            self.assertIn("started_at_utc", metadata)
 
     def test_installation_lock_rejects_symlink_lock_path(self):
         with tempfile.TemporaryDirectory() as tmp:
