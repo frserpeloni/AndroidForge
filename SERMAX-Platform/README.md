@@ -19,7 +19,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador Windows.
-- `backend/test_api.py`, testes da API e dos projetos persistentes.
+- `backend/test_api.py`, 11 testes da API e dos projetos persistentes.
 
 ## Integração com o núcleo
 
@@ -35,6 +35,7 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. Anexos e tarefas em segundo plano seguem pendentes.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
 - Compatibilidade real com o ambiente Python do computador precisa ser testada.
+- A interface ainda não passou por teste automatizado de interação em navegador.
 - Não é hospedagem pública nem instalador validado.
 
 ## Projetos
@@ -54,7 +55,7 @@ python -m pip install -r requirements.txt
 python -m unittest -v test_api.py
 ```
 
-Validação automatizada: GitHub Actions executou os 11 testes da API com sucesso em Python 3.12 e 3.14 no commit `d7dc788c456830b8793173912e650ac8edc73d6c` (execução `43716401255`). Isso valida os testes automatizados em Linux. A execução no Windows do usuário, a integração com o núcleo real e a persistência após reinício continuam pendentes.
+O GitHub Actions executou os 11 testes da API com sucesso em Python 3.12 e 3.14 e verificou a sintaxe de `app.js` com `node --check`. Execução: `43718460991`, commit `887917a7a764c87c5e60526873b68ff4be22a44d`. Isso valida os testes automatizados em Linux e a sintaxe JavaScript. Não valida a interação visual em navegador, execução no Windows do usuário, integração com o núcleo real ou persistência após reinício.
 
 ## Proteções
 
