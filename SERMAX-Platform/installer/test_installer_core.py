@@ -1,4 +1,5 @@
 import hashlib
+import multiprocessing
 import json
 import tempfile
 import unittest
@@ -6,7 +7,7 @@ import os
 import subprocess
 from pathlib import Path
 
-from sermax_installer_core import PackageError, detect_installation, install_package, load_package, preflight
+from sermax_installer_core import PackageError, _installation_lock, detect_installation, install_package, load_package, preflight
 
 
 def write_package(root: Path, files: dict[str, str], preserve=None):
@@ -29,7 +30,42 @@ def write_package(root: Path, files: dict[str, str], preserve=None):
     }), encoding="utf-8")
 
 
+def _hold_installation_lock_for_test(root, acquired, release):
+    from pathlib import Path
+    from sermax_installer_core import _installation_lock
+    with _installation_lock(Path(root)):
+        acquired.set()
+        release.wait(10)
+
+
 class InstallerCoreTests(unittest.TestCase):
+    def test_installation_lock_blocks_another_process_and_releases_on_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            destination = Path(tmp) / "SERMAX"
+            destination.mkdir()
+            context = multiprocessing.get_context("spawn")
+            acquired = context.Event()
+            release = context.Event()
+            worker = context.Process(
+                target=_hold_installation_lock_for_test,
+                args=(str(destination), acquired, release),
+            )
+            worker.start()
+            try:
+                self.assertTrue(acquired.wait(8), "processo auxiliar não adquiriu o lock")
+                with self.assertRaisesRegex(PackageError, "outra instalação"):
+                    with _installation_lock(destination):
+                        pass
+            finally:
+                release.set()
+                worker.join(8)
+                if worker.is_alive():
+                    worker.terminate()
+                    worker.join(3)
+            self.assertEqual(worker.exitcode, 0)
+            with _installation_lock(destination):
+                self.assertTrue((destination / ".sermax-install.lock").is_file())
+
     def test_preflight_validates_package_without_installing(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
