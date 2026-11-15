@@ -11,6 +11,13 @@ from tkinter import filedialog, messagebox, ttk
 from sermax_installer_core import install_package, preflight
 
 
+def close_block_message(busy: bool) -> str | None:
+    """Return the user-facing reason to block closing during installation."""
+    if busy:
+        return "Aguarde o término da operação antes de fechar o assistente."
+    return None
+
+
 class SermaxSetup(tk.Tk):
     def __init__(self, package: Path | None):
         super().__init__()
@@ -64,11 +71,9 @@ class SermaxSetup(tk.Tk):
         self.close_button.pack(side="right", padx=(0, 8))
 
     def _on_close(self):
-        if self.busy:
-            messagebox.showwarning(
-                "Instalação em andamento",
-                "Aguarde o término da operação antes de fechar o assistente."
-            )
+        reason = close_block_message(self.busy)
+        if reason:
+            messagebox.showwarning("Instalação em andamento", reason)
             return
         self.destroy()
 
