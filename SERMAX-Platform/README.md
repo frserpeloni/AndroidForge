@@ -22,6 +22,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, valida `/api/health`, abre o navegador e encerra o servidor de forma controlada.
 - `backend/test_api.py`, testes automatizados da API, projetos e persistência após reinício.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
+- `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
 - `package.json`, dependências e comando dos testes de interface.
 
 ## Integração com o núcleo
@@ -41,7 +42,11 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - A interface ainda não passou por teste automatizado de interação em navegador.
 - Não é hospedagem pública nem instalador validado.
 
-## Inicializador da Plataforma\n\nO novo `sermax_platform_launcher.py` inicia o serviço local em `127.0.0.1:8765`, aguarda a resposta de saúde identificada como `sermax-platform-api`, abre a interface no navegador e registra eventos em `%USERPROFILE%\\.sermax-platform\\logs\\platform-launcher.log`. É um inicializador Python de desenvolvimento. Ainda não está empacotado em `SERMAX.exe`, não gerencia instalação de dependências e não abre o Terminal administrativo.\n\n## Projetos
+## Inicializador da Plataforma
+
+O novo `sermax_platform_launcher.py` inicia o serviço local em `127.0.0.1:8765`, aguarda a resposta de saúde identificada como `sermax-platform-api`, abre a interface no navegador e registra eventos em `%USERPROFILE%\\.sermax-platform\\logs\\platform-launcher.log`. É um inicializador Python de desenvolvimento. Ainda não está empacotado em `SERMAX.exe`, não gerencia instalação de dependências e não abre o Terminal administrativo.
+
+## Projetos
 
 Os projetos ficam na tabela `projects` do banco local. Cada registro contém nome, descrição, instruções, estado de arquivamento e datas. Conversas guardam uma referência opcional ao projeto. Arquivar não apaga o projeto nem suas conversas. Não há operação de exclusão nesta versão.
 
