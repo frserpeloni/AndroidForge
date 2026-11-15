@@ -48,7 +48,7 @@ function setup() {
       if (!project) return response({ detail: "Projeto não encontrado" }, 404);
       if (action === "conversations" && method === "GET") return response(state.conversations.filter(c => c.project_id === project.id));
       if (action === "archive" && method === "POST") { project.archived = true; return response({ ok: true }); }
-      if (!action && method === "GET") return response(project);
+      if (!action && method === "GET") return project.archived ? response({ detail: "Projeto arquivado" }, 404) : response(project);
       if (!action && method === "PUT") { Object.assign(project, body); return response(project); }
     }
     const conversationMatch = url.match(/^\/api\/conversations\/([^/]+)$/);
