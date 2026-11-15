@@ -1,8 +1,4 @@
-"""Transactional file installer engine for SERMAX packages.
-
-This module is deliberately inert when imported. It performs filesystem changes
-only when install_package() is called by a future, explicitly launched installer.
-"""
+"""Transactional file installer engine for SERMAX packages."""
 from __future__ import annotations
 
 import hashlib
@@ -13,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 
 class PackageError(Exception):
@@ -25,6 +21,9 @@ class PackageFile:
     source: Path
     target_relative: Path
     sha256: str
+
+
+ProgressCallback = Callable[[str, int, int, str], None]
 
 
 def _safe_relative(value: str) -> Path:
@@ -56,9 +55,8 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise PackageError(f"Manifesto inválido: {exc}") from exc
-
-    if manifest.get("schema_version") != 1:
-        raise PackageError("Versão de manifesto não suportada.")
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+        raise PackageError("Versão ou estrutura do manifesto não suportada.")
     version = manifest.get("version")
     if not isinstance(version, str) or not version.strip():
         raise PackageError("Versão do pacote ausente.")
@@ -80,7 +78,6 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         if key in seen:
             raise PackageError(f"Destino duplicado no manifesto: {target_rel}.")
         seen.add(key)
-
         source = (package_dir / source_rel).resolve(strict=True)
         try:
             source.relative_to(package_dir)
@@ -98,53 +95,74 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         raise PackageError("preserve_paths deve ser uma lista.")
     for entry in preserve:
         _safe_relative(entry)
-
     return manifest, files
+
+
+def detect_installation(install_dir: Path) -> dict[str, Any]:
+    """Read installer metadata without modifying the destination."""
+    root = install_dir.expanduser().resolve()
+    marker = root / ".sermax-install.json"
+    if marker.is_file():
+        try:
+            data = json.loads(marker.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and isinstance(data.get("version"), str):
+                return {"installed": True, "version": data["version"], "marker": str(marker)}
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            return {"installed": True, "version": None, "marker": str(marker), "metadata_error": True}
+    known = (root / "SERMAX.exe", root / "SERMAX-Windows" / "sermax_launcher.py",
+             root / "SERMAX-Platform" / "backend" / "server.py")
+    if any(item.exists() for item in known):
+        return {"installed": True, "version": None, "marker": None}
+    return {"installed": False, "version": None, "marker": None}
 
 
 def preflight(package_dir: Path, install_dir: Path) -> dict[str, Any]:
     manifest, files = load_package(package_dir)
-    install_dir = install_dir.expanduser().resolve()
-    install_dir.mkdir(parents=True, exist_ok=True)
+    root = install_dir.expanduser().resolve()
+    probe = root
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
     required = sum(item.source.stat().st_size for item in files)
-    free = shutil.disk_usage(install_dir).free
+    free = shutil.disk_usage(probe).free
     if free < required:
         raise PackageError(
             f"Espaço insuficiente: necessários {required} bytes, disponíveis {free}."
         )
+    installed = detect_installation(root)
     return {
         "version": manifest["version"],
         "file_count": len(files),
         "required_bytes": required,
         "free_bytes": free,
         "preserve_paths": list(manifest.get("preserve_paths", [])),
+        "installation": installed,
     }
 
 
-def install_package(package_dir: Path, install_dir: Path) -> dict[str, Any]:
-    """Install only manifest-listed files, backing up replaced files first.
-
-    Existing files not listed in the manifest are never deleted. User data is
-    preserved because the engine has no delete operation and rejects path escape.
-    """
+def install_package(package_dir: Path, install_dir: Path,
+                    progress: ProgressCallback | None = None) -> dict[str, Any]:
+    """Install only manifest-listed files, backing up replaced files first."""
     manifest, files = load_package(package_dir)
-    install_dir = install_dir.expanduser().resolve()
-    install_dir.mkdir(parents=True, exist_ok=True)
-    preflight(package_dir, install_dir)
-
+    root = install_dir.expanduser().resolve()
+    preflight(package_dir, root)
+    root.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    backup_dir = install_dir / ".sermax-backups" / stamp
+    backup_dir = root / ".sermax-backups" / stamp
     staged: list[tuple[Path, Path | None, Path]] = []
     completed: list[Path] = []
 
+    def report(phase: str, current: int, total: int, name: str = "") -> None:
+        if progress:
+            progress(phase, current, total, name)
+
     try:
-        for item in files:
-            target = (install_dir / item.target_relative).resolve()
+        report("preparing", 0, len(files), "")
+        for index, item in enumerate(files, start=1):
+            target = (root / item.target_relative).resolve()
             try:
-                target.relative_to(install_dir)
+                target.relative_to(root)
             except ValueError as exc:
                 raise PackageError(f"Destino fora da instalação: {item.target_relative}.") from exc
-
             target.parent.mkdir(parents=True, exist_ok=True)
             previous: Path | None = None
             if target.exists():
@@ -154,7 +172,6 @@ def install_package(package_dir: Path, install_dir: Path) -> dict[str, Any]:
                 backup.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, backup)
                 previous = backup
-
             fd, temp_name = tempfile.mkstemp(prefix=".sermax-install-", dir=target.parent)
             os.close(fd)
             temp_path = Path(temp_name)
@@ -163,11 +180,24 @@ def install_package(package_dir: Path, install_dir: Path) -> dict[str, Any]:
                 temp_path.unlink(missing_ok=True)
                 raise PackageError(f"Integridade alterada durante cópia: {item.source.name}.")
             staged.append((target, previous, temp_path))
+            report("staging", index, len(files), item.target_relative.as_posix())
 
-        for target, _previous, temp_path in staged:
+        for index, (target, _previous, temp_path) in enumerate(staged, start=1):
             os.replace(temp_path, target)
             completed.append(target)
+            report("installing", index, len(staged), target.name)
 
+        marker = root / ".sermax-install.json"
+        marker_data = {
+            "schema_version": 1,
+            "version": manifest["version"],
+            "installed_at_utc": datetime.now(timezone.utc).isoformat(),
+            "installed_files": len(completed),
+        }
+        marker_tmp = root / ".sermax-install.json.tmp"
+        marker_tmp.write_text(json.dumps(marker_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(marker_tmp, marker)
+        report("complete", len(completed), len(completed), "")
     except Exception:
         for target, previous, _temp_path in reversed(staged):
             if target in completed:
