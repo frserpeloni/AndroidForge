@@ -88,6 +88,41 @@ class InstallerCoreTests(unittest.TestCase):
             with self.assertRaises(PackageError):
                 load_package(package)
 
+    def test_rejects_installer_metadata_as_package_target(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package = root / "package"
+            package.mkdir()
+            write_package(package, {"app.txt": "x"})
+            manifest = json.loads((package / "manifest.json").read_text())
+            manifest["files"][0]["target"] = ".sermax-install.json"
+            (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+            with self.assertRaises(PackageError):
+                load_package(package)
+
+    def test_failure_after_marker_replace_restores_program_and_previous_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/core.txt": "new"})
+            target = destination / "app/core.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("old", encoding="utf-8")
+            marker = destination / ".sermax-install.json"
+            marker.write_text('{"schema_version": 1, "version": "old"}', encoding="utf-8")
+            previous_marker = marker.read_text(encoding="utf-8")
+
+            def fail_after_marker(phase, current, total, name):
+                if phase == "complete":
+                    raise RuntimeError("simulated post-marker failure")
+
+            with self.assertRaisesRegex(RuntimeError, "simulated post-marker failure"):
+                install_package(package, destination, progress=fail_after_marker)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertEqual(marker.read_text(encoding="utf-8"), previous_marker)
+
 
 if __name__ == "__main__":
     unittest.main()
