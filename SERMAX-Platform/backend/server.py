@@ -11,9 +11,10 @@ import sqlite3
 import sys
 import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -29,9 +30,8 @@ CORE_LOCK = threading.Lock()
 CORE_MODULE: Any = None
 CORE_ERROR: str | None = None
 
-app = FastAPI(title="SERMAX Platform API", version="0.1.0", docs_url=None, redoc_url=None)
+app = FastAPI(title="SERMAX Platform API", version="0.2.0", docs_url=None, redoc_url=None)
 WEB_DIR = ROOT / "SERMAX-Platform"
-# A interface inicial e a API devem compartilhar a mesma origem. CORS aberto é proibido.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8765", "http://localhost:8765"],
@@ -50,13 +50,22 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def database() -> sqlite3.Connection:
+@contextmanager
+def database() -> Iterator[sqlite3.Connection]:
+    """Abre uma conexão por operação e garante commit/rollback e fechamento."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA foreign_keys=ON")
-    return conn
+    try:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def initialize_database() -> None:
@@ -75,9 +84,16 @@ def initialize_database() -> None:
                 conversation_id TEXT NOT NULL REFERENCES conversations(id),
                 role TEXT NOT NULL CHECK(role IN ('user','assistant')),
                 content TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'complete'
+                    CHECK(status IN ('pending','complete','error'))
             )
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(messages)")}
+        if "status" not in columns:
+            conn.execute(
+                "ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'"
+            )
 
 
 def load_core():
@@ -144,8 +160,6 @@ def health():
 
 @app.get("/api/models")
 def models():
-    # A seleção automática do núcleo existente permanece sob responsabilidade dele.
-    # Não anunciar disponibilidade de motores sem consulta real.
     return {
         "selection": "automatic",
         "manual_options": ["Automático", "Ollama local", "OpenJarvis"],
@@ -173,7 +187,7 @@ def get_conversation(conversation_id: str):
         if conversation is None:
             raise HTTPException(status_code=404, detail="Conversa não encontrada.")
         messages = conn.execute(
-            "SELECT role,content,created_at FROM messages WHERE conversation_id=? ORDER BY id",
+            "SELECT role,content,created_at,status FROM messages WHERE conversation_id=? ORDER BY id",
             (conversation_id,),
         ).fetchall()
     return {"conversation": dict(conversation), "messages": [dict(row) for row in messages]}
@@ -193,31 +207,42 @@ def chat(payload: ChatInput):
                 "INSERT INTO conversations(id,title,created_at,updated_at) VALUES(?,?,?,?)",
                 (conversation_id, message[:72], now, now),
             )
-        conn.execute(
-            "INSERT INTO messages(conversation_id,role,content,created_at) VALUES(?,?,?,?)",
-            (conversation_id, "user", message, now),
+        cursor = conn.execute(
+            "INSERT INTO messages(conversation_id,role,content,created_at,status) VALUES(?,?,?,?,?)",
+            (conversation_id, "user", message, now, "pending"),
         )
+        user_message_id = cursor.lastrowid
 
-    # O núcleo atual mantém sessão global. Uma única chamada por vez evita
-    # mistura de histórico até que o isolamento por conversa seja comprovado.
     try:
         with CORE_LOCK:
             core = load_core()
             answer = core.perguntar(message)
+        if not isinstance(answer, str) or not answer.strip():
+            raise ValueError("O núcleo não retornou uma resposta válida.")
     except Exception as exc:
-        # O pedido do usuário fica preservado. A falha não é convertida em resposta fictícia.
+        with database() as conn:
+            conn.execute(
+                "UPDATE messages SET status='error' WHERE id=?",
+                (user_message_id,),
+            )
+            conn.execute(
+                "UPDATE conversations SET updated_at=? WHERE id=?",
+                (utc_now(), conversation_id),
+            )
         raise HTTPException(
             status_code=503,
             detail=f"Núcleo indisponível ou falha na execução: {type(exc).__name__}: {str(exc)[:300]}",
         ) from exc
 
-    if not isinstance(answer, str) or not answer.strip():
-        raise HTTPException(status_code=502, detail="O núcleo não retornou uma resposta válida.")
     finished = utc_now()
     with database() as conn:
         conn.execute(
-            "INSERT INTO messages(conversation_id,role,content,created_at) VALUES(?,?,?,?)",
-            (conversation_id, "assistant", answer, finished),
+            "UPDATE messages SET status='complete' WHERE id=?",
+            (user_message_id,),
+        )
+        conn.execute(
+            "INSERT INTO messages(conversation_id,role,content,created_at,status) VALUES(?,?,?,?,?)",
+            (conversation_id, "assistant", answer, finished, "complete"),
         )
         conn.execute(
             "UPDATE conversations SET updated_at=? WHERE id=?",
