@@ -14,7 +14,7 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 
 ## Componentes
 
-- `index.html`, interface gráfica.
+- `index.html`, interface gráfica, incluindo painel de detalhes dos projetos.
 - `styles.css`, identidade visual responsiva.
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
@@ -32,7 +32,7 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - A primeira versão é local e de usuário único.
 - Não há autenticação nem acesso remoto.
 - Não há streaming de tokens.
-- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento e associação de conversas. Anexos e tarefas em segundo plano seguem pendentes.
+- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. Anexos e tarefas em segundo plano seguem pendentes.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
 - Compatibilidade real com o ambiente Python do computador precisa ser testada.
 - Não é hospedagem pública nem instalador validado.
