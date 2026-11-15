@@ -105,7 +105,7 @@ def build_package(source_root: Path, output_dir: Path, version: str,
             "files": sorted(staged_entries, key=lambda item: item["target"].casefold()),
         }
         (temp_dir / "manifest.json").write_text(
-            json.dumps(manifest, ensure_ascii=False, indent=2) + "\\n",
+            json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8"
         )
 
