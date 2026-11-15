@@ -56,7 +56,8 @@
         <div class="composer-wrap">
           <div class="composer">
             <textarea id="messageInput" rows="1" placeholder="Envie uma mensagem ao MAX..." aria-label="Mensagem"></textarea>
-            <div class="composer-tools">
+            <div class="project-context" id="activeProjectLabel" hidden></div>
+          <div class="composer-tools">
               <div class="tool-left">
                 <button class="tool-button" id="attachButton" title="Anexos indisponíveis nesta versão">＋ <span>Anexar</span></button>
                 <label class="model-select"><span>Modelo</span><select id="modelSelect" aria-label="Selecionar modelo"><option>Automático</option><option>Ollama local</option><option>OpenJarvis</option></select></label>
@@ -70,7 +71,7 @@
 
       <section class="view placeholder-view" id="projectsView">
         <div class="page-heading"><div><p class="eyebrow">ESPAÇO DE TRABALHO</p><h1>Projetos</h1><p>Organize conversas, arquivos e instruções por projeto.</p></div><button class="primary-button" id="newProject">＋ Novo projeto</button></div>
-        <div class="empty-panel"><div class="empty-icon">▦</div><h2>Nenhum projeto nesta demonstração</h2><p>A criação e persistência de projetos serão ativadas com o backend.</p></div>
+        <div class="project-grid" id="projectList"><div class="empty-panel"><p>Carregando projetos...</p></div></div>
       </section>
       <section class="view placeholder-view" id="tasksView">
         <div class="page-heading"><div><p class="eyebrow">CENTRAL DE EXECUÇÃO</p><h1>Tarefas</h1><p>Acompanhe atividades em fila, execução e conclusão.</p></div></div>
