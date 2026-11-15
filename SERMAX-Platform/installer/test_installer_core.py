@@ -360,6 +360,7 @@ class InstallerCoreTests(unittest.TestCase):
             "config/settings.json",
             "credentials/token.json",
             "secrets/api-key.txt",
+            ".sermax-install.lock",
         ]
         for target in protected_targets:
             with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
