@@ -19,7 +19,9 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador Windows.
-- `backend/test_api.py`, 11 testes da API e dos projetos persistentes.
+- `backend/test_api.py`, testes automatizados da API e dos projetos persistentes.
+- `tests/ui.test.js`, testes de interação da interface com DOM simulado.
+- `package.json`, dependências e comando dos testes de interface.
 
 ## Integração com o núcleo
 
@@ -55,7 +57,7 @@ python -m pip install -r requirements.txt
 python -m unittest -v test_api.py
 ```
 
-O GitHub Actions executou os 11 testes da API com sucesso em Python 3.12 e 3.14 e verificou a sintaxe de `app.js` com `node --check`. Execução: `43718460991`, commit `887917a7a764c87c5e60526873b68ff4be22a44d`. Isso valida os testes automatizados em Linux e a sintaxe JavaScript. Não valida a interação visual em navegador, execução no Windows do usuário, integração com o núcleo real ou persistência após reinício.
+O GitHub Actions executa os testes da API em Python 3.12 e 3.14, verifica a sintaxe de `app.js` com `node --check` e executa testes de interação da interface com DOM simulado (`npm test`). Execução: `43718460991`, commit `887917a7a764c87c5e60526873b68ff4be22a44d`. Isso valida os testes automatizados em Linux e a sintaxe JavaScript. Os testes de interface simulam o DOM e as respostas da API. Não substituem teste visual em navegador real, execução no Windows do usuário, integração com o núcleo real ou persistência após reinício.
 
 ## Proteções
 
