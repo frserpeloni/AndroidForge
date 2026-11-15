@@ -102,7 +102,7 @@ class PackageBuilderTests(unittest.TestCase):
             )
             if result.returncode != 0:
                 self.skipTest("Runner Windows não permitiu criar junction.")
-            with self.assertRaisesRegex(BuildError, "junction ou reparse point"):
+            with self.assertRaisesRegex(BuildError, "junctions? ou reparse points?"):
                 build_package(source, root / "package", "1", [
                     (Path("linked/payload.txt"), Path("payload.txt"))
                 ])
