@@ -145,6 +145,27 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), "old-one")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-two")
 
+    def test_rejects_package_targets_that_overwrite_user_data(self):
+        protected_targets = [
+            "memoria_sermax.json",
+            "memoria_neural_pestinha.json",
+            "data/history.sqlite3",
+            "config/settings.json",
+            "credentials/token.json",
+            "secrets/api-key.txt",
+        ]
+        for target in protected_targets:
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                package = root / "package"
+                package.mkdir()
+                write_package(package, {"payload.txt": "x"})
+                manifest = json.loads((package / "manifest.json").read_text())
+                manifest["files"][0]["target"] = target
+                (package / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+                with self.assertRaises(PackageError):
+                    load_package(package)
+
 
 if __name__ == "__main__":
     unittest.main()
