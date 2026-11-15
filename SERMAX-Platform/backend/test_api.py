@@ -197,5 +197,42 @@ class PlatformApiTests(unittest.TestCase):
         self.assertFalse(any("SEGREDO DO PROJETO" in item.get("content", "") for item in seen[1]))
 
 
+    def test_archived_project_context_remains_on_existing_conversation(self):
+        project = self.client.post(
+            "/api/projects",
+            json={"name": "Projeto Arquivado", "instructions": "CONTEXTO ARQUIVADO"},
+            headers=self.headers,
+        ).json()
+        seen = []
+        class InspectingCore:
+            sessao = []
+            @classmethod
+            def perguntar(cls, message):
+                seen.append(list(cls.sessao))
+                cls.sessao.extend([
+                    {"role": "user", "content": message},
+                    {"role": "assistant", "content": "ok"},
+                ])
+                return "ok"
+        server.CORE_MODULE = InspectingCore
+        first = self.client.post(
+            "/api/chat",
+            json={"message": "Primeira mensagem", "project_id": project["id"]},
+            headers=self.headers,
+        )
+        conversation_id = first.json()["conversation_id"]
+        self.client.post(f"/api/projects/{project['id']}/archive", headers=self.headers)
+        second = self.client.post(
+            "/api/chat",
+            json={"message": "Continuar conversa", "conversation_id": conversation_id},
+            headers=self.headers,
+        )
+        self.assertEqual(second.status_code, 200)
+        self.assertTrue(any(
+            "CONTEXTO ARQUIVADO" in item.get("content", "")
+            for item in seen[-1]
+        ))
+
+
 if __name__ == "__main__":
     unittest.main()
