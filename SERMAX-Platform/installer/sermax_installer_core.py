@@ -75,7 +75,11 @@ def load_package(package_dir: Path) -> tuple[dict[str, Any], list[PackageFile]]:
         if not isinstance(expected_hash, str) or len(expected_hash) != 64:
             raise PackageError(f"SHA-256 inválido para {source_rel}.")
         key = target_rel.as_posix().casefold()
-        reserved = {".sermax-install.json", ".sermax-install.json.tmp"}
+        reserved = {
+            ".sermax-install.json",
+            ".sermax-install.json.tmp",
+            ".sermax-install.json.rollback",
+        }
         if key in reserved or key == ".sermax-backups" or key.startswith(".sermax-backups/"):
             raise PackageError(f"Destino reservado pelo instalador: {target_rel}.")
         if key in seen:
