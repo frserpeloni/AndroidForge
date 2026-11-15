@@ -228,6 +228,65 @@ class InstallerCoreTests(unittest.TestCase):
             self.assertTrue(any("rollback incompleto" in note for note in getattr(caught.exception, "__notes__", [])))
 
 
+    def test_staging_failure_keeps_original_target_and_backup(self):
+        from unittest.mock import patch
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/core.txt": "new"})
+            target = destination / "app/core.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("old", encoding="utf-8")
+            original_copy2 = shutil.copy2
+            calls = {"count": 0}
+
+            def fail_source_staging(source, dest, *args, **kwargs):
+                calls["count"] += 1
+                if calls["count"] == 2:
+                    raise OSError("simulated staging failure")
+                return original_copy2(source, dest, *args, **kwargs)
+
+            with patch("sermax_installer_core.shutil.copy2", side_effect=fail_source_staging):
+                with self.assertRaisesRegex(OSError, "staging failure"):
+                    install_package(package, destination)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            backups = list((destination / ".sermax-backups").rglob("core.txt"))
+            self.assertEqual(len(backups), 1)
+            self.assertEqual(backups[0].read_text(encoding="utf-8"), "old")
+
+    def test_marker_write_failure_restores_replaced_program_file_and_marker(self):
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            package, destination = root / "package", root / "SERMAX"
+            package.mkdir()
+            write_package(package, {"app/core.txt": "new"})
+            target = destination / "app/core.txt"
+            target.parent.mkdir(parents=True)
+            target.write_text("old", encoding="utf-8")
+            destination.mkdir(exist_ok=True)
+            marker = destination / ".sermax-install.json"
+            original_marker = '{"schema_version":1,"version":"old"}'
+            marker.write_text(original_marker, encoding="utf-8")
+            original_write_text = Path.write_text
+
+            def fail_marker_write(path, data, *args, **kwargs):
+                if path.name == ".sermax-install.json.tmp":
+                    raise OSError("simulated marker write failure")
+                return original_write_text(path, data, *args, **kwargs)
+
+            with patch.object(Path, "write_text", fail_marker_write):
+                with self.assertRaisesRegex(OSError, "marker write failure"):
+                    install_package(package, destination)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old")
+            self.assertEqual(marker.read_text(encoding="utf-8"), original_marker)
+
     def test_rejects_installation_marker_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
