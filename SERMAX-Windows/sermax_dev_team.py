@@ -46,9 +46,9 @@ ROLE_INSTRUCTIONS = {
     "testador": (
         "Avalie os resultados reais de execução presentes no contexto. Retorne "
         "exclusivamente JSON válido: {\"verdict\":\"PASS\" ou \"FAIL\","
-        "\"evidence\":\"justificativa curta\"}. PASS somente se todos os testes "
-        "executados estiverem com status passed e os arquivos propostos estiverem "
-        "listados como aplicados. Sem evidência completa, use FAIL."
+        "\"evidence\":\"justificativa curta\"}. PASS somente se todos os itens de tests "
+        "tiverem status passed, returncode 0 e output_tail com resumo de sucesso, e se "
+        "todos os arquivos estiverem listados em written_files. Sem evidência completa, use FAIL."
     ),
 }
 
@@ -243,16 +243,28 @@ class DevelopmentTeam:
                     written, test_results = apply_and_test_proposal(
                         self.workspace_adapter, proposal, self.test_runner
                     )
+                    compact_tests = [
+                        {
+                            "suite": result.get("suite"),
+                            "status": result.get("status"),
+                            "returncode": result.get("returncode"),
+                            "output_tail": str(result.get("output", ""))[-1200:],
+                        }
+                        for result in test_results
+                    ]
                     answer = json.dumps({
                         "summary": proposal.summary,
                         "written_files": written,
-                        "tests": test_results,
+                        "tests": compact_tests,
                     }, ensure_ascii=False)
                 elif role == "testador" and self.workspace_adapter is not None:
                     try:
                         verdict = json.loads(answer)
                     except json.JSONDecodeError as exc:
-                        raise RuntimeError("Testador não retornou JSON de avaliação válido.") from exc
+                        raise RuntimeError(
+                            "Testador não retornou JSON de avaliação válido. "
+                            f"Resposta: {answer[:1200]!r}"
+                        ) from exc
                     if (
                         not isinstance(verdict, dict)
                         or set(verdict) != {"verdict", "evidence"}
@@ -260,7 +272,10 @@ class DevelopmentTeam:
                         or not isinstance(verdict.get("evidence"), str)
                         or not verdict["evidence"].strip()
                     ):
-                        raise RuntimeError("Testador não aprovou com evidência válida.")
+                        raise RuntimeError(
+                            "Testador não aprovou com evidência válida. "
+                            f"Resposta: {answer[:1200]!r}; avaliação: {verdict!r}"
+                        )
                 transcript.append(f"[{role}]\n{answer}")
                 with self._connection() as db:
                     self._event(db, task_id, role, "completed", answer)
