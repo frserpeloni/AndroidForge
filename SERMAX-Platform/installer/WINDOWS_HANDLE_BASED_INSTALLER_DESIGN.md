@@ -1038,3 +1038,125 @@ The inventory contract is not accepted for production until all of the following
 - `GetFileInformationByHandleEx`: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandleex
 - `BY_HANDLE_FILE_INFORMATION`, including file-ID reuse limitations: https://learn.microsoft.com/windows/win32/api/fileapi/ns-fileapi-by_handle_file_information
 - `FILE_INFO_BY_HANDLE_CLASS`: https://learn.microsoft.com/windows/win32/api/minwinbase/ne-minwinbase-file_info_by_handle_class
+
+
+## 11.20 Snapshot freshness, confirmation binding and transaction handoff
+
+**Audit date:** 2026-11-16.  
+**Status:** lifecycle specification only. No timer, transaction coordinator, installer, broker or filesystem operation was implemented.
+
+### 11.20.1 Separate inventory lifetime from transaction durability
+
+An `InventorySnapshot` is a short-lived, in-process observation that owns live filesystem handles. It is not a durable transaction, a lock, a namespace snapshot, or proof that a later path lookup will reach the same object.
+
+A future implementation must distinguish three objects:
+
+1. **InventorySnapshot:** live handles and observations used to classify the installation and build a plan.
+2. **ConfirmedPlan:** immutable description of the exact release and intended operations shown to the user for confirmation.
+3. **TransactionRecord:** durable journal for an installation attempt, including phase and recovery metadata. It does not preserve handle authority across process termination.
+
+Do not serialize one object and treat the serialized form as another. In particular, a journal containing file IDs does not recreate the handles held by an earlier process.
+
+### 11.20.2 Snapshot state machine
+
+The proposed snapshot state machine is:
+
+| State | Meaning | Allowed next states |
+|---|---|---|
+| `ACQUIRING` | Root and entries are being opened and inspected | `VALID`, `INVALID`, `DISPOSED` |
+| `VALID` | Complete inventory acquired; all required handles remain owned | `PLAN_BOUND`, `INVALID`, `EXPIRED`, `DISPOSED` |
+| `PLAN_BOUND` | A plan has been built against this exact snapshot | `INVALID`, `EXPIRED`, `DISPOSED` |
+| `INVALID` | A required invariant failed; no consumer may proceed | `DISPOSED` |
+| `EXPIRED` | The configured maximum planning lifetime elapsed | `DISPOSED` |
+| `DISPOSED` | Handles closed and ownership released | terminal |
+
+State transitions are monotonic. An invalid or expired snapshot cannot be refreshed in place, reopened, or returned to `VALID`. A new acquisition creates a new snapshot ID and generation.
+
+The snapshot records a monotonic acquisition timestamp and a configured maximum planning lifetime. Use a monotonic clock for elapsed-time decisions; wall-clock changes must not extend or shorten a live snapshot. The duration is an explicit configuration value to be selected after measuring inventory time and handle pressure on supported SERMAX layouts. Do not invent a default TTL in this specification.
+
+The time limit is a resource/lifecycle guard, not a security proof. A snapshot inside its TTL can still be invalid because of namespace mutation, handle errors, changed policy, or an unproven name-resolution race. A snapshot outside its TTL is rejected even if no mutation was observed.
+
+### 11.20.3 Mandatory invalidation conditions
+
+Invalidate the entire snapshot, and every plan derived from it, when any of the following occurs:
+
+- A retained root, parent or file handle is closed, invalid, or no longer queryable.
+- The maximum planning lifetime expires.
+- Root or child volume/file identity differs from the identity recorded during acquisition.
+- A required parent-child relationship or directory entry no longer matches the approved observation.
+- A reparse point, unsupported object type, volume crossing, or protected-path collision is detected.
+- Enumeration or hashing was incomplete, interrupted, or failed.
+- The trusted-reader policy version, managed allowlist, package policy, or supported-filesystem policy changes.
+- The package bytes, authenticated manifest digest, release identity, destination root, install mode, or plan contents differ from the values bound at confirmation.
+- The process loses ownership of the snapshot or cannot establish that the same in-memory snapshot remains live.
+
+A notification, file watcher event or timestamp change may trigger invalidation, but the absence of such a notification does not prove that the snapshot is unchanged. File watchers are advisory signals, not the authority for security decisions.
+
+### 11.20.4 Bind confirmation to immutable inputs
+
+Before asking the user to confirm, construct a `ConfirmedPlan` digest over a versioned, deterministic representation containing at least:
+
+- product ID, release ID, release version and release sequence when defined by the authenticated manifest;
+- exact authenticated manifest digest and exact archive digest;
+- inventory snapshot ID and generation;
+- root volume/file identity and normalized destination identity;
+- every planned relative target, action, expected existing-object identity, expected size/hash, and parent-entry identity;
+- package policy version, managed allowlist version, and transaction protocol version;
+- install mode and any user-visible data-preservation decisions.
+
+The digest is a correlation/integrity value for the confirmation flow. It is not a signature, trust anchor, authorization token, or substitute for the package signature and live handles.
+
+The UI must display the release identity, destination, operation summary and preservation boundaries derived from the same `ConfirmedPlan`. After confirmation, the worker must compare the confirmed digest with its own still-live plan and package snapshot. If any field changes, abort and require a new preflight and confirmation. The UI must not permit changing package, destination, mode or preservation choices while the confirmed operation is pending.
+
+### 11.20.5 Pre-commit handoff
+
+The future coordinator should use the following ordering:
+
+1. Acquire the trusted inventory and validate the exact package bytes and signed manifest.
+2. Build the plan from that live inventory and the authenticated manifest.
+3. Produce the deterministic confirmation digest and display the exact plan summary.
+4. Receive user confirmation for that digest.
+5. Acquire the transaction lock for the fixed installation root. The lock coordinates cooperating updater instances; it does not stop an adversarial process from changing the namespace.
+6. Verify that the same snapshot is still live and within its planning lifetime. Revalidate every required handle identity, parent relationship, protected-path rule and plan precondition using the approved handle-bound API.
+7. Verify that the exact package snapshot still matches the authenticated manifest digest and archive digest. Never reopen a caller-controlled source path.
+8. If any precondition fails, abort before mutation, invalidate the snapshot and return to preflight. Do not silently rebuild the plan under an old confirmation.
+9. Persist and flush the transaction journal and the exact staged package/backup metadata required by the separately approved transaction design before the first protected destination mutation.
+10. Only then may a separately approved transaction engine begin the first write.
+
+The revalidation in step 6 is not implementable as a safe guarantee until the Windows name-resolution and concurrency blocker in section 4A is resolved. Retaining a handle and comparing its file ID does not prove that the directory entry still names that object or that an attacker cannot substitute the entry around commit.
+
+### 11.20.6 Crash, restart and recovery behavior
+
+- If the process exits before the first protected mutation, close/lose all handles and treat the in-memory snapshot and confirmation as invalid. A later process must reacquire inventory, revalidate package trust and obtain a new confirmation.
+- If a process exits after a durable transaction journal has been written, recovery is governed by the journal state machine and backup/rollback design. Do not resume using a serialized inventory snapshot or old handle IDs.
+- A recovered transaction must verify the journal, package digest, release identity, protected root policy and durable phase records. It must reacquire filesystem handles and revalidate under the approved recovery contract.
+- If the journal is missing, malformed, inconsistent, or cannot prove which mutations completed, fail closed and preserve recovery material for an explicit recovery path.
+- A stale or expired snapshot must never authorize automatic continuation after restart.
+- The journal is not allowed to expand package authority, alter the signed file list, select a new destination, or authorize writes to user data.
+
+### 11.20.7 Required lifecycle and race tests
+
+- Expire a snapshot before planning, while the confirmation dialog is open, immediately after confirmation, while waiting for the transaction lock, and before the first write. Every case must abort without mutation.
+- Change wall-clock time forwards and backwards while a snapshot is live. Monotonic expiry behavior must remain correct.
+- Invalidate the snapshot through each mandatory condition and verify all derived plans are rejected.
+- Close one retained handle, close the root handle, dispose the snapshot twice, and race disposal against a consumer. No closed or partially owned handle may be used.
+- Change the package source after validation and after confirmation. The broker/worker must consume only the exact validated immutable snapshot.
+- Change destination, install mode, preservation options or plan data after confirmation. The digest mismatch must abort and require new confirmation.
+- Hold the transaction lock with a second updater while the snapshot expires. The waiting process must not commit an expired plan.
+- Crash before journal creation, after journal flush, and at each later durable phase. Recovery must not reconstruct snapshot authority from file IDs.
+- Tamper with or truncate the journal and verify fail-closed behavior without deleting backup or recovery material.
+- Attempt to replay an old confirmation digest with a new snapshot, package, root or transaction ID. Reject the replay.
+- Verify that watcher silence does not prevent mandatory handle/namespace revalidation.
+
+### 11.20.8 Acceptance decision
+
+Snapshot lifecycle is accepted only when the implementation proves that:
+
+1. State transitions are monotonic and invalid/expired snapshots cannot be revived.
+2. Every plan is bound to one live snapshot and one exact package/manifest digest.
+3. User confirmation is bound to the immutable plan digest.
+4. Lock waiting, UI delay, package changes, process exit and recovery cannot reuse stale authority.
+5. The journal is durable before mutation and does not pretend to preserve handle authority.
+6. Windows namespace revalidation has an approved, documented security contract and passes the adversarial suite.
+
+**Decision:** this section defines when a future snapshot and confirmation must be rejected. It does not make the current path-based inventory safe, implement a transaction engine, close section 4A, or authorize installation.
