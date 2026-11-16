@@ -488,3 +488,29 @@ A proposta inicial exclui administrador local, SYSTEM, kernel/boot comprometidos
 Identidade e privilégios do serviço; implantação machine-wide ou per-user; destino e DACLs; instalação/atualização/desinstalação do serviço; política de sessão IPC; experiência de consentimento; trust anchor e ciclo de chaves; quotas e concorrência; cancelamento e shutdown; interface de recuperação; suporte a sistemas de arquivos; testes com contas Windows distintas.
 
 **Decisão:** a seção 11.25 do documento técnico especifica o contrato do broker para revisão. Nenhum componente privilegiado foi implementado. O instalador continua não distribuível e a arquitetura não está autorizada para execução.
+
+
+## 17. Seleção da identidade do serviço Windows, 2026-11-16
+
+**Estado:** revisão documental. Nenhuma conta, serviço, SID, ACL ou privilégio foi configurado.
+
+| Candidato | Avaliação para o broker local |
+|---|---|
+| Conta virtual exclusiva `NT SERVICE\\SermaxInstallerBroker` | Primeira opção. Identidade gerenciada e exclusiva, sem senha administrada. O SID do serviço permite ACLs próprias. Acesso à rede usa credenciais do computador, portanto a política deve negar saída de rede enquanto não houver requisito aprovado. |
+| `NT AUTHORITY\\LocalService` | Alternativa de compatibilidade. Tem poucos privilégios locais e usa credenciais anônimas na rede, mas a conta base é compartilhada. Exigir SID exclusivo do serviço e testes de isolamento. |
+| `NT AUTHORITY\\NetworkService` | Sem necessidade identificada. Usa credenciais do computador na rede. Não adotar para um broker local sem requisito de rede aprovado. |
+| `NT AUTHORITY\\SYSTEM` | Rejeitado como padrão. Possui acesso local amplo. Exceção exigiria justificativa por API, análise de ameaça e aprovação específica. |
+| Conta local/domínio comum | Exige gestão de credenciais e ciclo de vida. Não é a primeira opção para instalação em um único computador. |
+
+### 17.1 Direção técnica
+
+- Avaliar conta virtual dedicada e serviço em processo próprio.
+- Testar `SERVICE_SID_TYPE_RESTRICTED` com token real. O Windows aplica verificações com a lista de SIDs restritos; não presumir que uma ACE no SID do serviço, isoladamente, concede o acesso necessário.
+- Não habilitar privilégios opcionais sem necessidade comprovada por API.
+- Manter instalação, configuração e binários do serviço sob autoridade administrativa separada da GUI.
+- Negar acesso do broker a memórias, SQLite, histórico, documentos, credenciais, modelos, ambientes Python e backups, salvo operação específica aprovada.
+- Produzir SDDL, token, grupos, privilégios, SID de logon e resultados de acesso efetivo em cada versão Windows suportada.
+- Testar operações permitidas e negadas com broker, usuário interativo, segundo usuário padrão, administrador e SYSTEM.
+- Testar parada, reinício, falha do serviço e reinício do Windows sem reutilização de autoridade em memória.
+
+**Decisão:** conta virtual dedicada com SID próprio é a candidata principal. SID restrito é alvo de teste, não configuração aprovada. LocalService permanece alternativa condicionada. NetworkService e LocalSystem não se justificam no escopo atual. Nenhuma implementação está autorizada. Os bloqueios da seção 4A e os gates do broker permanecem abertos.
