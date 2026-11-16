@@ -1445,3 +1445,108 @@ Every test records Windows build, filesystem, commit, command, before/after iden
 Per-file rollback is not accepted until object classification, backup ownership/integrity, restore metadata contract, write-ahead ordering, reverse sequencing, marker handling, crash recovery and fault-injection tests pass on all declared supported configurations.
 
 **Decision:** rollback behavior is specified, not implemented. The Windows namespace-resolution blocker in section 4A remains open. Journal trust/ACL decisions in section 11.21.9 and broker authorization in section 11.1 remain open. No automatic rollback policy, installer implementation, privileged operation or production release is approved by this section.
+
+
+## 11.23 Post-install health verification and the durable COMMITTED boundary
+
+**Audit date:** 2026-11-16.  
+**Status:** design specification only. No health-check implementation, updater orchestration, broker, installer, migration, or runtime test was added.
+
+### 11.23.1 Existing behavior observed
+
+The current Platform source exposes GET /api/health. It returns status, service identifier, API version, core load state, and timestamp. The endpoint does not run a database integrity check, load the core, send a chat request, or verify Ollama/OpenJarvis availability.
+
+The current launcher polls that endpoint for up to 30 seconds, with a 1.5-second request timeout and 0.25-second retry sleep. It accepts the response when HTTP status is 200 and the service identifier equals sermax-platform-api. The launcher then opens the browser. Its acceptance condition does not bind the responding process to the package digest or release being installed.
+
+The API initializes its SQLite schema during application startup. The core is loaded lazily on a chat request. The API reports core as not_loaded before that first load. The current health endpoint is therefore a basic API liveness signal, not proof that every Platform or SERMAX capability is ready.
+
+These observed development values are not approved installer timeouts or production acceptance criteria. Do not copy the 30-second launcher timeout into a privileged updater policy without a separate measurement and approval.
+
+### 11.23.2 Separate health dimensions
+
+The future installer must report distinct results. A single green health flag is insufficient.
+
+1. **Payload integrity:** every installed payload target matches the authenticated manifest's exact path, size, digest, type, and required metadata. Verify through the approved object-bound filesystem backend. This is an installation integrity check, not an application health probe.
+2. **Process startup:** the intended candidate process starts and remains alive through the configured stabilization interval. Bind evidence to the process instance, not PID alone. PID reuse, a pre-existing server, or a process serving another release must not satisfy the check.
+3. **API liveness:** the local API responds and identifies itself as the SERMAX Platform API. The existing GET /api/health is currently suitable only for this limited signal.
+4. **API readiness:** required routes and dependencies for the selected release are initialized. Readiness must be defined separately from liveness. A successful TCP connection or HTTP 200 alone does not prove readiness.
+5. **Persistence integrity:** if the release requires Platform persistence, perform an approved read-only check of the existing database and required schema. Do not run migrations, write probe rows, checkpoint or rewrite the user's database as part of a health probe. Any migration must be a separately authorized, journaled, reversible operation.
+6. **Core integration:** report whether the existing SERMAX core is available and whether the release requires it for the declared installation profile. Do not force-load the core merely to make a health flag green. The current lazy-load behavior means not_loaded is not by itself a startup failure.
+7. **Optional engines and integrations:** Ollama, OpenJarvis, Pestinha, and other optional components are checked only when the selected release/profile explicitly declares them required. Otherwise report unavailable, skipped, or not configured as a capability status, not as base installation corruption.
+
+The release policy must declare required capabilities before installation. The installer must not silently change an optional dependency into a mandatory one, or accept a missing required component.
+
+### 11.23.3 Release-bound health evidence
+
+A health result is valid only for the exact candidate transaction. The evidence record must bind:
+- transaction ID and journal generation;
+- product, channel, release identifier and signed manifest digest;
+- exact installed payload inventory digest;
+- process instance identity, including a non-reusable process creation identity and verified executable image identity;
+- probe name, result, start/end monotonic timestamps, attempt count and stable failure code;
+- API-reported product/build identity where an endpoint is selected;
+- required-capability policy version and the list of required, optional, skipped and failed checks.
+
+A PID, URL, status code, service name, or timestamp by itself is not release identity. The current /api/health response does not return a manifest digest or transaction identity. Extending the endpoint or defining a broker-authenticated probe channel is an unresolved interface decision. Do not claim the current endpoint provides release-bound evidence.
+
+Health logs must exclude tokens, credentials, private keys, chat contents, memory contents, and unnecessary personal paths. Store bounded diagnostic codes and sanitized messages in broker-owned transaction evidence.
+
+### 11.23.4 Readiness sequence before marker publication
+
+The proposed order is:
+
+1. Verify the authenticated package snapshot and every staged file.
+2. Apply the approved payload operations using the accepted filesystem security boundary.
+3. Read back every target and verify post-state identity, content, type, size and approved metadata. Record each target as APPLIED_VERIFIED.
+4. Start or attach to the exact candidate process under a documented deployment model. Prove that the process serves the candidate release, not an old process or unrelated service.
+5. Run the required liveness, readiness, persistence and capability probes for the selected release profile. Use monotonic deadlines, bounded attempts and explicit per-probe and overall time limits. Concrete values remain approval inputs and must come from measurements on supported Windows configurations.
+6. Require the process to remain healthy through the approved stabilization interval. Any crash, identity change, timeout, failed required probe or changed payload invalidates the health evidence.
+7. Persist and verify a HEALTH_VERIFIED journal milestone containing the release-bound evidence digest. This milestone does not mean the transaction is committed.
+8. Revalidate the transaction lock, root, targets, payload digest, health evidence freshness and marker preconditions.
+9. Persist and flush a marker-publication intent. Publish the installation marker/version record using the approved handle-safe operation, then read it back and verify its exact release identity, digest and metadata.
+10. Persist and flush the final COMMITTED record. Read it back and verify its sequence, integrity and state transition. Only then report the transaction as committed.
+
+The marker is the final protected payload publication. The journal's final COMMITTED record necessarily follows marker verification. This distinction preserves the rule that the marker never advertises a release whose payload or required health checks have not passed.
+
+The health probe must not depend on reading the new marker as its only proof of candidate identity, because the marker is deliberately unpublished until after health verification. Candidate identity must come from the broker-owned transaction and independently verified process/image evidence. The exact mechanism remains an interface and deployment-model decision.
+
+### 11.23.5 Failure, timeout and crash behavior
+
+- A failed required check before COMMITTED prevents marker publication.
+- A deterministic failure may enter ROLLBACK_REQUIRED only under an explicitly approved rollback policy. This section does not authorize automatic rollback.
+- If process identity, namespace, payload state, health evidence, journal integrity or rollback eligibility is ambiguous, enter RECOVERY_REQUIRED and preserve staging, backups and logs.
+- A crash after HEALTH_VERIFIED but before marker publication requires reacquisition of handles and fresh validation. Do not trust an old process, old health result or old in-memory state.
+- A crash after marker publication but before the durable COMMITTED record is not a committed transaction. Re-read the journal, revalidate all payload targets and marker, reacquire the candidate process, and rerun required health checks. Complete COMMITTED only if the approved recovery policy proves every condition. Otherwise follow the approved rollback/recovery policy or stop in RECOVERY_REQUIRED.
+- After the durable COMMITTED record is verified, COMMITTED is terminal. A later crash, degraded service or failed operational check is handled as a separately authorized repair transaction, not retroactive rollback.
+
+Health verification is a bounded installation gate. It does not guarantee future uptime or replace ongoing operational monitoring.
+
+### 11.23.6 User-data and persistence protection
+
+The installer payload and rollback allowlist must exclude user memories, SQLite databases, conversation history, preferences, logs, attachments, Ollama models, Python environments, external service data, original Terminal files outside the approved payload, and user backups.
+
+A health probe must not send a real chat prompt, alter memory, write a test conversation, run project migrations, or mutate user configuration. Persistence checks must be read-only. If the current runtime startup performs schema initialization, that behavior must be distinguished from installer activity and reviewed separately; the updater itself must not claim a byte-for-byte preservation result without evidence covering database, WAL and SHM files.
+
+No automatic cleanup or migration is authorized by this section.
+
+### 11.23.7 Required verification and fault-injection tests
+
+On each declared Windows build and filesystem, test:
+- valid and invalid payload read-back, missing/extra files, wrong digest, wrong file identity and metadata mismatch;
+- old server already listening, wrong service identity, wrong executable image, PID reuse, candidate process exit, restart and crash during stabilization;
+- API liveness success with readiness failure, malformed response, wrong release identity, stale response, timeout and endpoint unavailable;
+- database missing, unreadable, corrupt, locked, schema-incompatible and WAL/SHM present, proving probes do not mutate user data;
+- core unavailable, core not yet loaded, core load failure, and optional engines absent or unhealthy under both required and optional profiles;
+- failure before and after HEALTH_VERIFIED, marker intent, marker publication, marker read-back and final COMMITTED journal publication;
+- process termination, service crash, disk full, access denied, journal truncation, stale evidence, package substitution and repeated recovery inspection;
+- proof that no required check can be skipped by a missing field, unknown capability, malformed result or unrecognized policy version.
+
+Record OS build, filesystem, commit, release digest, test command, journal sequence, probe evidence digest and result. Passing results apply only to the tested configuration.
+
+### 11.23.8 Decisions and acceptance gate
+
+Before implementation, approve the health profile schema, required capability policy, process identity mechanism, release-bound probe interface, deployment/startup topology, read-only database check, stabilization and timeout values, evidence retention, and deterministic failure/rollback policy.
+
+The health gate is accepted only when the candidate process is proven to match the signed release, every required probe passes, evidence is durably bound to the transaction, the marker is published and verified last, and the final COMMITTED journal record is durable and read back.
+
+**Decision:** post-install health and the COMMITTED boundary are specified only. The existing endpoint proves API liveness at a basic level and does not prove full readiness. No endpoint, health runner, installer, broker, transaction engine, migration, rollback policy or production release was implemented or authorized. The namespace-resolution blocker in section 4A, journal decisions in section 11.21.9, broker approval in section 11.1 and rollback policy in section 11.22 remain open.
