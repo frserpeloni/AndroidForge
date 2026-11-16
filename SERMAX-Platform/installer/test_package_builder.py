@@ -55,7 +55,6 @@ class PackageBuilderTests(unittest.TestCase):
 
 
     @unittest.expectedFailure
-    @unittest.skipIf(os.name == "nt", "A variante Windows exige uma junction e deve ser validada separadamente.")
     def test_known_toctou_output_parent_swap_must_not_publish_outside_output_parent(self):
         from unittest.mock import patch
         import sermax_package_builder
@@ -75,11 +74,22 @@ class PackageBuilderTests(unittest.TestCase):
             external_write_observed = {"value": False}
             swapped = {"value": False}
 
+            redirected_stage = None
+
             def swap_output_parent_then_copy(src, dst, *args, **kwargs):
+                nonlocal redirected_stage
                 if not swapped["value"]:
                     staging_dir = Path(dst).parents[1]
                     output_parent.rename(held_parent)
-                    output_parent.symlink_to(outside, target_is_directory=True)
+                    if os.name == "nt":
+                        junction = subprocess.run(
+                            ["cmd", "/c", "mklink", "/J", str(output_parent), str(outside)],
+                            capture_output=True, text=True, check=False,
+                        )
+                        if junction.returncode != 0:
+                            raise unittest.SkipTest("Runner Windows não permitiu criar junction.")
+                    else:
+                        output_parent.symlink_to(outside, target_is_directory=True)
                     redirected_stage = outside / staging_dir.name / "payload"
                     redirected_stage.mkdir(parents=True)
                     swapped["value"] = True
@@ -88,17 +98,21 @@ class PackageBuilderTests(unittest.TestCase):
                     external_write_observed["value"] = True
                 return result
 
-            with patch.object(
-                sermax_package_builder.shutil,
-                "copy2",
-                side_effect=swap_output_parent_then_copy,
-            ):
-                build_package(
-                    source,
-                    output,
-                    "1",
-                    [(Path("app.py"), Path("app.py"))],
-                )
+            try:
+                with patch.object(
+                    sermax_package_builder.shutil,
+                    "copy2",
+                    side_effect=swap_output_parent_then_copy,
+                ):
+                    build_package(
+                        source,
+                        output,
+                        "1",
+                        [(Path("app.py"), Path("app.py"))],
+                    )
+            finally:
+                if os.name == "nt" and output_parent.exists():
+                    output_parent.rmdir()
 
             self.assertTrue(swapped["value"], "A troca do diretório de saída não foi executada.")
             self.assertFalse(
