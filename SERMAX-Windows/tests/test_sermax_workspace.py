@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import sys
@@ -40,6 +41,34 @@ class WorkspaceAdapterTests(unittest.TestCase):
             with self.assertRaises(WorkspaceError):
                 ws.write_text("escape/file.txt", "blocked")
 
+    def test_agent_unittest_suite_matches_runner_platform(self):
+        command = sermax_workspace.ALLOWED_TESTS["unittest"]
+        if sys.platform.startswith("win"):
+            self.assertIn("discover", command)
+            self.assertNotIn("test_sermax_core*.py", command)
+        else:
+            self.assertIn("tests/run_agent_suite.py", command)
+
+    def test_platform_workspace_selects_backend_unittest_suite(self):
+        class CompletedProcess:
+            returncode = 0
+            def poll(self):
+                return 0
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            backend = root / "backend"
+            backend.mkdir()
+            (backend / "test_api.py").write_text("", encoding="utf-8")
+            runner = TestRunner(WorkspaceAdapter(root), isolate_as_nobody=False)
+            with patch("sermax_workspace.subprocess.Popen", return_value=CompletedProcess()) as popen:
+                result = runner.run("unittest")
+            self.assertEqual(
+                popen.call_args.args[0],
+                (sys.executable, "-m", "unittest", "discover", "-s", "backend", "-v"),
+            )
+            self.assertEqual(result["status"], "passed")
+
     def test_test_runner_allowlist(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
@@ -52,6 +81,16 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 "        self.assertTrue(True)\n",
                 encoding="utf-8",
             )
+            suite_script = chr(10).join((
+                "import sys, unittest",
+                "suite = unittest.defaultTestLoader.discover('tests')",
+                "result = unittest.TextTestRunner(verbosity=2).run(suite)",
+                "sys.exit(0 if result.wasSuccessful() else 1)",
+            )) + chr(10)
+            (tests_dir / "run_agent_suite.py").write_text(
+                suite_script, encoding="utf-8"
+            )
+            self.assertTrue((tests_dir / "run_agent_suite.py").is_file())
             ws = WorkspaceAdapter(root)
             runner = TestRunner(ws)
             with self.assertRaises(WorkspaceError):
@@ -108,6 +147,23 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 self.assertFalse((sandbox / ".venv-jarvis").exists())
                 self.assertFalse((sandbox / ".sermax_dev_backups").exists())
                 self.assertEqual(mocked.call_count, 2)
+
+    @unittest.skipUnless(os.name == "posix", "Ownership restoration is POSIX-only.")
+    def test_restores_sandbox_ownership_to_current_executor(self):
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = WorkspaceAdapter(folder)
+            runner = TestRunner(workspace, isolate_as_nobody=True)
+            sandbox = Path(folder) / "sandbox"
+            with patch("sermax_workspace.os.getuid", return_value=123), \
+                    patch("sermax_workspace.os.getgid", return_value=456), \
+                    patch("sermax_workspace.subprocess.run") as mocked_run:
+                runner._restore_sandbox_ownership(sandbox)
+            command = mocked_run.call_args.args[0]
+            self.assertEqual(
+                command,
+                ["sudo", "-n", "chown", "-R", "123:456", str(sandbox)],
+            )
+            self.assertTrue(mocked_run.call_args.kwargs["check"])
 
     def test_windows_install_path_is_rejected_by_path_guard(self):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))

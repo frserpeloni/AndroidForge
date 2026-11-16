@@ -1,9 +1,26 @@
 name: SERMAX Development Agents
+# Agent backend now requests schema-constrained JSON for code proposals and test verdicts.
+# Agent sandbox ownership is restored before TemporaryDirectory cleanup.
+# Linux agents run portable core and team tests; the Windows CI owns Win32-specific coverage.
+# Current task is limited to one exact core edit and one new regression test.
+# Portable test fixtures use explicit newline construction to avoid escaped-text ambiguity.
+# Exact-match patch old/new text is supplied verbatim in the task.
+# Failed test output is retained in the task log for diagnosis before rollback.
+# Diagnostic output keeps the tail of unittest logs, including failure summaries.
+# The responder command API accepts one positional message argument.
+# Planner mock assertions include the model and URL keyword arguments.
+# The planner objective is positional, not a named objetivo keyword.
+# Testador receives compact status/output evidence instead of a truncated verbose transcript.
+# Platform context now includes the exact middleware and relevant TestClient setup.
+# Require separate import and middleware edits for the new ipaddress dependency.
+# First Platform agent cycle only adjusts the TestClient loopback fixtures.
+# Existing files are modified only through exact-match localized edits.
 
 on:
   push:
     branches:
       - sermax-windows-integration-20261029
+      - sermax-platform-prototype-20261115
     paths:
       - ".github/workflows/sermax-dev-agents.yml"
   workflow_dispatch:
@@ -11,7 +28,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: "Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Identifique uma falha reproduzível ou uma lacuna objetiva de segurança/correção. Se encontrar, implemente uma correção pequena com teste unittest; se não encontrar, acrescente um teste de regressão para comportamento existente ainda sem cobertura. Não altere infraestrutura, workflows, integrações Jarvis/Pestinha, memórias ou arquivos protegidos."
+        default: 'Implementar proteção por IP de origem local na API SERMAX-Platform. Em backend/server.py, importar ipaddress e alterar somente o middleware local_origin_guard: manter as validações atuais de Host e Origin e rejeitar com HTTP 403 se request.client estiver ausente, se o IP não puder ser interpretado ou se não for loopback, usando ipaddress.ip_address(request.client.host).is_loopback. Não confiar somente no cabeçalho Host. Em backend/test_api.py, acrescentar teste que crie TestClient com client=("192.0.2.10", 50002), envie GET /api/health com Host local e confirme HTTP 403; fechar o cliente em finally. Manter o teste de loopback existente aprovando. Fazer edições old/new localizadas, sem reescrever arquivos. Não tocar em outros arquivos. JSON exato com summary, files e tests, tests igual a ["unittest"].'
         type: string
 
 permissions:
@@ -73,16 +90,38 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "numpy>=2.4.6"
+          python -m pip install -r ../SERMAX-Platform/backend/requirements.txt
           echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
           echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
+
+      - name: Preflight isolated test sandbox and ownership cleanup
+        working-directory: SERMAX-Windows
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from sermax_workspace import TestRunner, WorkspaceAdapter
+
+          workspace_root = (Path.cwd().parent / "SERMAX-Platform").resolve()
+          workspace = WorkspaceAdapter(workspace_root)
+          result = TestRunner(
+              workspace, timeout_seconds=300, isolate_as_nobody=True
+          ).run("unittest")
+          print(result["output"])
+          if result["status"] != "passed":
+              raise SystemExit(f"Preflight falhou: {result['status']}")
+          print("Sandbox isolada validada e propriedade restaurada.")
+          PY
 
       - name: Run the SERMAX development team
         working-directory: SERMAX-Windows
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
-          GROQ_MAX_TOKENS: "2048"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Corrija uma falha objetiva ou acrescente um teste de regressão com unittest.' }}
+          GROQ_MAX_TOKENS: "3072"
+          SERMAX_DEV_WORKSPACE: "../SERMAX-Platform"
+          SERMAX_DEV_ALLOWED_PATHS: "backend/server.py;backend/test_api.py"
+          SERMAX_DEV_TASK: >-
+            ${{ inputs.task || 'Implementar proteção por IP de origem local na API SERMAX-Platform. Em backend/server.py, importar ipaddress e alterar somente o middleware local_origin_guard: manter as validações atuais de Host e Origin e rejeitar com HTTP 403 se request.client estiver ausente, se o IP não puder ser interpretado ou se não for loopback, usando ipaddress.ip_address(request.client.host).is_loopback. Não confiar somente no cabeçalho Host. Em backend/test_api.py, acrescentar teste que crie TestClient com client=("192.0.2.10", 50002), envie GET /api/health com Host local e confirme HTTP 403; fechar o cliente em finally. Manter o teste de loopback existente aprovando. Fazer edições old/new localizadas, sem reescrever arquivos. Não tocar em outros arquivos. JSON exato com summary, files e tests, tests igual a ["unittest"].' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
@@ -99,8 +138,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add SERMAX-Windows
-          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps || true
+          git add SERMAX-Windows SERMAX-Platform
+          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps SERMAX-Platform/.sermax_dev_backups || true
           if git diff --cached --quiet; then
             echo "Nenhuma alteração para registrar."
             exit 0

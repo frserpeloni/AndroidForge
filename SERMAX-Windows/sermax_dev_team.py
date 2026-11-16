@@ -33,17 +33,23 @@ ROLE_INSTRUCTIONS = {
     ),
     "programador": (
         "Retorne exclusivamente JSON válido com as chaves summary, files e tests. "
-        "files é lista de objetos path e content. tests deve incluir unittest e "
-        "pode incluir compileall. Altere somente código/testes/documentação do produto. "
+        "Cada item de files deve ter path, content e edits. Para arquivo novo, use "
+        "content com o texto completo e edits=null. Para arquivo existente, use "
+        "content=null e edits como lista de objetos old/new. Cada trecho old precisa "
+        "corresponder exatamente uma vez ao conteúdo atual. Prefira edições localizadas; "
+        "nunca reescreva um arquivo grande para uma alteração pequena. Não crie stubs, "
+        "Sempre inclua imports explícitos para todos os novos módulos ou símbolos usados. "
+        "imports fictícios nem dependências simuladas. tests deve ser lista de strings, ""nunca lista de objetos. Inclua unittest e, se necessário, compileall. "
+        "pode incluir compileall. Altere somente os caminhos autorizados pela tarefa. "
         "Não altere infraestrutura da equipe, workflows, credenciais ou memórias. "
         "Não inclua markdown e não afirme execução."
     ),
     "testador": (
         "Avalie os resultados reais de execução presentes no contexto. Retorne "
         "exclusivamente JSON válido: {\"verdict\":\"PASS\" ou \"FAIL\","
-        "\"evidence\":\"justificativa curta\"}. PASS somente se todos os testes "
-        "executados estiverem com status passed e os arquivos propostos estiverem "
-        "listados como aplicados. Sem evidência completa, use FAIL."
+        "\"evidence\":\"justificativa curta\"}. PASS somente se todos os itens de tests "
+        "tiverem status passed, returncode 0 e output_tail com resumo de sucesso, e se "
+        "todos os arquivos estiverem listados em written_files. Sem evidência completa, use FAIL."
     ),
 }
 
@@ -216,7 +222,7 @@ class DevelopmentTeam:
                             correction_prompt = (
                                 f"{prompt}\n\nA tentativa {attempt} foi rejeitada pelo "
                                 f"validador: {detail}\n"
-                                "Corrija a proposta e retorne exclusivamente o JSON completo "
+                                "Corrija a proposta e retorne exclusivamente o JSON completo, usando edits old/new para arquivos existentes "
                                 "exigido. Preserve o escopo permitido. Inclua unittest em tests. "
                                 "Não alegue que executou testes."
                             )
@@ -238,16 +244,28 @@ class DevelopmentTeam:
                     written, test_results = apply_and_test_proposal(
                         self.workspace_adapter, proposal, self.test_runner
                     )
+                    compact_tests = [
+                        {
+                            "suite": result.get("suite"),
+                            "status": result.get("status"),
+                            "returncode": result.get("returncode"),
+                            "output_tail": str(result.get("output", ""))[-1200:],
+                        }
+                        for result in test_results
+                    ]
                     answer = json.dumps({
                         "summary": proposal.summary,
                         "written_files": written,
-                        "tests": test_results,
+                        "tests": compact_tests,
                     }, ensure_ascii=False)
                 elif role == "testador" and self.workspace_adapter is not None:
                     try:
                         verdict = json.loads(answer)
                     except json.JSONDecodeError as exc:
-                        raise RuntimeError("Testador não retornou JSON de avaliação válido.") from exc
+                        raise RuntimeError(
+                            "Testador não retornou JSON de avaliação válido. "
+                            f"Resposta: {answer[:1200]!r}"
+                        ) from exc
                     if (
                         not isinstance(verdict, dict)
                         or set(verdict) != {"verdict", "evidence"}
@@ -255,7 +273,10 @@ class DevelopmentTeam:
                         or not isinstance(verdict.get("evidence"), str)
                         or not verdict["evidence"].strip()
                     ):
-                        raise RuntimeError("Testador não aprovou com evidência válida.")
+                        raise RuntimeError(
+                            "Testador não aprovou com evidência válida. "
+                            f"Resposta: {answer[:1200]!r}; avaliação: {verdict!r}"
+                        )
                 transcript.append(f"[{role}]\n{answer}")
                 with self._connection() as db:
                     self._event(db, task_id, role, "completed", answer)
