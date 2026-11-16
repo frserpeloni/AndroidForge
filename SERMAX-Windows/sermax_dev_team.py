@@ -38,6 +38,7 @@ ROLE_INSTRUCTIONS = {
         "content=null e edits como lista de objetos old/new. Cada trecho old precisa "
         "corresponder exatamente uma vez ao conteúdo atual. Prefira edições localizadas; "
         "nunca reescreva um arquivo grande para uma alteração pequena. Não crie stubs, "
+        "Sempre inclua imports explícitos para todos os novos módulos ou símbolos usados. "
         "imports fictícios nem dependências simuladas. tests deve incluir unittest e "
         "pode incluir compileall. Altere somente os caminhos autorizados pela tarefa. "
         "Não altere infraestrutura da equipe, workflows, credenciais ou memórias. "
