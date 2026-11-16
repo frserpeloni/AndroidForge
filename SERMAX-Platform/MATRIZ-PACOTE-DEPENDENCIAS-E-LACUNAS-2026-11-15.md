@@ -551,3 +551,10 @@ A proposta exclui administrador local, SYSTEM, kernel comprometido e modificaç�
 Permanecem pendentes: destino definitivo, evidência de ACL de todos os ancestrais, token do serviço, assinatura e confiança do pacote, staging, journal, rollback, recuperação e health gate. A seção 4A continua registrada como bloqueio para qualquer componente que dependa da combinação nativa não esclarecida.
 
 **Decisão:** broker com namespace protegido é a direção principal para avaliação. Não há autorização de implementação nem instalador distribuível.
+
+**Referências Microsoft:**
+- https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
+- https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-points
+- https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+- https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info
+- https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights
