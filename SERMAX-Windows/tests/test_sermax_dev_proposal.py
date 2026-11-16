@@ -42,6 +42,10 @@ class DevelopmentProposalTests(unittest.TestCase):
                 "summary": "x", "files": [{"path": "a.py", "content": "x"}],
                 "tests": ["compileall"],
             }),
+            json.dumps({
+                "summary": "x", "files": [{"path": "a.py", "content": "x"}],
+                "tests": [{"suite": "unittest"}],
+            }),
         )
         for raw in invalid:
             with self.subTest(raw=raw), self.assertRaises(ProposalError):
