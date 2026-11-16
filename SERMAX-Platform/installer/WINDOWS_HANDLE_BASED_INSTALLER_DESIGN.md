@@ -756,3 +756,84 @@ A failure at any step rejects the package before protected destination changes. 
 - Microsoft Learn, CryptMsgOpenToDecode: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentodecode
 - Microsoft Learn, CryptMsgControl: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgcontrol
 - Microsoft Learn, CryptMsgOpenToEncode: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentoencode
+
+
+## 11.17 Reconciliation with the existing SERMAX Windows update pipeline
+
+**Audit date:** 2026-11-16.  
+**Status:** reconciliation and architecture decision record. No updater, installer, package, or key was implemented by this section.
+
+### 11.17.1 Existing implementation discovered
+
+The repository already contains a separate, partially implemented signed-update validation pipeline under `SERMAX-Windows/`:
+
+- `sermax_update_manifest.py`: strict JSON schema 1 parser and manifest validator. The top-level fields are exactly `schema_version`, `release_version`, `files`, and `signature`. Each file declares `path`, `size`, `sha256`, `classification`, and `action`.
+- `sermax_update_signature.py`: Ed25519 verifier using the `cryptography` library. It accepts a trusted public-key mapping from its caller. It does not load a key from the manifest.
+- `sermax_update_package.py`: validates a ZIP archive against an already authenticated manifest, entirely in memory, without extracting or writing files.
+- `sermax_update_inventory.py`: read-only filesystem inventory, with protected/unknown/managed/blocked classification.
+- `sermax_update_inventory_contract.py`: creates an in-memory plan by comparing an inventory with a validated signed manifest. It does not write to the filesystem.
+- `ARQUITETURA-ATUALIZADOR-TRANSACIONAL.md`: the transaction, staging, backup, journal, health-check and rollback architecture remains a specification, not an implemented updater.
+
+The current signed-manifest algorithm is Ed25519, not CMS/PKCS #7. The current package validator accepts ZIP, not the directory package proposed in section 11.16. Do not implement a second CMS/JCS package format for the Windows updater without a new architecture decision.
+
+### 11.17.2 Exact limits of the existing signature implementation
+
+The current manifest validator builds its signature payload by removing the `signature` field and serializing the remaining JSON with Python `json.dumps(ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)`. This is a project-specific deterministic serialization rule. It is not declared or tested as RFC 8785 JCS. The earlier JCS proposal in section 11.16 must not be treated as the implemented format.
+
+The Ed25519 verifier is a real cryptographic verifier, but trust is supplied by the caller. The current code and tests do not establish a production release key or a production public-key allowlist. Tests generate ephemeral test keys. The Windows CI pins `cryptography==50.0.2` for signature tests; the current `SERMAX.spec` does not list the updater modules or `cryptography` in its hidden imports/data. Therefore the existing frozen `SERMAX.exe` build is not proven to contain or invoke this update verifier.
+
+The ZIP validator receives the archive as bytes, checks exact file membership, paths, sizes, compression policy, and SHA-256, and returns metadata. It does not extract, stage, install, back up, journal, roll back, or prove crash recovery.
+
+### 11.17.3 Separate the two current installer tracks
+
+There are currently two distinct development tracks. They must not be conflated:
+
+| Track | Existing package model | Current capability | Missing before release |
+|---|---|---|---|
+| `SERMAX-Windows` updater | ZIP + signed JSON schema 1 + Ed25519 | Manifest validation, signature callback/backend, ZIP validation, read-only inventory and in-memory plan | Production key trust, key lifecycle, anti-rollback policy, frozen-runtime integration, extraction/staging, handle-safe writes, backup, durable journal, rollback, recovery and Windows acceptance |
+| `SERMAX-Platform/installer` | Directory + unsigned `manifest.json` schema 1 + payload folder | Explicit-file package builder, size/hash checks, preflight and path-based file replacement/backup attempts | Signature verification, trust policy, immutable plan, TOCTOU-safe transaction, durable journal/recovery, complete component matrix, dependency lock/SBOM, production installer and Windows acceptance |
+
+The Platform builder's unsigned directory schema v1 is not authenticated by the Windows Ed25519 verifier. The Windows ZIP validator cannot be assumed to accept the Platform builder's directory package. There is no evidence of a shared production package contract or an integrated installer between these tracks.
+
+### 11.17.4 Provisional component composition for a future SERMAX Platform release
+
+This is an audit classification, not an approved release manifest. It describes observed repository paths and the conditions required before each group can enter a release package.
+
+| Group | Observed source paths | Provisional treatment |
+|---|---|---|
+| Platform UI | `SERMAX-Platform/index.html`, `styles.css`, `app.js` | Candidate runtime files; package only after frozen/installed path resolution and browser smoke tests |
+| Platform API | `SERMAX-Platform/backend/server.py` | Candidate runtime file; requires pinned Python runtime and dependency closure |
+| Platform launcher | `SERMAX-Platform/sermax_platform_launcher.py` | Candidate runtime file; current Python development launcher, not a validated frozen entry point |
+| Platform dependencies | `SERMAX-Platform/backend/requirements.txt` | Current ranges: FastAPI, Uvicorn standard extra, HTTPX. No lockfile or resolved transitive dependency inventory exists in this branch |
+| SERMAX core | `SERMAX-Windows/sermax_core.py`, `sermax_planejador.py`, `sermax_executor.py`, `sermax_tarefas.py`, `ferramenta_windows.py`, `sermax_jarvis_adapter.py`, `sermax_widget_state.py`, `sermax_pestinha_adapter.py` | Candidate only after reconciliation against the approved SERMAX baseline and exact import/dependency closure |
+| Original Terminal | `SERMAX-Windows/SERMAX_terminal/sermax_terminal.py`, `sermax_voz.py`, `sermax_integracao_comandos.py`, plus `sermax_launcher.py` | Preserve original interface and include only with explicit compatibility and visual regression approval |
+| Pestinha code | Upstream pinned dependency collected by `collect_all("pestinha")` in `SERMAX-Windows/SERMAX.spec` | Conditional. GPL-3.0-or-later source correspondence and distribution analysis remain open. Do not include upstream `assets/` or `pets/` without separate rights evidence |
+| OpenJarvis worker | `SERMAX-Windows/sermax_jarvis_worker.py` and `sermax_jarvis_adapter.py` | Worker source is included by current spec, but the OpenJarvis Python 3.13 environment is separately installed and is not bundled in the current executable. Requires a separate environment/package contract and Apache-2.0 notices |
+| Python 3.14 build/runtime dependencies | CI currently installs PyInstaller, NumPy, psutil, pywin32 and cryptography 50.0.2; Pestinha is checked out at a pinned commit | Build/test evidence only. A production dependency lock, runtime closure and third-party notices are still required |
+| External local service | Ollama at `127.0.0.1:11434` and user-selected local model | Prerequisite, not part of the application payload. Never bundle or overwrite user models |
+| User data | Core memories; neural memory; Platform SQLite at `%USERPROFILE%\\.sermax-platform\\platform.sqlite3`; logs, preferences and user files | Never part of the update payload. Preserve byte-for-byte; migration requires a separate explicit and reversible plan |
+| External environments and caches | Python 3.13/3.14 virtual environments, Ollama model store, caches and local runtime assets | Preserve. Do not replace or delete as a side effect of application update |
+| Development-only content | tests, workflows, CI scripts, documentation, backups, `.deps`, virtual environments, logs and local secrets | Exclude from runtime package unless a specific operator document is intentionally approved |
+
+### 11.17.5 Observed packaging mismatch
+
+The current `SERMAX-Windows/SERMAX.spec` builds the original Terminal launcher. It collects Pestinha and includes selected Terminal/core modules and the Jarvis worker. It does not include the Platform UI/backend/launcher, and its hidden-import list does not include the signed updater modules.
+
+Conversely, the Platform launcher and backend are still a Python development layout. The repository does not yet demonstrate a single frozen executable or installer that starts the Platform, loads the approved core, preserves the Terminal as an administrative interface, prepares the separate OpenJarvis environment, and keeps all user data outside the application payload.
+
+This is a composition and integration gap, not a reason to replace the original `SERMAX.spec` or launcher in this branch.
+
+### 11.17.6 Architecture direction and next gates
+
+For the future unified SERMAX release, prefer one reviewed package contract and one transaction engine. Reuse of the existing Ed25519 + ZIP pipeline is the leading candidate because code already exists, but it is not approved as production architecture until the following are closed:
+
+1. Review the project-specific canonical JSON byte rules, publish test vectors, and decide whether to retain them or deliberately migrate schema with compatibility/version gates. Do not silently label the current serializer JCS.
+2. Provision no production key until the publisher identity, protected public-key allowlist, private-key custody, rotation, revocation and emergency recovery are approved.
+3. Add an explicit anti-rollback sequence and broker-owned state. Current schema 1 only declares SemVer `release_version`; SemVer alone is not durable anti-rollback state.
+4. Decide whether Platform files, Windows core, Terminal and worker environments form one release or separately versioned components. Define dependency and compatibility contracts.
+5. Resolve Pestinha GPL source correspondence and OpenJarvis Apache-2.0 notices/dependency inventory before binary distribution.
+6. Produce a complete allowlist with exact source path, destination path, component owner, version, runtime requirement, license notice, data classification and create/replace policy.
+7. Integrate signature verification, ZIP validation, inventory planning and a crash-safe installer only after the broker/handle-based security architecture is approved.
+8. Run install/update/rollback tests on clean Windows VMs and on a disposable copy of an existing installation. No test may target the user's live `C:\\SERMAX`.
+
+**Decision:** section 11.15 and 11.16 remain historical exploratory proposals. For the existing SERMAX Windows update track, Ed25519 + signed JSON schema 1 + ZIP is the implementation to audit, not CMS/PKCS #7 + directory schema v2. For the Platform installer track, the unsigned directory schema v1 remains development-only. Neither track is a validated installer or release.
