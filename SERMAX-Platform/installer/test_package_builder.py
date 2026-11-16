@@ -147,6 +147,70 @@ class PackageBuilderTests(unittest.TestCase):
             parse_mapping("../secrets.txt=secret.txt")
 
 
+    @unittest.expectedFailure
+    def test_known_toctou_source_parent_swap_must_not_read_outside_source_root(self):
+        from unittest.mock import patch
+        import sermax_package_builder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            nested = source / "nested"
+            nested.mkdir(parents=True)
+            source_file = nested / "app.py"
+            source_file.write_text("authorized", encoding="utf-8")
+            held_nested = source / "nested-held"
+            outside = root / "outside"
+            outside.mkdir()
+            (outside / "app.py").write_text("external-secret", encoding="utf-8")
+            output = root / "package"
+            real_copy = sermax_package_builder.shutil.copy2
+            swapped = {"value": False}
+            external_source_read = {"value": False}
+
+            def swap_source_parent_then_copy(src, dst, *args, **kwargs):
+                if not swapped["value"]:
+                    nested.rename(held_nested)
+                    if os.name == "nt":
+                        result = subprocess.run(
+                            ["cmd", "/c", "mklink", "/J", str(nested), str(outside)],
+                            capture_output=True, text=True, check=False,
+                        )
+                        if result.returncode != 0:
+                            raise unittest.SkipTest("Runner Windows não permitiu criar junction.")
+                    else:
+                        nested.symlink_to(outside, target_is_directory=True)
+                    swapped["value"] = True
+                if Path(src).resolve().parent == outside.resolve():
+                    external_source_read["value"] = True
+                return real_copy(src, dst, *args, **kwargs)
+
+            try:
+                with patch.object(
+                    sermax_package_builder.shutil,
+                    "copy2",
+                    side_effect=swap_source_parent_then_copy,
+                ):
+                    with self.assertRaises(BuildError):
+                        build_package(
+                            source,
+                            output,
+                            "1",
+                            [(Path("nested/app.py"), Path("app.py"))],
+                        )
+            finally:
+                if nested.is_symlink():
+                    nested.unlink()
+                elif os.name == "nt" and nested.exists():
+                    nested.rmdir()
+
+            self.assertTrue(swapped["value"], "A troca do diretório de origem não foi executada.")
+            self.assertFalse(
+                external_source_read["value"],
+                "O gerador leu um arquivo externo após a troca do diretório de origem.",
+            )
+            self.assertFalse(output.exists())
+
     def test_rejects_source_root_symlink(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
