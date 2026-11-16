@@ -17,6 +17,7 @@ MAX_EDIT_TEXT_BYTES = 100_000
 PROTECTED_BASENAMES = {
     "sermax_github_agent_runner.py", "sermax_groq_backend.py",
     "sermax_dev_team.py", "sermax_dev_proposal.py", "sermax_workspace.py",
+    "run_agent_suite.py",
     "sermax.spec", "memoria_sermax.json", "memoria_neural_pestinha.json",
 }
 
