@@ -1313,3 +1313,135 @@ The journal is not accepted for production until storage/ACL, record integrity, 
 - File caching and metadata behavior: https://learn.microsoft.com/windows/win32/fileio/file-caching
 - CreateFile write-through behavior: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
 - MoveFileExW and MOVEFILE_WRITE_THROUGH: https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-movefileexw
+
+
+## 11.22 Per-file rollback protocol and restoration evidence
+
+**Audit date:** 2026-11-16.  
+**Status:** rollback protocol specification only. No restore/delete code, transaction engine, broker, installer or rollback test was implemented.
+
+### 11.22.1 Scope and rollback boundary
+
+Rollback is a compensating transaction for a release that has not reached the durable COMMITTED state. It reverses only operations recorded in that transaction, in reverse order of their verified application.
+
+COMMITTED remains terminal. A failure discovered after COMMITTED does not rewrite the historical transaction as rolled back. It requires a new, separately authorized repair/recovery transaction with its own journal and confirmation policy.
+
+Rollback may touch only explicit program targets in the authenticated release plan and the transaction's own installation marker. It must never include memories, SQLite databases, conversation history, preferences, logs, attachments, Ollama models, Python environments, external services, original Terminal files outside the allowlist, user backups or arbitrary files.
+
+This protocol does not authorize automatic rollback. Whether a deterministic failure triggers automatic compensation or requires operator confirmation remains a policy decision.
+
+### 11.22.2 Per-target state model
+
+Each target has its own journaled state, separate from the overall transaction state:
+
+| Per-target state | Meaning | Permitted next states |
+|---|---|---|
+| NOT_STARTED | No operation intent exists for this target | APPLY_INTENT, NO_CHANGE_VERIFIED |
+| APPLY_INTENT | Durable write-ahead intent exists; mutation outcome not yet proven | APPLIED_VERIFIED, NO_CHANGE_VERIFIED, RECOVERY_REQUIRED |
+| APPLIED_VERIFIED | New target object and expected post-state were verified | RESTORE_INTENT, RECOVERY_REQUIRED |
+| RESTORE_INTENT | Durable rollback intent exists; restoration outcome not yet proven | RESTORED_VERIFIED, RECOVERY_REQUIRED |
+| RESTORED_VERIFIED | Prior approved content/metadata restored and verified | terminal for this target |
+| NO_CHANGE_VERIFIED | Inspection proves the original target remains unchanged, or an originally absent target remains absent | terminal for this target |
+| RECOVERY_REQUIRED | Actual object does not match a uniquely safe before/after state | manual/reviewed recovery only |
+
+A target cannot move from RESTORED_VERIFIED or NO_CHANGE_VERIFIED back to an apply state in the same transaction. A new release transaction is required for another change.
+
+### 11.22.3 Classify before changing anything
+
+Before rollback, inspect each target using the approved handle-bound namespace contract and compare it with the journal's expected before-state and after-state. Classify it as exactly one of:
+
+1. BEFORE: the original object is still present and matches the recorded pre-state identity and required metadata/content evidence. No restoration is needed; record NO_CHANGE_VERIFIED.
+2. AFTER: the target is exactly the object installed by this transaction and matches its recorded post-state identity, type, size and hash. It is eligible for a compensating restore, subject to backup verification.
+3. AMBIGUOUS: the target is missing unexpectedly, has a different identity, type, parent, content or metadata, or the required namespace proof is unavailable. Stop and record RECOVERY_REQUIRED.
+
+Do not classify by path string or content hash alone where object identity is required. Do not overwrite an unexpected object, even if its contents resemble the package. A third-party modification after the updater's write must be preserved for review, not silently replaced.
+
+If the process crashed after a durable apply intent but before the apply-completed record, the same classification applies. If the target is exactly BEFORE, record NO_CHANGE_VERIFIED. If it is exactly AFTER, it is eligible for rollback. If neither can be proven, require recovery.
+
+### 11.22.4 Reverse-order restoration
+
+Rollback processes targets in the exact reverse order of their verified apply-completed sequence numbers. It does not sort by path or infer dependency order. The journal sequence is the authoritative operation order.
+
+For each target classified AFTER:
+
+1. Verify the broker-owned backup reference, object identity, size, digest and required metadata against the pre-state backup record.
+2. Verify the backup belongs to this transaction and has not been reused by another target or transaction.
+3. Revalidate the current target and parent under the approved namespace contract.
+4. Persist and flush a RESTORE_INTENT record containing the target operation ID, installed-object identity/hash, backup identity/hash and expected restored content/metadata.
+5. Restore from the verified broker-owned backup using the approved handle-safe primitive.
+6. Read back the restored target through an admitted handle and verify its content hash, size, type and every metadata field included in the approved preservation contract.
+7. Record the new restored object's identity. A copy-based restore may create a new file ID; it must not falsely claim that the original pre-update file ID was recreated.
+8. Persist and flush RESTORED_VERIFIED only after every required check succeeds.
+
+If the target was originally absent and the transaction created it, rollback may remove it only when the exact transaction-created object is still present and matches the recorded post-state identity/type/hash. Persist a delete/restore intent first, perform the bounded removal, verify that the name is absent relative to the admitted parent, then record completion. If the object identity or namespace cannot be proven, do not delete it; enter RECOVERY_REQUIRED.
+
+If the original target was replaced and its backup is missing, corrupt, inaccessible or fails verification, do not attempt reconstruction from the release package. The package contains the new version, not the prior version. Preserve the installed target and all remaining evidence for reviewed recovery.
+
+### 11.22.5 Metadata and restoration equivalence
+
+The transaction must define, before implementation, which metadata is part of the restore contract for each managed file class. Candidate fields requiring an explicit decision include file attributes, timestamps, security descriptor/ACL, owner, alternate data streams, hard-link relationships, compression/encryption attributes and other filesystem-specific metadata.
+
+A backup hash proves content bytes, not complete filesystem equivalence. A successful rollback claim must state exactly which content and metadata dimensions were restored and verified. If a required metadata field cannot be captured or restored on a supported filesystem, that file class is not eligible for automated rollback on that filesystem.
+
+The pre-update file ID may differ after a copy-based restore. The journal must record the new identity and separately prove the restored content/metadata contract. It must not use the old ID as evidence that the same object was recreated.
+
+### 11.22.6 Installation marker and release identity
+
+The installation marker/version state is restored after all payload targets, in the reverse of its final publication order. It must never advertise the old release while any payload file remains in the new or ambiguous state.
+
+If marker restoration fails, the transaction remains ROLLING_BACK or enters RECOVERY_REQUIRED; it cannot be ROLLED_BACK. The marker's own prior bytes, identity and required metadata must have a verified backup.
+
+A rollback does not reset or lower a broker-owned anti-rollback sequence. Reinstalling an older signed package is a separate policy-controlled recovery action. Restoring program files and changing trusted release sequence state are distinct operations with separate authorization and audit.
+
+### 11.22.7 Crash recovery during rollback
+
+On restart, never trust an in-memory rollback cursor. Re-read and validate the journal, reacquire handles, verify backup artifacts and classify every target again.
+
+For a target with a durable RESTORE_INTENT but no completion record:
+- if the target matches the verified restored state, record RESTORED_VERIFIED after independent read-back;
+- if it still matches the exact installed AFTER state and the backup remains valid, resume only if the approved recovery policy permits repeating the restore operation;
+- if it matches neither state, or the backup is uncertain, enter RECOVERY_REQUIRED.
+
+Recovery must not assume a failed API call means no mutation occurred. It must inspect actual state. Repeated inspection without changes is idempotent. No backup or journal artifact is deleted during recovery.
+
+The transaction reaches ROLLED_BACK only when every target is RESTORED_VERIFIED or NO_CHANGE_VERIFIED, the installation marker is restored and verified, and the final rollback record is durably published and read back.
+
+### 11.22.8 Failure matrix
+
+| Condition | Required action |
+|---|---|
+| Target still equals original before-state | Record NO_CHANGE_VERIFIED; do not rewrite |
+| Target equals exact transaction-installed after-state and backup is valid | Restore under write-ahead protocol |
+| Target is missing or differs from both known states | RECOVERY_REQUIRED; preserve it |
+| Backup missing, corrupt or wrong transaction | RECOVERY_REQUIRED; do not synthesize old content |
+| Backup content valid but required metadata cannot be restored | RECOVERY_REQUIRED; do not claim full rollback |
+| Created target still matches exact transaction-created object | Remove under durable intent, then verify absence |
+| Created target was replaced or modified by another actor | RECOVERY_REQUIRED; do not delete |
+| Crash after restore intent | Reacquire and classify; never assume outcome |
+| Crash after restore but before completion record | Verify restored content/metadata and new identity, then record completion |
+| Marker restore fails | Keep transaction nonterminal or RECOVERY_REQUIRED |
+| Journal or namespace validation fails | RECOVERY_REQUIRED; preserve all artifacts |
+
+### 11.22.9 Required rollback tests
+
+On disposable Windows roots and every declared supported filesystem:
+- rollback after each target position in a multi-file commit;
+- reverse ordering is exact and recorded;
+- crash before/after restore intent, file restore/delete, read-back, completion record and marker restore;
+- target remains BEFORE, is exact AFTER, is missing, or is externally modified;
+- backup missing, truncated, tampered, substituted or associated with another transaction;
+- restore content matches but metadata differs;
+- ACL/owner/alternate-stream preservation according to the approved per-class contract;
+- newly created file removal, including replacement by a different object before rollback;
+- file ID changes after copy-based restoration;
+- disk full, access denied, sharing violation, volume removal and filesystem errors during rollback;
+- recovery repeated multiple times and after process/machine restart;
+- no rollback operation touches user data, original Terminal outside the allowlist, unrelated files or another transaction's artifacts.
+
+Every test records Windows build, filesystem, commit, command, before/after identities and hashes, journal sequence and result. A passing test is limited to the tested OS/filesystem configuration.
+
+### 11.22.10 Acceptance decision
+
+Per-file rollback is not accepted until object classification, backup ownership/integrity, restore metadata contract, write-ahead ordering, reverse sequencing, marker handling, crash recovery and fault-injection tests pass on all declared supported configurations.
+
+**Decision:** rollback behavior is specified, not implemented. The Windows namespace-resolution blocker in section 4A remains open. Journal trust/ACL decisions in section 11.21.9 and broker authorization in section 11.1 remain open. No automatic rollback policy, installer implementation, privileged operation or production release is approved by this section.
