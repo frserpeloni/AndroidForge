@@ -338,3 +338,31 @@ Before implementation is authorized, reviewers must approve all of the following
 7. Windows adversarial test cases, test identities, supported OS builds, and acceptance thresholds.
 
 Until all seven items are reviewed and explicitly approved, this remains a design proposal. No service, installer, ACL, privilege, or original SERMAX environment changes are authorized.
+
+
+### 11.13 Gap audit against the current installer code
+
+A source review of the current branch at commit `78ff8109b052492ad5f5b037a7994f0f6d65cc53` was performed against sections 11.9–11.12. This is a static code review, not a runtime test.
+
+**The current implementation is not the broker architecture described above.**
+
+1. `installer_gui.py` runs the installation directly in a worker thread by calling `install_package(package, destination, ...)`. The user selects both the package directory and destination directory. There is no Windows service, named-pipe server, client-token validation, service SID, or broker authorization layer in this path.
+2. The GUI defaults the destination to `Path.home() / "SERMAX"`. That is a per-user destination, not the machine-wide protected root assumed by the provisional threat model.
+3. `sermax_installer_core.py` accepts caller-selected `package_dir` and `install_dir` paths. It performs path-based validation and then uses `Path`, `os.open`, `shutil.copy2`, `tempfile.mkstemp`, `Path.write_text`, `Path.read_bytes`, `os.replace`, and path-based unlink operations for protected transaction objects. Rechecking paths does not bind later operations to the objects previously checked.
+4. The package manifest is JSON with SHA-256 and file-size values. The current loader verifies those values against files in the package directory, but the inspected code has no signature verification, publisher identity check, trusted release manifest, or independent signing trust anchor. The hashes provide package-internal consistency, not publisher authenticity.
+5. The current package builder creates the manifest and hashes, but the inspected implementation has no signing step or protected release-key workflow.
+6. The current README explicitly identifies the GUI as a development preview, states that the installer is not distributable, and records that package signing and publisher verification are absent.
+7. The current package format supports a caller-selected file mapping and a `preserve_paths` field. Preservation rules must be independently enforced by the trusted broker; the broker must not treat a client-authored manifest as authority to overwrite protected data or decide which user data is preserved.
+8. The installer currently backs up and replaces individual files and attempts rollback. Its README correctly states that this is not a globally atomic transaction. The broker design still needs a durable transaction journal and recovery implementation.
+
+**Required transition; do not implement until the architecture approval gate is passed**
+
+- Treat the current GUI and core as an untrusted client/package-preparation layer. They must not receive elevated rights or write access to the protected application root.
+- Introduce a separate broker executable/service only after the service identity, installation root, DACLs, pipe protocol, package trust anchor, and recovery model are approved.
+- Move all privileged destination operations behind the broker. The existing Python core must not be elevated as-is and must not be exposed as a generic privileged path API.
+- Have the broker copy the package into broker-owned staging, validate a strict signed release manifest and publisher identity, then install only from the validated broker-owned snapshot.
+- Define a signed package schema and key lifecycle before producing release packages. Do not accept a hash or signature-verification result supplied by the client.
+- Define a migration policy for existing per-user `%USERPROFILE%\\SERMAX` installations and any future machine-wide destination. Do not move, overwrite, delete, or merge an existing `C:\\SERMAX` installation, Terminal, memory, configuration, or backups automatically. Migration requires explicit user authorization and a tested preservation/rollback plan.
+- Keep the current GUI labeled as a development preview until a separate broker implementation, signed package pipeline, Windows adversarial tests, and recovery tests satisfy the acceptance gates.
+
+**Current conclusion:** the proposed broker is a new architecture, not a small hardening patch to the existing installer. The existing GUI/core cannot be made privileged by changing its launch level. The gap audit is evidence for planning only; no code was modified by this review.
