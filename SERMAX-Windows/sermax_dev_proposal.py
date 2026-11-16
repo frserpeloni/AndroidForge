@@ -12,6 +12,8 @@ from sermax_workspace import MAX_FILE_BYTES, WorkspaceAdapter, WorkspaceError
 MAX_PROPOSAL_BYTES = 2_000_000
 MAX_FILES = 10
 MAX_PATH_CHARS = 240
+MAX_EDITS = 12
+MAX_EDIT_TEXT_BYTES = 100_000
 PROTECTED_BASENAMES = {
     "sermax_github_agent_runner.py", "sermax_groq_backend.py",
     "sermax_dev_team.py", "sermax_dev_proposal.py", "sermax_workspace.py",
@@ -24,9 +26,16 @@ class ProposalError(ValueError):
 
 
 @dataclass(frozen=True)
+class ProposedEdit:
+    old: str
+    new: str
+
+
+@dataclass(frozen=True)
 class ProposedFile:
     path: str
-    content: str
+    content: str | None = None
+    edits: tuple[ProposedEdit, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -47,8 +56,14 @@ def _validate_development_path(path: str) -> None:
         and lowered[-1].startswith("test_")
         and lowered[-1].endswith("_regression.py")
     )
+    allowed_paths = {
+        item.replace("\\\\", "/").casefold()
+        for item in os.environ.get("SERMAX_DEV_ALLOWED_PATHS", "").split(";")
+        if item.strip()
+    }
     if (
-        normalized.startswith("/")
+        (allowed_paths and normalized.casefold() not in allowed_paths)
+        or normalized.startswith("/")
         or any(not part or part in {".", ".."} for part in parts)
         or any(part.startswith(".") for part in parts)
         or any(part in {".github", ".git", ".sermax_dev_backups", "sermax_terminal"} for part in lowered)
@@ -85,20 +100,65 @@ def parse_proposal(raw: str) -> ValidatedProposal:
         raise ProposalError("A proposta precisa incluir a suíte unittest autorizada.")
     parsed, seen = [], set()
     for item in files:
-        if not isinstance(item, dict) or set(item) != {"path", "content"}:
-            raise ProposalError("Cada arquivo exige path e content.")
+        if not isinstance(item, dict) or set(item) not in (
+            {"path", "content"},
+            {"path", "content", "edits"},
+        ):
+            raise ProposalError("Cada arquivo exige path e content, ou path, content e edits.")
         path, content = item["path"], item["content"]
+        raw_edits = item.get("edits")
         if not isinstance(path, str) or not path.strip() or len(path) > MAX_PATH_CHARS:
             raise ProposalError("Caminho inválido.")
         _validate_development_path(path)
-        if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES:
-            raise ProposalError("Conteúdo de arquivo inválido ou acima do limite.")
+        if (content is None) == (raw_edits is None):
+            raise ProposalError("Informe content ou edits, nunca ambos.")
+        parsed_edits = []
+        if content is not None:
+            if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES:
+                raise ProposalError("Conteúdo de arquivo inválido ou acima do limite.")
+        else:
+            if not isinstance(raw_edits, list) or not 1 <= len(raw_edits) <= MAX_EDITS:
+                raise ProposalError("A edição localizada exige de 1 a 12 operações.")
+            for edit in raw_edits:
+                if not isinstance(edit, dict) or set(edit) != {"old", "new"}:
+                    raise ProposalError("Cada edição exige old e new.")
+                old_text, new_text = edit["old"], edit["new"]
+                if (
+                    not isinstance(old_text, str) or not old_text
+                    or not isinstance(new_text, str)
+                    or len(old_text.encode("utf-8")) > MAX_EDIT_TEXT_BYTES
+                    or len(new_text.encode("utf-8")) > MAX_EDIT_TEXT_BYTES
+                ):
+                    raise ProposalError("Texto de edição vazio, inválido ou acima do limite.")
+                parsed_edits.append(ProposedEdit(old_text, new_text))
         normalized = path.replace("\\", "/").casefold()
         if normalized in seen:
             raise ProposalError("A proposta contém caminhos duplicados.")
         seen.add(normalized)
-        parsed.append(ProposedFile(path, content))
+        parsed.append(ProposedFile(path, content, tuple(parsed_edits)))
     return ValidatedProposal(summary.strip(), tuple(parsed), tuple(dict.fromkeys(tests)))
+
+
+def _materialize_content(workspace: WorkspaceAdapter, item: ProposedFile) -> str:
+    if item.content is not None:
+        return item.content
+    try:
+        content = workspace.read_text(item.path)
+    except WorkspaceError as exc:
+        raise ProposalError(
+            f"Edição localizada exige arquivo existente: {item.path}"
+        ) from exc
+    for edit in item.edits:
+        occurrences = content.count(edit.old)
+        if occurrences != 1:
+            raise ProposalError(
+                f"Trecho old precisa ocorrer exatamente uma vez em {item.path}; "
+                f"ocorrências encontradas: {occurrences}."
+            )
+        content = content.replace(edit.old, edit.new, 1)
+        if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+            raise ProposalError("Resultado da edição excede o limite do arquivo.")
+    return content
 
 
 def preview_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> list[dict]:
@@ -109,7 +169,8 @@ def preview_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -
             if target.exists():
                 raise ProposalError("Modo de teste aceita somente arquivo de regressão novo.")
         try:
-            diff = workspace.preview(item.path, item.content)
+            new_content = _materialize_content(workspace, item)
+            diff = workspace.preview(item.path, new_content)
         except WorkspaceError as exc:
             raise ProposalError(f"Arquivo fora do escopo: {item.path}") from exc
         previews.append({"path": item.path, "diff": diff})
@@ -120,7 +181,7 @@ def apply_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> 
     preview_proposal(workspace, proposal)
     written = []
     for item in proposal.files:
-        workspace.write_text(item.path, item.content)
+        workspace.write_text(item.path, _materialize_content(workspace, item))
         written.append(item.path)
     return written
 
