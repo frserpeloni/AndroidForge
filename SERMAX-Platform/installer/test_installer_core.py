@@ -40,7 +40,6 @@ def _hold_installation_lock_for_test(root, acquired, release):
 
 class InstallerCoreTests(unittest.TestCase):
     @unittest.expectedFailure
-    @unittest.skipIf(os.name == "nt", "Este teste usa symlink POSIX; a variante Windows exige junction.")
     def test_known_toctou_parent_swap_must_not_write_outside_install_root(self):
         from unittest.mock import patch
         import sermax_installer_core
@@ -64,19 +63,31 @@ class InstallerCoreTests(unittest.TestCase):
             def swap_parent_then_copy(source, target, *args, **kwargs):
                 if not swapped["value"] and Path(target).name.startswith(".sermax-install-"):
                     target_parent.rename(held_parent)
-                    target_parent.symlink_to(outside, target_is_directory=True)
+                    if os.name == "nt":
+                        result = subprocess.run(
+                            ["cmd", "/c", "mklink", "/J", str(target_parent), str(outside)],
+                            capture_output=True, text=True, check=False,
+                        )
+                        if result.returncode != 0:
+                            raise unittest.SkipTest("Runner Windows não permitiu criar junction.")
+                    else:
+                        target_parent.symlink_to(outside, target_is_directory=True)
                     swapped["value"] = True
                 result = real_copy(source, target, *args, **kwargs)
                 if Path(target).resolve().parent == outside.resolve() and Path(target).exists():
                     external_write_observed["value"] = True
                 return result
 
-            with patch.object(
-                sermax_installer_core.shutil, "copy2",
-                side_effect=swap_parent_then_copy
-            ):
-                with self.assertRaises(PackageError):
-                    install_package(package, destination)
+            try:
+                with patch.object(
+                    sermax_installer_core.shutil, "copy2",
+                    side_effect=swap_parent_then_copy
+                ):
+                    with self.assertRaises(PackageError):
+                        install_package(package, destination)
+            finally:
+                if os.name == "nt" and target_parent.exists():
+                    target_parent.rmdir()
 
             self.assertTrue(swapped["value"], "A troca do diretório pai não foi executada.")
             self.assertFalse(
