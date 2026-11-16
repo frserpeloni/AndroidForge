@@ -395,3 +395,49 @@ Aprovar schema de health profile, capacidades obrigatórias, identidade de proce
 Testes exigidos cobrem processo antigo já ativo, PID reutilizado, identidade incorreta, API online com readiness falha, resposta obsoleta, SQLite corrompido/ocupado, núcleo ausente, motores opcionais, falhas em cada fase do marcador e journal, crash, disco cheio e recuperação repetida.
 
 **Decisão:** contrato de saúde e fronteira COMMITTED documentados. A implementação permanece bloqueada pelas pendências de segurança da seção 4A, decisões do journal, aprovação do broker e política de rollback. Não existe instalador distribuível.
+
+
+## 15. Recuperação após queda de energia no marcador e em COMMITTED, 2026-11-16
+
+**Status:** especificação documental. Nenhum mecanismo de recuperação, publicador de marcador, journal writer, instalador ou teste de queda de energia foi implementado.
+
+### 15.1 Regra de sucesso
+
+O marcador de versão, isoladamente, nunca comprova COMMITTED. A instalação só recebe esse estado quando payload, evidência de saúde, marcador e registro final do journal forem verificados. A recuperação ocorre antes de liberar a aplicação candidata ou aceitar nova instalação.
+
+Após reinício, handles, cursores, confirmações, processos e resultados de saúde em memória são descartados. O broker relê o journal, valida a cadeia e readquire os objetos por handles seguros.
+
+### 15.2 Classificação do marcador
+
+| Estado encontrado | Ação |
+|---|---|
+| Marcador antigo e payload antigo | Não houve commit. Abortar ou reverter somente conforme política aprovada. |
+| Marcador antigo e payload novo | Não houve commit. Manter aplicação bloqueada. Republicar exige autorização de recuperação e nova validação. |
+| Marcador novo, payload novo, sem COMMITTED válido | Continua não confirmado. Finalização depende de política explícita e evidência revalidada; caso contrário RECOVERY_REQUIRED. |
+| Marcador novo, payload novo e registro COMMITTED íntegro | Reconhecer COMMITTED após validar cadeia, marcador, payload e release. Não reescrever o registro terminal. |
+| Marcador novo com payload misto ou incompleto | RECOVERY_REQUIRED. Não iniciar aplicação. |
+| Marcador ausente, truncado, inválido ou com identidade divergente | RECOVERY_REQUIRED. Preservar evidências. |
+| Journal truncado, cadeia quebrada ou registros conflitantes | RECOVERY_REQUIRED. Não inferir sucesso. |
+| COMMITTED válido com arquivos ou marcador alterados depois | Manter histórico COMMITTED e abrir reparo separado, autorizado. |
+
+### 15.3 Pontos de queda
+
+A matriz técnica distingue interrupção antes/depois da intenção, durante a substituição do marcador, antes/depois da leitura de retorno, durante a publicação do registro final, durante flush e antes da confirmação ao processo escritor.
+
+Uma chamada interrompida nunca significa ausência de alteração. A recuperação inspeciona o estado real. Não repete a publicação do marcador às cegas e não grava um segundo COMMITTED para ocultar uma publicação incerta.
+
+Registro final incompleto ou truncado não é COMMITTED. Se a semântica de durabilidade não for comprovada, o estado é RECOVERY_REQUIRED.
+
+### 15.4 Gate de inicialização e preservação
+
+O broker classifica transações incompletas antes de liberar a aplicação candidata. Se o broker, journal, raiz ou marcador não forem confiáveis, a aplicação permanece bloqueada e a recuperação exige procedimento confiável separado.
+
+Memórias, SQLite, histórico, preferências, logs, anexos, modelos Ollama, ambientes Python, serviços externos, Terminal original fora da allowlist e backups do usuário ficam fora da recuperação.
+
+### 15.5 Testes e decisões pendentes
+
+Testar queda controlada antes e depois de cada gravação, flush, publicação e leitura de retorno do marcador e journal, incluindo disco cheio, remoção de volume, cache de escrita, corrupção, truncamento, duplicação, cadeia quebrada, marcador antigo/novo/ausente/corrompido e recuperação repetida.
+
+Aprovar formato e metadados do marcador, primitiva de publicação por filesystem, regra de journal truncado, gate de inicialização, política de finalização após marcador novo sem COMMITTED, procedimento operador e matriz de armazenamento suportado.
+
+**Decisão:** contrato de recuperação documentado. Sem implementação ou testes de queda de energia. Permanecem os bloqueios de namespace da seção 4A, journal/broker, rollback e política de saúde. Não existe instalador distribuível.
