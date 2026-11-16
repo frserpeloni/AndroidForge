@@ -89,3 +89,61 @@ Esta tabela é uma classificação preliminar. O pacote builder exige mapeamento
 O CI da Plataforma no commit `2b7378050c37ea434a549ba71c9ce9b4e71d2438` concluiu com sucesso. Isso valida os jobs automatizados declarados no workflow, não uma instalação no computador do usuário.
 
 O instalador segue em protótipo. Não existe instalador distribuível nem atualização segura completa. Esta matriz é documentação de auditoria e não altera arquivos funcionais, dados ou instalação local.
+
+
+## 8. Revalidação da composição e reconciliação com o atualizador Windows, 2026-11-16
+
+A inspeção da árvore da branch identificou um segundo conjunto de módulos, em `SERMAX-Windows/`, que não constava como pipeline de instalação integrado na matriz anterior. A composição abaixo é uma classificação de auditoria, não um manifesto de release.
+
+### 8.1 Dois formatos existentes, sem integração comprovada
+
+| Trilha | Formato atual | Situação observada |
+|---|---|---|
+| `SERMAX-Platform/installer` | Diretório com `manifest.json` schema v1 e `payload/` | Construtor e motor de desenvolvimento. Manifesto sem assinatura. |
+| `SERMAX-Windows/sermax_update_*` | ZIP + JSON schema 1 assinado Ed25519 | Validador de manifesto, backend de assinatura, validador ZIP, inventário e plano em memória. Não instala nem faz rollback. |
+
+Não converter automaticamente um formato no outro. A arquitetura detalhada está na seção 11.17 de `installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md`.
+
+### 8.2 Composição candidata por grupo
+
+| Grupo | Arquivos observados | Regra de pacote |
+|---|---|---|
+| Interface Plataforma | `SERMAX-Platform/index.html`, `styles.css`, `app.js` | Candidatos ao runtime. Exigem validação do caminho quando empacotados. |
+| API Plataforma | `SERMAX-Platform/backend/server.py` | Candidato ao runtime. Exige ambiente Python e dependências fixadas. |
+| Launcher Plataforma | `SERMAX-Platform/sermax_platform_launcher.py` | Launcher Python de desenvolvimento. Não há executável congelado validado para a Plataforma. |
+| Dependências Plataforma | `SERMAX-Platform/backend/requirements.txt` | FastAPI, Uvicorn com extra standard e HTTPX em faixas de versão. Falta lockfile e inventário transitivo. |
+| Núcleo | `SERMAX-Windows/sermax_core.py`, `sermax_planejador.py`, `sermax_executor.py`, `sermax_tarefas.py`, `ferramenta_windows.py`, `sermax_jarvis_adapter.py`, `sermax_widget_state.py`, `sermax_pestinha_adapter.py` | Candidatos condicionados à reconciliação com a candidata aprovada e ao fechamento de imports/dependências. |
+| Terminal original | `SERMAX-Windows/SERMAX_terminal/sermax_terminal.py`, `sermax_voz.py`, `sermax_integracao_comandos.py`, `sermax_launcher.py` | Preservar identidade visual e comportamento. Inclusão exige teste visual e funcional. |
+| Pestinha | Dependência upstream fixada e coletada pelo `SERMAX.spec` | Condicionado à resolução de GPL-3.0-or-later e fonte correspondente. Excluir `assets/` e `pets/` sem direitos comprovados. |
+| OpenJarvis | `sermax_jarvis_worker.py` e adaptador, com ambiente Python 3.13 externo | Worker é incluído no spec atual; ambiente OpenJarvis não é empacotado no executável. Exige pacote/instalador próprio e avisos Apache-2.0. |
+| Ollama e modelos | Serviço local em `127.0.0.1:11434` e modelos do usuário | Pré-requisito externo. Nunca incluir nem substituir modelos locais. |
+| Dados do usuário | `memoria_sermax.json`, `memoria_neural_pestinha.json`, banco `%USERPROFILE%\\.sermax-platform\\platform.sqlite3`, logs, preferências e históricos | Fora do payload. Preservar byte a byte. Migração em plano separado, autorizado e reversível. |
+| Desenvolvimento | Testes, workflows, documentação, backups, `.deps`, ambientes virtuais, logs e segredos | Excluir do runtime. |
+
+### 8.3 Dependências efetivamente observadas
+
+- Workflow Windows prepara Python 3.14 com PyInstaller, NumPy, psutil, pywin32 e `cryptography==50.0.2`.
+- Pestinha é obtido em commit upstream fixado e exposto ao ambiente de build via `PYTHONPATH`; o spec usa `collect_all("pestinha")`.
+- OpenJarvis é instalado em Python 3.13 separado, em commit upstream fixado. O executável atual inclui o worker, mas não inclui o ambiente Python 3.13.
+- A Plataforma declara FastAPI, Uvicorn[standard] e HTTPX sem versões fechadas. `package.json` mantém jsdom em `devDependencies`, portanto não pertence ao runtime.
+- A presença de dependências no ambiente de CI não comprova que todas estejam incorporadas ao executável ou disponíveis no computador do usuário. É necessário SBOM/lockfile e inspeção do artefato final.
+
+### 8.4 Limites do atualizador assinado existente
+
+Os módulos `sermax_update_manifest.py`, `sermax_update_signature.py`, `sermax_update_package.py`, `sermax_update_inventory.py` e `sermax_update_inventory_contract.py` implementam validação e planejamento sem escrita. O backend Ed25519 aceita allowlist de chaves públicas fornecida pelo chamador; não há chave pública de release aprovada ou provisionada. Os testes geram chaves efêmeras. O validador ZIP não extrai arquivos nem instala.
+
+O manifesto atual usa serialização JSON determinística própria, com `sort_keys=True` e separadores compactos. Não rotular como RFC 8785/JCS. O `SERMAX.spec` atual não declara esses módulos do atualizador em sua lista de imports ocultos, nem há evidência de que o executável congelado os invoque.
+
+### 8.5 Decisão e pendências
+
+1. Manter as duas trilhas identificadas, sem declarar compatibilidade entre os formatos.
+2. Tratar Ed25519 + schema 1 + ZIP como candidato de continuidade para o atualizador Windows existente, sujeito a chave de produção, anti-rollback e integração com transação segura.
+3. Não adotar CMS/PKCS #7 + diretório schema v2 como segundo formato paralelo sem decisão arquitetural expressa.
+4. Definir se a futura Plataforma e o núcleo Windows serão um pacote único ou componentes versionados separadamente.
+5. Fechar versões de dependências, dependências transitivas, SBOM e avisos de licenças.
+6. Resolver Corresponding Source Pestinha e avisos/dependências OpenJarvis antes de distribuição binária.
+7. Validar o launcher da Plataforma em layout congelado e provar que ele encontra backend e núcleo sem alterar o launcher original.
+8. Produzir allowlist de arquivos com origem, destino, proprietário funcional, versão, dependência, licença, classificação de dados e ação permitida.
+9. Integrar validação, staging, backup, journal, instalação e rollback somente após aprovação do desenho de segurança.
+
+**Conclusão atualizada:** não existe composição oficial fechada, pacote completo ou instalador distribuível. Esta seção documenta os arquivos e lacunas observados na branch em 2026-11-16.
