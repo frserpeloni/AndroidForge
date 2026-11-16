@@ -53,6 +53,59 @@ class PackageBuilderTests(unittest.TestCase):
 
             self.assertFalse(output.exists())
 
+
+    @unittest.expectedFailure
+    @unittest.skipIf(os.name == "nt", "A variante Windows exige uma junction e deve ser validada separadamente.")
+    def test_known_toctou_output_parent_swap_must_not_publish_outside_output_parent(self):
+        from unittest.mock import patch
+        import sermax_package_builder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            source = base / "source"
+            source.mkdir()
+            (source / "app.py").write_text("payload", encoding="utf-8")
+            output_parent = base / "staging-parent"
+            output_parent.mkdir()
+            held_parent = base / "staging-parent-held"
+            outside = base / "outside"
+            outside.mkdir()
+            output = output_parent / "package"
+            real_copy = sermax_package_builder.shutil.copy2
+            external_write_observed = {"value": False}
+            swapped = {"value": False}
+
+            def swap_output_parent_then_copy(src, dst, *args, **kwargs):
+                if not swapped["value"]:
+                    staging_dir = Path(dst).parents[1]
+                    output_parent.rename(held_parent)
+                    output_parent.symlink_to(outside, target_is_directory=True)
+                    redirected_stage = outside / staging_dir.name / "payload"
+                    redirected_stage.mkdir(parents=True)
+                    swapped["value"] = True
+                result = real_copy(src, dst, *args, **kwargs)
+                if Path(dst).resolve().parent == redirected_stage.resolve():
+                    external_write_observed["value"] = True
+                return result
+
+            with patch.object(
+                sermax_package_builder.shutil,
+                "copy2",
+                side_effect=swap_output_parent_then_copy,
+            ):
+                build_package(
+                    source,
+                    output,
+                    "1",
+                    [(Path("app.py"), Path("app.py"))],
+                )
+
+            self.assertTrue(swapped["value"], "A troca do diretório de saída não foi executada.")
+            self.assertFalse(
+                external_write_observed["value"],
+                "O gerador escreveu conteúdo no diretório externo após a troca do pai.",
+            )
+
     def test_rejects_output_inside_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
