@@ -27,7 +27,7 @@ class PlatformApiTests(unittest.TestCase):
         server.CORE_MODULE = None
         server.CORE_ERROR = None
         server.initialize_database()
-        self.client = TestClient(server.app)
+        self.client = TestClient(server.app, client=("127.0.0.1", 50000))
         self.headers = {"host": "127.0.0.1:8765"}
 
     def tearDown(self):
@@ -252,7 +252,7 @@ class PlatformApiTests(unittest.TestCase):
         self.client.close()
         # Reabre a aplicação usando o mesmo arquivo SQLite, como em um novo processo.
         server.initialize_database()
-        restarted_client = TestClient(server.app)
+        restarted_client = TestClient(server.app, client=("127.0.0.1", 50001))
         try:
             projects = restarted_client.get("/api/projects", headers=self.headers).json()
             self.assertEqual(projects[0]["id"], project["id"])
