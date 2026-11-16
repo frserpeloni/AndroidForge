@@ -619,3 +619,140 @@ No implementation should begin until the following are approved:
 - https://learn.microsoft.com/windows/win32/api/wintrust/nf-wintrust-winverifytrust
 - https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-certgetcertificatechain
 - https://learn.microsoft.com/windows/win32/seccrypto/using-signtool-to-verify-a-file-signature
+
+
+## 11.16 Proposed package layout and manifest schema v2
+
+**Status:** proposed format only. The current builder and installer still implement unsigned schema v1. This section does not change runtime behavior and does not authorize a format migration or installer implementation.
+
+### 11.16.1 Current observed format
+
+The current `sermax_package_builder.py` writes a directory package containing `manifest.json` and `payload/`. Its schema v1 manifest contains `schema_version`, `version`, `package_type`, `created_by`, `preserve_paths`, and `files`. Each file record contains `source`, `target`, `sha256`, and `size_bytes`.
+
+The current builder serializes ordinary indented JSON and does not create a detached signature. The current loader accepts schema v1 and verifies file size and SHA-256, but does not verify a publisher signature. Its `preserve_paths` comes from the package manifest. This is not an authority model suitable for a privileged broker.
+
+The current README accurately labels the installer as a development prototype, unsigned, not distributable, and not a complete SERMAX package. These facts remain unchanged.
+
+### 11.16.2 Candidate directory layout
+
+Keep the existing directory-based package for the first signed-format proposal. Do not introduce ZIP or another archive container in this phase; that would add archive extraction, entry-name normalization, duplicate-entry, and decompression resource risks without solving a current requirement.
+
+Proposed layout:
+
+```text
+SERMAX-PACKAGE/
+  manifest.json
+  manifest.p7s
+  payload/
+    <explicit relative files>
+```
+
+- `manifest.json`: exact UTF-8 bytes covered by the detached signature.
+- `manifest.p7s`: detached CMS/PKCS #7 SignedData object.
+- `payload/`: only the regular files enumerated in the signed manifest.
+- No symlink, junction, reparse point, hard link, alternate data stream, device, socket, or other non-regular object is permitted.
+- No unlisted file or directory is permitted under `payload/`. The package root contains only the two manifest files and `payload/`.
+- The broker stages the received package into a broker-owned location, validates that staged copy, and installs from that same staged snapshot.
+
+This proposal intentionally avoids claiming that a directory tree is immutable by filesystem convention. The broker must own and protect its staging area and must prevent post-validation mutation using the approved handle-based or broker-owned snapshot design.
+
+### 11.16.3 Proposed schema v2
+
+The following is an illustrative schema shape, not a production manifest and not a signed package:
+
+```json
+{
+  "schema_version": 2,
+  "package_type": "sermax",
+  "product_id": "SERMAX",
+  "release_id": "release-unique-id",
+  "channel": "stable",
+  "version": "version-string",
+  "release_sequence": "monotonic-decimal-string",
+  "minimum_broker_version": "version-string",
+  "created_at_utc": "RFC3339-UTC-timestamp",
+  "files": [
+    {
+      "source": "payload/SERMAX-Platform/example.dat",
+      "target": "SERMAX-Platform/example.dat",
+      "file_type": "regular",
+      "size_bytes": 1234,
+      "sha256": "64-lowercase-hex-characters"
+    }
+  ]
+}
+```
+
+Schema rules:
+
+- Reject unknown schema versions and unknown critical fields. Define extension behavior explicitly before adding optional fields.
+- `product_id` is a fixed broker-accepted identifier, not a free-form destination selector.
+- `release_id` is unique for a published release.
+- `channel` is an allowlisted value. The broker's local policy decides which channels it accepts.
+- `release_sequence` is a decimal string containing a positive integer with no sign or leading zero. A string avoids cross-runtime integer precision differences. The broker stores the highest accepted sequence per product/channel in protected state.
+- `version` remains a display and compatibility identifier. It does not replace the monotonic sequence check.
+- `created_at_utc` is informational and subject to strict timestamp parsing. It is not a substitute for a trusted timestamp or anti-rollback state.
+- `minimum_broker_version` prevents packages requiring a newer verifier or transaction protocol from being installed by an older broker.
+- Every file record has one normalized source path under `payload/`, one normalized destination-relative path, exact byte size, SHA-256, and an explicit regular-file type.
+- File paths use forward slashes, UTF-8, and one documented normalization policy. Reject absolute paths, traversal, empty/dot components, alternate separators, drive/UNC prefixes, ADS syntax, trailing dots/spaces, Windows reserved names, case-insensitive duplicates, Unicode-normalization collisions, and file/directory prefix conflicts.
+- Sort the file list by the normalized destination path using an explicitly defined ordinal comparison. Do not use locale-sensitive ordering.
+- Reject duplicate JSON property names before canonicalization. Reject invalid UTF-8, a BOM, invalid Unicode scalar sequences, NaN/Infinity, and numeric values outside the schema's permitted ranges.
+- Reject duplicate file entries, unlisted payload files, missing files, and all unsupported filesystem object types.
+- The package manifest does not contain `preserve_paths`, arbitrary destination roots, ACL instructions, commands, scripts, or rollback authorization. Those decisions belong to broker policy.
+
+### 11.16.4 Exact bytes to sign
+
+Candidate canonicalization: RFC 8785 JSON Canonicalization Scheme (JCS), applied to the validated schema v2 JSON object. The signing input is the UTF-8 byte sequence produced by JCS. The verifier parses with duplicate-key detection, validates the schema, canonicalizes according to the same JCS rules, and verifies the detached CMS signature over those exact canonical bytes.
+
+This is preferable to signing the current pretty-printed JSON output because JSON whitespace and property ordering can vary without changing the logical object. JCS defines deterministic property ordering and UTF-8 output for cryptographic use. It is an informational RFC, so the project must pin a tested implementation and conformance vectors rather than assume any generic JSON serializer is JCS-compliant.
+
+The package may store canonical bytes directly in `manifest.json`, which simplifies review and ensures the on-disk signed object is also the verifier input. If this option is selected, require byte-for-byte canonical form and reject noncanonical input rather than silently accepting multiple representations.
+
+No timestamp, whitespace, line ending, encoding conversion, or reserialization step may occur between the final signing operation and verification. Any manifest change requires a new signature.
+
+### 11.16.5 Validation order
+
+The broker's proposed validation sequence is:
+
+1. Authenticate and authorize the local client under the approved pipe protocol.
+2. Receive a bounded package stream into broker-owned staging. The client must not retain write access to the staged copy.
+3. Validate package-root and payload object types, allowed names, path normalization, entry count, total byte count, and resource limits.
+4. Parse manifest bytes with strict UTF-8 and duplicate-key rejection; validate schema v2 and canonical JCS representation.
+5. Verify the detached CMS signature over canonical manifest bytes.
+6. Validate signer pin, certificate policy, signing purpose, timestamp, revocation policy, product identity, channel, broker compatibility, and release sequence.
+7. Compare the exact payload inventory with the signed file list. Reject missing, extra, duplicate, or unsupported entries.
+8. Hash and size-check every staged payload file against the signed manifest.
+9. Bind the verified staged snapshot to a durable transaction record. Installation must consume that exact snapshot, not reopen the original client path.
+10. Recheck transaction state and protected destination preconditions before any protected write.
+
+A failure at any step rejects the package before protected destination changes. Recovery and rollback remain governed by the separately approved transaction design.
+
+### 11.16.6 Schema v1 compatibility and migration
+
+- Schema v1 remains the current development-only format until a reviewed implementation and migration are explicitly approved.
+- A future production broker should reject unsigned schema v1 by default.
+- Do not silently interpret a v1 manifest as v2 or infer missing publisher, channel, sequence, or trust fields.
+- Any temporary legacy import path must be a separate, explicit, non-privileged development operation. It must never be callable as a privileged install fallback.
+- A schema v2 implementation requires dedicated positive and negative tests, cross-version canonicalization vectors, signature interoperability tests, and Windows verification tests.
+- No existing package, installation directory, `C:\SERMAX`, Terminal, memory, configuration, or backup is modified by this proposal.
+
+### 11.16.7 Required acceptance tests
+
+- JCS canonicalization vectors match the selected reference implementation byte-for-byte.
+- Reordered JSON properties produce the same canonical signing input; altered values do not.
+- Duplicate keys, invalid UTF-8, BOM, invalid Unicode, noncanonical input, NaN/Infinity, and malformed timestamps are rejected.
+- Signature verification fails after any signed manifest field is changed.
+- File size/hash changes, missing files, extra files, duplicate entries, path case collisions, Unicode collisions, traversal, ADS, reparse objects, hard links, and unsupported object types are rejected.
+- Release sequence replay, downgrade, channel mismatch, wrong product, insufficient broker version, expired package policy, revoked signer, and untrusted signer are rejected.
+- Client mutation attempts after upload finalization cannot alter the broker-owned staged snapshot.
+- Crash/restart during upload, verification, and install leaves a recoverable transaction state and never treats an unverified package as installed.
+
+**Decision status:** schema v2 and package layout are proposals. They require review and explicit approval. No schema migration, signing implementation, broker implementation, package publication, or installation is authorized by this section.
+
+### 11.16.8 References
+
+- RFC 8785, JSON Canonicalization Scheme: https://www.rfc-editor.org/rfc/rfc8785.html
+- Microsoft Learn, Decoding Signed Data: https://learn.microsoft.com/windows/win32/seccrypto/decoding-signed-data
+- Microsoft Learn, CryptMsgOpenToDecode: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentodecode
+- Microsoft Learn, CryptMsgControl: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgcontrol
+- Microsoft Learn, CryptMsgOpenToEncode: https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentoencode
