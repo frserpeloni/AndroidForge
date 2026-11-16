@@ -4,6 +4,7 @@ name: SERMAX Development Agents
 # Linux agents run portable core and team tests; the Windows CI owns Win32-specific coverage.
 # Current task is limited to one exact core edit and one new regression test.
 # Portable test fixtures use explicit newline construction to avoid escaped-text ambiguity.
+# Exact-match patch old/new text is supplied verbatim in the task.
 # Existing files are modified only through exact-match localized edits.
 
 on:
@@ -18,7 +19,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. Bug confirmado: o código normaliza a mensagem em `comando`, mas extrai o objetivo de `mensagem.split(" ",1)[1].strip()`, que falha quando a entrada tem espaços iniciais ou repetidos. Faça edição localizada old/new substituindo a extração para `comando.split(" ",1)[1].strip()`. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando entrada com espaços no início e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.'
+        default: 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. O código atual usa a expressão `mensagem.split(" ",1)[1].strip()` depois de normalizar a entrada em `comando`. Faça uma única edição localizada com estes valores exatos: old = `mensagem.split(" ",1)[1].strip()`; new = `comando.split(" ",1)[1].strip()`. Não inclua indentação nem a linha return no trecho old. Não altere nenhum outro trecho de sermax_core.py. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando espaços iniciais e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.'
         type: string
 
 permissions:
@@ -108,7 +109,7 @@ jobs:
           GROQ_MAX_TOKENS: "2048"
           SERMAX_DEV_ALLOWED_PATHS: "sermax_core.py;tests/test_sermax_core_command_regression.py"
           SERMAX_DEV_TASK: >-
-            ${{ inputs.task || 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. Bug confirmado: o código normaliza a mensagem em `comando`, mas extrai o objetivo de `mensagem.split(" ",1)[1].strip()`, que falha quando a entrada tem espaços iniciais ou repetidos. Faça edição localizada old/new substituindo a extração para `comando.split(" ",1)[1].strip()`. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando entrada com espaços no início e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.' }}
+            ${{ inputs.task || 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. O código atual usa a expressão `mensagem.split(" ",1)[1].strip()` depois de normalizar a entrada em `comando`. Faça uma única edição localizada com estes valores exatos: old = `mensagem.split(" ",1)[1].strip()`; new = `comando.split(" ",1)[1].strip()`. Não inclua indentação nem a linha return no trecho old. Não altere nenhum outro trecho de sermax_core.py. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando espaços iniciais e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
