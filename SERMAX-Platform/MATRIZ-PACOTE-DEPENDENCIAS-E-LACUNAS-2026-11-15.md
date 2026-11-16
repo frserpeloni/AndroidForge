@@ -514,3 +514,40 @@ Identidade e privilégios do serviço; implantação machine-wide ou per-user; d
 - Testar parada, reinício, falha do serviço e reinício do Windows sem reutilização de autoridade em memória.
 
 **Decisão:** conta virtual dedicada com SID próprio é a candidata principal. SID restrito é alvo de teste, não configuração aprovada. LocalService permanece alternativa condicionada. NetworkService e LocalSystem não se justificam no escopo atual. Nenhuma implementação está autorizada. Os bloqueios da seção 4A e os gates do broker permanecem abertos.
+
+
+## 18. Decisão sobre a corrida de namespace no Windows, 2026-11-16
+
+**Estado:** decisão de arquitetura proposta para revisão. Nenhum código, ACL, serviço, broker ou instalador foi implementado.
+
+### 18.1 Evidência documentada
+
+- `FILE_FLAG_OPEN_REPARSE_POINT` faz o `CreateFileW` tentar abrir o próprio objeto reparse point no componente final. A documentação não estabelece esse sinalizador como garantia de que todos os componentes intermediários de um caminho arbitrário sejam resolvidos sem seguir reparse points.
+- `FILE_FLAG_BACKUP_SEMANTICS` permite abrir um diretório por handle. Não concede privilégio de backup por si só.
+- `SetFileInformationByHandle` opera sobre um handle já aberto. `FILE_RENAME_INFO.RootDirectory` aceita nome de destino relativo a um handle de diretório. Isso não prova que a árvore usada para obter os handles estava protegida contra substituição concorrente.
+- Share modes permanecem ativos enquanto o handle estiver aberto. Omitir `FILE_SHARE_DELETE` restringe aberturas posteriores que solicitem acesso de exclusão, quando compatível com os handles existentes. Não substitui ACLs e propriedade protegidas.
+
+### 18.2 Direção escolhida para avaliação
+
+A defesa principal contra processos de usuário padrão será impedir que eles alterem o namespace de instalação. O setup confiável provisiona uma raiz fixa e protege todos os ancestrais, desde a raiz do volume até a pasta de instalação.
+
+O broker deve verificar proprietário, DACL, ACEs herdadas e acesso efetivo de cada ancestral e objeto protegido. O usuário interativo e outros usuários padrão não recebem direitos para criar, substituir, renomear, excluir, inserir reparse points, alterar DACL ou assumir propriedade da árvore protegida.
+
+O broker copia o pacote para staging sob sua propriedade, valida os mesmos bytes que instalará e deriva destinos de uma raiz fixa com allowlist estrita. O cliente não escolhe destino, caminho ou comando. Qualquer incerteza sobre raiz, volume, ACL, owner ou identidade do objeto bloqueia a transação.
+
+### 18.3 Testes obrigatórios
+
+- Tentar criação, renomeação, exclusão, reparse point, WRITE_DAC e WRITE_OWNER em cada ancestral, como usuário interativo e segundo usuário padrão.
+- Verificar direitos FILE_DELETE_CHILD, FILE_ADD_FILE e FILE_ADD_SUBDIRECTORY.
+- Testar troca da origem do pacote durante intake e comprovar que a instalação usa o snapshot sob propriedade do broker.
+- Testar staging, backup, journal, marcador e binário do serviço contra substituição.
+- Registrar token real, SID, SDDL, owner, acesso efetivo, Windows build, filesystem e resultado.
+- Repetir em todas as versões Windows suportadas e testar recuperação após falhas separadamente.
+
+### 18.4 Limites e bloqueios
+
+A proposta exclui administrador local, SYSTEM, kernel comprometido e modificação offline. A proteção não está comprovada até que os testes de ACL e identidade passem em cada configuração suportada.
+
+Permanecem pendentes: destino definitivo, evidência de ACL de todos os ancestrais, token do serviço, assinatura e confiança do pacote, staging, journal, rollback, recuperação e health gate. A seção 4A continua registrada como bloqueio para qualquer componente que dependa da combinação nativa não esclarecida.
+
+**Decisão:** broker com namespace protegido é a direção principal para avaliação. Não há autorização de implementação nem instalador distribuível.
