@@ -147,3 +147,21 @@ O manifesto atual usa serialização JSON determinística própria, com `sort_ke
 9. Integrar validação, staging, backup, journal, instalação e rollback somente após aprovação do desenho de segurança.
 
 **Conclusão atualizada:** não existe composição oficial fechada, pacote completo ou instalador distribuível. Esta seção documenta os arquivos e lacunas observados na branch em 2026-11-16.
+
+
+## 9. Auditoria estática da integração inventário/manifesto/plano, 2026-11-16
+
+Foi identificada uma incompatibilidade que impede ligar os módulos atuais:
+
+1. `build_inventory_plan()` exige `file_id` de 128 bits para cada destino `replace`.
+2. `inventory_directory()` não retorna `file_id`, volume, nem handle retido. Retorna caminho, tipo, tamanho, SHA-256 e classificação.
+3. Os testes do planejador fabricam `file_id` em seus registros auxiliares. Portanto, não provam que o inventário real atende ao contrato.
+4. O inventário verifica entradas com `stat(follow_symlinks=False)`, mas calcula hash por `Path.open()` e tamanho por `Path.stat()`. São operações de caminho separadas, sujeitas a troca concorrente após a verificação. A admissão da raiz também não mantém handles dos ancestrais.
+5. O planejador recebe mappings comuns e não prova que foram produzidos pelo inventário confiável. A procedência é uma precondição textual, não uma garantia da interface.
+6. O planejador exige diretórios ancestrais existentes. O manifesto não possui operação explícita de criação de diretórios.
+7. O validador ZIP retorna contagens e hashes, mas não cria snapshot imutável em staging. O futuro instalador deverá consumir exatamente os bytes validados, sem reabrir caminho controlado pelo cliente.
+8. Não existe coordenador que vincule os bytes exatos do manifesto, ZIP, inventário, plano, staging e journal em uma única transação durável.
+
+**Classificação:** bloqueadores de integração e segurança. Os módulos permanecem protótipos de validação e leitura. Não conectar ao instalador, não elevar privilégios e não executar contra a instalação ativa. A auditoria detalhada consta na seção 11.18 de `installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md`.
+
+**Próxima tarefa permitida:** especificar o contrato do inventário Windows baseado em handles, incluindo identidade de volume/arquivo, retenção de handles, procedência do resultado e testes de concorrência. Não implementar serviço privilegiado nem instalação até aprovação arquitetural.
