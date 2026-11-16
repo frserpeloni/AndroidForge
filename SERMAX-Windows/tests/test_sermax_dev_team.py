@@ -8,14 +8,14 @@ from sermax_workspace import WorkspaceAdapter, TestRunner
 
 
 def _write_agent_suite(root):
-    script = (
-        "import sys, unittest\\n"
-        "suite = unittest.defaultTestLoader.discover('tests')\\n"
-        "result = unittest.TextTestRunner(verbosity=2).run(suite)\\n"
-        "sys.exit(0 if result.wasSuccessful() else 1)\\n"
-    )
+    newline = chr(10)
+    script = newline.join((
+        "import sys, unittest",
+        "suite = unittest.defaultTestLoader.discover('tests')",
+        "result = unittest.TextTestRunner(verbosity=2).run(suite)",
+        "sys.exit(0 if result.wasSuccessful() else 1)",
+    )) + newline
     (root / "tests" / "run_agent_suite.py").write_text(script, encoding="utf-8")
-
 
 class DevelopmentTeamTests(unittest.TestCase):
     def test_roles_share_one_model_callback_and_run_sequentially(self):
