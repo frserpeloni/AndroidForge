@@ -94,15 +94,22 @@ class GroqChatBackend:
                     exc.close()
                 if exc.code == 429 and attempt < self.max_retries:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                    match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", detail, re.I)
+                    match = re.search(
+                        r"try again in (?:(\\d+)m)?([0-9]+(?:\\.[0-9]+)?)s",
+                        detail,
+                        re.I,
+                    )
                     try:
-                        delay = (
-                            float(retry_after) if retry_after
-                            else float(match.group(1)) if match else 20.0
-                        )
+                        if retry_after:
+                            delay = float(retry_after)
+                        elif match:
+                            delay = (float(match.group(1) or 0) * 60.0
+                                     + float(match.group(2)))
+                        else:
+                            delay = 20.0
                     except (TypeError, ValueError):
                         delay = 20.0
-                    time.sleep(max(1.0, min(delay + 1.0, 90.0)))
+                    time.sleep(max(1.0, min(delay + 1.0, 600.0)))
                     continue
                 raise GroqAPIError(f"Groq HTTP {exc.code}: {detail[:1500]}") from None
             except urllib.error.URLError as exc:
