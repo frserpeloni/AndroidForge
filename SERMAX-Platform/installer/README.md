@@ -122,3 +122,18 @@ O formato implementado no protótipo continua sendo o schema v1, sem assinatura 
 A proposta v2 mantém o pacote em diretório, acrescenta `manifest.p7s`, define manifesto canônico JCS e exige assinatura destacada CMS/PKCS #7, identidade do publicador, sequência monotônica e conferência do inventário completo de arquivos.
 
 **Atenção:** schema v2 ainda não está implementado. O construtor e o instalador atuais não geram nem verificam `manifest.p7s`. Não trate a proposta como pacote assinado, instalável ou validado. O protótipo segue sem distribuição autorizada.
+
+
+## Relação com o atualizador SERMAX Windows
+
+O repositório também contém uma trilha separada em `SERMAX-Windows/sermax_update_*`:
+
+- Manifesto JSON schema 1 com assinatura Ed25519.
+- Validação de pacote ZIP contra manifesto autenticado.
+- Inventário somente de leitura e plano de atualização em memória.
+
+Essa trilha não está integrada a este instalador de diretório. Ela também não executa extração, staging, backup, instalação, journal ou rollback. A allowlist de chaves públicas de produção ainda não foi aprovada/provisionada.
+
+Não misture o ZIP assinado do atualizador Windows com o diretório schema v1 deste protótipo. Não há contrato compartilhado validado. A decisão de arquitetura e a composição dos componentes estão registradas em `WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md`, seção 11.17, e em `../MATRIZ-PACOTE-DEPENDENCIAS-E-LACUNAS-2026-11-15.md`, seção 8.
+
+A proposta CMS/PKCS #7 e schema v2 nas seções 11.15 e 11.16 é exploratória e foi superada para a trilha atual do atualizador Windows. Não implementar um segundo formato sem decisão arquitetural aprovada.
