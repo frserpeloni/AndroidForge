@@ -558,3 +558,37 @@ Permanecem pendentes: destino definitivo, evidência de ACL de todos os ancestra
 - https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
 - https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info
 - https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights
+
+
+## 19. Auditoria estática do instalador e do gerador de pacotes, 2026-11-16
+
+**Estado:** leitura de código. Nenhum código foi alterado ou executado.
+
+### 19.1 Motor do instalador
+
+O arquivo `sermax_installer_core.py` verifica componentes com `Path.lstat()`, `Path.is_symlink()` e atributos Windows. A contenção é verificada com `os.path.abspath()`. Depois, operações críticas continuam por caminhos: leitura de manifesto e marcador, `shutil.copy2`, `tempfile.mkstemp`, hash por abertura de caminho e `os.replace`.
+
+Essas verificações reduzem risco para caminhos estáticos. Não vinculam o objeto inspecionado ao objeto aberto ou substituído depois. Um processo com permissão de escrita na árvore de destino ainda tem janela para tentar troca concorrente. O lock coordena instaladores cooperantes, não um atacante externo.
+
+### 19.2 Gerador de pacotes
+
+O arquivo `sermax_package_builder.py` verifica caminhos, calcula hash/tamanho da origem, copia com `shutil.copy2`, verifica o staging e relê a origem para comparar hash/tamanho. Publica com `os.replace` e remove falhas com `shutil.rmtree`.
+
+As comparações detectam alterações comuns e comprovam que o staging corresponde ao digest capturado. Não provam que todas as leituras vieram do mesmo objeto, não impedem redirecionamento concorrente da origem e não vinculam a limpeza ao mesmo objeto de diretório temporário se o namespace pai for gravável por atacante.
+
+### 19.3 GUI e limite de confiança
+
+A GUI permite escolher pacote e destino e chama diretamente o motor Python. Não foi identificado broker Windows, serviço, IPC autenticado ou raiz fixa protegida nesse fluxo.
+
+**Disposição:** manter como preview de desenvolvimento, sem distribuição para instalação de produção. O gerador de pacotes é uma fronteira separada e precisa de testes próprios.
+
+### 19.4 Gates separados
+
+1. Provisionamento de raiz protegida e ACLs de todos os ancestrais.
+2. Identidade/token do serviço e autorização IPC.
+3. Intake, staging sob propriedade do broker e autenticidade do pacote.
+4. Journal, backup, rollback e recuperação após crash.
+5. Proteção do namespace de origem e saída do gerador de pacotes.
+6. Testes adversariais em Windows e sistemas de arquivos suportados.
+
+Nenhum código, serviço, ACL, privilégio, pacote ou teste foi implementado ou executado nesta auditoria.
