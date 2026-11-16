@@ -40,6 +40,13 @@ def _validate_development_path(path: str) -> None:
     normalized = path.replace("\\", "/")
     parts = normalized.split("/")
     lowered = [part.casefold() for part in parts]
+    test_only = os.environ.get("SERMAX_DEV_TEST_ONLY") == "1"
+    test_only_path_ok = (
+        len(lowered) == 2
+        and lowered[0] == "tests"
+        and lowered[-1].startswith("test_")
+        and lowered[-1].endswith("_regression.py")
+    )
     if (
         normalized.startswith("/")
         or any(not part or part in {".", ".."} for part in parts)
@@ -47,6 +54,7 @@ def _validate_development_path(path: str) -> None:
         or any(part in {".github", ".git", ".sermax_dev_backups", "sermax_terminal"} for part in lowered)
         or lowered[-1] in PROTECTED_BASENAMES
         or not lowered[-1].endswith((".py", ".md"))
+        or (test_only and not test_only_path_ok)
     ):
         raise ProposalError(
             "Caminho fora do escopo: somente arquivos .py e .md do produto; "
@@ -96,6 +104,10 @@ def parse_proposal(raw: str) -> ValidatedProposal:
 def preview_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> list[dict]:
     previews = []
     for item in proposal.files:
+        if os.environ.get("SERMAX_DEV_TEST_ONLY") == "1":
+            target = workspace._resolve(item.path, allow_missing=True)
+            if target.exists():
+                raise ProposalError("Modo de teste aceita somente arquivo de regressão novo.")
         try:
             diff = workspace.preview(item.path, item.content)
         except WorkspaceError as exc:
