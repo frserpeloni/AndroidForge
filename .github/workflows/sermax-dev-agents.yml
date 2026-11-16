@@ -25,7 +25,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. O código atual usa a expressão `mensagem.split(" ",1)[1].strip()` depois de normalizar a entrada em `comando`. Faça uma única edição localizada com estes valores exatos: old = `mensagem.split(" ",1)[1].strip()`; new = `comando.split(" ",1)[1].strip()`. Não inclua indentação nem a linha return no trecho old. Não altere nenhum outro trecho de sermax_core.py. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando espaços iniciais e espaços ou tabulações repetidos. A assinatura é `responder_comando_local(mensagem)`, chame a função com exatamente um argumento, sem passar None. Faça mock de sermax_planejador.planejar e valide a chamada exata como `assert_called_once_with("fazer algo", modelo=sermax_core.MODELO, url=sermax_core.OLLAMA_URL)`. O objetivo deve ser o primeiro argumento posicional, nunca `objetivo=` nomeado. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.'
+        default: 'Endureça o controle local da API da Plataforma. Em backend/server.py, local_origin_guard deve validar também request.client.host: aceitar somente IP válido com is_loopback=True; cliente ausente, host inválido ou IP não loopback recebe HTTP 403. Adicione import ipaddress. Preserve as validações atuais de Host e Origin. Em backend/test_api.py, configure os TestClient locais com client=("127.0.0.1", 50000) e client=("127.0.0.1", 50001) para o cliente reaberto; adicione teste com client=("192.0.2.10", 50000) e Host 127.0.0.1:8765, esperando 403. Não adicione autenticação, LAN, acesso remoto ou abertura de portas, nem altere o bind local. Modifique exclusivamente backend/server.py e backend/test_api.py, usando edições old/new localizadas, sem reescrita integral. A proposta deve incluir unittest.'
         type: string
 
 permissions:
@@ -87,6 +87,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install "numpy>=2.4.6"
+          python -m pip install -r ../SERMAX-Platform/backend/requirements.txt
           echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
           echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
 
@@ -97,7 +98,8 @@ jobs:
           from pathlib import Path
           from sermax_workspace import TestRunner, WorkspaceAdapter
 
-          workspace = WorkspaceAdapter(Path.cwd())
+          workspace_root = (Path.cwd().parent / "SERMAX-Platform").resolve()
+          workspace = WorkspaceAdapter(workspace_root)
           result = TestRunner(
               workspace, timeout_seconds=300, isolate_as_nobody=True
           ).run("unittest")
@@ -113,9 +115,10 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "2048"
-          SERMAX_DEV_ALLOWED_PATHS: "sermax_core.py;tests/test_sermax_core_command_regression.py"
+          SERMAX_DEV_WORKSPACE: "../SERMAX-Platform"
+          SERMAX_DEV_ALLOWED_PATHS: "backend/server.py;backend/test_api.py"
           SERMAX_DEV_TASK: >-
-            ${{ inputs.task || 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. O código atual usa a expressão `mensagem.split(" ",1)[1].strip()` depois de normalizar a entrada em `comando`. Faça uma única edição localizada com estes valores exatos: old = `mensagem.split(" ",1)[1].strip()`; new = `comando.split(" ",1)[1].strip()`. Não inclua indentação nem a linha return no trecho old. Não altere nenhum outro trecho de sermax_core.py. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando espaços iniciais e espaços ou tabulações repetidos. A assinatura é `responder_comando_local(mensagem)`, chame a função com exatamente um argumento, sem passar None. Faça mock de sermax_planejador.planejar e valide a chamada exata como `assert_called_once_with("fazer algo", modelo=sermax_core.MODELO, url=sermax_core.OLLAMA_URL)`. O objetivo deve ser o primeiro argumento posicional, nunca `objetivo=` nomeado. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.' }}
+            ${{ inputs.task || 'Endureça o controle local da API da Plataforma. Em backend/server.py, local_origin_guard deve validar também request.client.host: aceitar somente IP válido com is_loopback=True; cliente ausente, host inválido ou IP não loopback recebe HTTP 403. Adicione import ipaddress. Preserve as validações atuais de Host e Origin. Em backend/test_api.py, configure os TestClient locais com client=("127.0.0.1", 50000) e client=("127.0.0.1", 50001) para o cliente reaberto; adicione teste com client=("192.0.2.10", 50000) e Host 127.0.0.1:8765, esperando 403. Não adicione autenticação, LAN, acesso remoto ou abertura de portas, nem altere o bind local. Modifique exclusivamente backend/server.py e backend/test_api.py, usando edições old/new localizadas, sem reescrita integral. A proposta deve incluir unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
@@ -132,8 +135,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add SERMAX-Windows
-          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps || true
+          git add SERMAX-Windows SERMAX-Platform
+          git reset -q -- SERMAX-Windows/.sermax_dev_backups SERMAX-Windows/.venv-jarvis SERMAX-Windows/.deps SERMAX-Platform/.sermax_dev_backups || true
           if git diff --cached --quiet; then
             echo "Nenhuma alteração para registrar."
             exit 0
