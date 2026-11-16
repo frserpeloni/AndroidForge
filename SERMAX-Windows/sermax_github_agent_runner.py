@@ -78,8 +78,8 @@ def main() -> int:
         "Propostas aceitas: somente .py e .md do produto. Toda proposta exige unittest. "
         "O Programador terá a proposta validada antes de ser aplicada. "
         "O executor roda os testes e faz rollback se algum falhar. "
-        "O Testador deve emitir JSON PASS/FAIL com evidência real.\\n"
-        "CONTEXTO DE CÓDIGO REAL:\\n" + code_context
+        "O Testador deve emitir JSON PASS/FAIL com evidência real.\n"
+        "CONTEXTO DE CÓDIGO REAL:\n" + code_context
     )
     team = DevelopmentTeam(
         Path(tempfile.gettempdir()) / "sermax-development-team.sqlite3",
