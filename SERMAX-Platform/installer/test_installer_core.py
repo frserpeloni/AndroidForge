@@ -67,7 +67,7 @@ class InstallerCoreTests(unittest.TestCase):
                     target_parent.symlink_to(outside, target_is_directory=True)
                     swapped["value"] = True
                 result = real_copy(source, target, *args, **kwargs)
-                if Path(target).parent == outside and Path(target).exists():
+                if Path(target).resolve().parent == outside.resolve() and Path(target).exists():
                     external_write_observed["value"] = True
                 return result
 
@@ -78,6 +78,7 @@ class InstallerCoreTests(unittest.TestCase):
                 with self.assertRaises(PackageError):
                     install_package(package, destination)
 
+            self.assertTrue(swapped["value"], "A troca do diretório pai não foi executada.")
             self.assertFalse(
                 external_write_observed["value"],
                 "O instalador escreveu temporário fora da raiz após troca do diretório pai."
