@@ -49,6 +49,26 @@ class WorkspaceAdapterTests(unittest.TestCase):
         else:
             self.assertIn("tests/run_agent_suite.py", command)
 
+    def test_platform_workspace_selects_backend_unittest_suite(self):
+        class CompletedProcess:
+            returncode = 0
+            def poll(self):
+                return 0
+
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            backend = root / "backend"
+            backend.mkdir()
+            (backend / "test_api.py").write_text("", encoding="utf-8")
+            runner = TestRunner(WorkspaceAdapter(root), isolate_as_nobody=False)
+            with patch("sermax_workspace.subprocess.Popen", return_value=CompletedProcess()) as popen:
+                result = runner.run("unittest")
+            self.assertEqual(
+                popen.call_args.args[0],
+                (sys.executable, "-m", "unittest", "discover", "-s", "backend", "-v"),
+            )
+            self.assertEqual(result["status"], "passed")
+
     def test_test_runner_allowlist(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
