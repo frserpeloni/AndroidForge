@@ -342,3 +342,56 @@ ROLLED_BACK exige todos os alvos RESTORED_VERIFIED ou NO_CHANGE_VERIFIED, marcad
 Testar falhas em cada ponto do rollback, restauração em ordem inversa, arquivos originais/não alterados/alterados externamente, backups ausentes ou adulterados, metadados, arquivos recém-criados, troca de identidade, disco cheio, acesso negado, reinício e repetição da recuperação. Comprovar que dados do usuário e arquivos fora da allowlist permanecem intactos.
 
 **Decisão:** protocolo documental concluído. A seção 4A ainda bloqueia a resolução segura de nomes. ACL/journal e autorização do broker continuam pendentes. Não existe rollback implementado ou instalador distribuível.
+
+
+## 14. Saúde pós-instalação e limite de COMMITTED, 2026-11-16
+
+**Status:** especificação documental. Nenhum health check novo, endpoint, instalador, broker ou teste foi implementado nesta etapa.
+
+### 14.1 Comportamento atual observado
+
+- A API expõe GET /api/health com status, identificador do serviço, versão, estado de carregamento do núcleo e timestamp.
+- O endpoint não verifica integridade do SQLite, não carrega o núcleo e não testa Ollama ou OpenJarvis.
+- O núcleo é carregado sob demanda, durante uma solicitação de chat. O estado not_loaded no início não representa, isoladamente, falha de inicialização.
+- O launcher de desenvolvimento espera até 30 segundos, com timeout de 1,5 segundo por requisição e intervalo de 0,25 segundo. Ele aceita HTTP 200 e o identificador sermax-platform-api. Isso prova somente uma resposta básica da API, não a identidade da release candidata.
+- A inicialização da API executa a inicialização do esquema SQLite. O health check atual não faz leitura de integridade do banco.
+- Esses tempos são valores do launcher de desenvolvimento. Não são política aprovada para instalador.
+
+### 14.2 Dimensões separadas
+
+A futura verificação deve separar integridade do payload, identidade e estabilidade do processo, liveness da API, readiness, integridade de persistência, disponibilidade do núcleo e dependências opcionais. Ollama, OpenJarvis e Pestinha só serão obrigatórios quando a política da release declarar explicitamente essa exigência.
+
+A evidência deve vincular transaction ID, release, digest do manifesto, inventário instalado, identidade do processo, versão da política e resultado de cada probe. PID, URL, HTTP 200 ou nome do serviço isolados não identificam a release instalada.
+
+O endpoint atual não retorna digest de manifesto nem ID da transação. Sua extensão ou um canal autenticado do broker permanece decisão de interface, sem implementação nesta etapa.
+
+### 14.3 Ordem exata do commit
+
+1. Aplicar os arquivos autorizados e verificar cada alvo por leitura de retorno.
+2. Iniciar ou identificar o processo candidato e provar sua identidade de release.
+3. Executar todos os probes obrigatórios e o período de estabilização aprovado.
+4. Persistir HEALTH_VERIFIED com digest da evidência. Esse estado ainda não é COMMITTED.
+5. Revalidar lock, raiz, alvos, pacote, evidência e precondições do marcador.
+6. Persistir intenção de publicação do marcador.
+7. Publicar o marcador como última alteração do payload e verificar sua leitura de retorno.
+8. Persistir o registro final COMMITTED, fazer flush e ler o registro de volta. Só então informar sucesso.
+
+O marcador não será publicado antes da aprovação de todos os probes obrigatórios. O registro COMMITTED vem depois da verificação do marcador.
+
+### 14.4 Falhas e dados do usuário
+
+Falha obrigatória antes de COMMITTED impede publicação do marcador. Rollback automático continua sem autorização e depende de política explícita. Ambiguidade leva a RECOVERY_REQUIRED com preservação dos artefatos.
+
+Crash após marcador e antes do registro COMMITTED não significa instalação concluída. A recuperação readquire handles, revalida arquivos e marcador, reinicia a verificação de saúde e só conclui se a política aprovada comprovar todas as condições.
+
+Após COMMITTED, falhas posteriores exigem transação de reparo separada.
+
+Memórias, SQLite, histórico, preferências, logs, anexos, modelos Ollama, ambientes Python, serviços externos, Terminal original fora da allowlist e backups permanecem fora do payload e do rollback. Probes de persistência devem ser somente leitura. Não enviar chat real, alterar memória, gravar conversa de teste ou executar migração durante a verificação.
+
+### 14.5 Pendências para implementação
+
+Aprovar schema de health profile, capacidades obrigatórias, identidade de processo, vínculo da probe com a release, topologia de inicialização, teste SQLite somente leitura, tempos de estabilização e timeout, retenção das evidências e política de rollback.
+
+Testes exigidos cobrem processo antigo já ativo, PID reutilizado, identidade incorreta, API online com readiness falha, resposta obsoleta, SQLite corrompido/ocupado, núcleo ausente, motores opcionais, falhas em cada fase do marcador e journal, crash, disco cheio e recuperação repetida.
+
+**Decisão:** contrato de saúde e fronteira COMMITTED documentados. A implementação permanece bloqueada pelas pendências de segurança da seção 4A, decisões do journal, aprovação do broker e política de rollback. Não existe instalador distribuível.
