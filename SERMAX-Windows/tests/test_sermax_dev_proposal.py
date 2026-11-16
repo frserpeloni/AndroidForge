@@ -238,7 +238,7 @@ class DevelopmentProposalTests(unittest.TestCase):
                 ],
                 "tests": ["unittest"],
             }))
-            with self.assertRaises(RuntimeError):
+            with self.assertRaisesRegex(RuntimeError, "unittest: status=failed"):
                 apply_and_test_proposal(workspace, proposal, FailedRunner())
             self.assertEqual(workspace.read_text("module.py"), "ORIGINAL = True\n")
             self.assertFalse((root / "new_module.py").exists())
