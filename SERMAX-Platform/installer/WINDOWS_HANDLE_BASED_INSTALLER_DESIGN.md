@@ -225,3 +225,46 @@ References:
 Status: architecture candidate for threat-model review only. No implementation authorized by this design note. Do not replace section 4A's API-contract blocker with an assumption that ACLs or a broker automatically make installation race-free. The protected-root premise must be demonstrated on the supported Windows configurations, including parent-directory ownership and permissions. If the intended installation destination remains writable by the same untrusted identity, this architecture does not remove the original race and must not be accepted.
 
 No change to the original C:\\SERMAX installation, core, Terminal, memory, backups, SERMAX Control, or Drive Connect is authorized by this evaluation.
+
+
+### 11.6 Refined service identity and package intake
+
+The service identity must be selected by a least-privilege review, not by convenience. Evaluate a dedicated virtual service account such as `NT SERVICE\\SermaxInstallerBroker` and a per-service SID. Evaluate `SERVICE_SID_TYPE_RESTRICTED` where compatible with the service's required access. Microsoft documents that a restricted service SID is added to the restricted SID list and enables access control to service resources without relying on LocalSystem. This is a candidate configuration, not a pre-approved setting: validate all required file, registry, event-log, pipe, and service-control operations under the actual token.
+
+The broker must not trust a path or hash supplied by the client as proof of package identity. Package intake must follow this sequence:
+
+1. Authenticate and authorize the client request before accepting a package.
+2. Accept a bounded package stream or open a client-supplied source under a narrowly defined policy. Do not accept arbitrary destination paths.
+3. Copy the bytes into a broker-owned staging directory that the client cannot modify.
+4. Compute the digest while copying, then close and reopen the broker-owned staged object under broker control and verify its size and digest.
+5. Parse and validate only the broker-owned staged copy. Reject duplicate normalized paths, traversal, alternate data streams, reparse points, unsupported file types, and manifest ambiguity.
+6. Verify authenticity against a trust anchor independent of the submitting client, such as a signed release manifest whose signing key is not stored in the client-writable area. A digest alone proves byte consistency, not publisher identity.
+7. Install from that same broker-owned validated snapshot. Do not return to the caller's source path after validation.
+
+The staging directory itself requires a documented owner and DACL. The broker must create it beneath a parent that untrusted clients cannot replace. If the service cannot prove that the validated bytes are the bytes later installed, package intake fails closed.
+
+### 11.7 Provisional destination decision matrix
+
+Do not select Program Files, ProgramData, or a per-user directory by name alone. Select based on the actual SERMAX deployment model and supported threat boundary.
+
+| Candidate | Advantages | Risks and required proof |
+|---|---|---|
+| Machine-wide application directory, e.g. Program Files | Standard location for machine-wide program binaries; ordinary users should not receive write access | Requires an elevated, controlled service installation/update path; verify owner and effective ACLs for every parent and child; define admin threat exclusion |
+| Dedicated machine-wide ProgramData subdirectory | Separates SERMAX data from binaries and supports service-owned state | ProgramData itself is shared; the dedicated child must have explicit protected ownership and DACL; never store executable code beside broadly writable data |
+| Per-user protected directory | Avoids a machine-wide service for a single-user product | If the interactive user owns or can change the directory DACL, a compromised process under that same identity may defeat the boundary; define a distinct protected principal or reject this model |
+
+Provisional recommendation: if the intended release is machine-wide, evaluate a dedicated service identity and a protected machine-wide application root, with user data kept in a separate user-data directory. Do not settle the exact path or ACL until the installer scope, update privilege model, and administrator threat boundary are approved. If the product is strictly per-user and the same user is in scope as an attacker, do not claim protection based solely on a directory ACL that the user can change.
+
+### 11.8 Required evidence before architecture approval
+
+The review package must include:
+
+- A written adversary model naming identities in scope and explicitly excluded.
+- A proposed SDDL/DACL for the service object, service executable directory, protected install root and every parent, broker staging, backup/rollback, user data, and named pipe.
+- Effective access-check results for the interactive user, another standard user, the service SID, administrators, and SYSTEM.
+- Service token evidence: account, service SID type, enabled privileges, restricted SIDs, and filesystem/registry access required at runtime.
+- A package provenance design with a separately protected signing key or trusted release manifest, key rotation and revocation policy.
+- A protocol specification with bounded framing, authentication, authorization, replay protection, and denial-of-service limits.
+- Windows adversarial test logs on every supported Windows build.
+
+Approval of this architecture is a separate decision. Documentation and research do not authorize implementation, service installation, privilege elevation, or changes to the original SERMAX environment.
