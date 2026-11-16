@@ -14,7 +14,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: "Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Identifique uma falha reproduzível ou uma lacuna objetiva de segurança/correção. Se encontrar, implemente uma correção pequena com teste unittest; se não encontrar, acrescente um teste de regressão para comportamento existente ainda sem cobertura. Não altere infraestrutura, workflows, integrações Jarvis/Pestinha, memórias ou arquivos protegidos."
+        default: "Adicione exatamente um novo teste unittest para `sermax_core.normalizar`. Verifique que a função remove espaços no início e no fim, converte letras para minúsculas e substitui sequências de espaços, tabulações e quebras de linha por um único espaço. Crie somente `tests/test_sermax_core_regression.py`. Não altere arquivos de produção, módulos, imports, adaptadores, infraestrutura, workflows ou testes existentes. Não crie stubs, mocks de módulos ausentes ou dependências. Retorne uma proposta com um único arquivo e a suíte unittest."
         type: string
 
 permissions:
@@ -79,13 +79,31 @@ jobs:
           echo "PYTHONPATH=$GITHUB_WORKSPACE/SERMAX-Windows/.deps/pestinha" >> "$GITHUB_ENV"
           echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
 
+      - name: Preflight isolated test sandbox and ownership cleanup
+        working-directory: SERMAX-Windows
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from sermax_workspace import TestRunner, WorkspaceAdapter
+
+          workspace = WorkspaceAdapter(Path.cwd())
+          result = TestRunner(
+              workspace, timeout_seconds=300, isolate_as_nobody=True
+          ).run("unittest")
+          print(result["output"])
+          if result["status"] != "passed":
+              raise SystemExit(f"Preflight falhou: {result['status']}")
+          print("Sandbox isolada validada e propriedade restaurada.")
+          PY
+
       - name: Run the SERMAX development team
         working-directory: SERMAX-Windows
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "2048"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Corrija uma falha objetiva ou acrescente um teste de regressão com unittest.' }}
+          SERMAX_DEV_TEST_ONLY: "1"
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Adicione exatamente um novo teste unittest para `sermax_core.normalizar`. Verifique que a função remove espaços no início e no fim, converte letras para minúsculas e substitui sequências de espaços, tabulações e quebras de linha por um único espaço. Crie somente `tests/test_sermax_core_regression.py`. Não altere arquivos de produção, módulos, imports, adaptadores, infraestrutura, workflows ou testes existentes. Não crie stubs, mocks de módulos ausentes ou dependências. Retorne uma proposta com um único arquivo e a suíte unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
