@@ -913,3 +913,128 @@ No current module performs staging, backup, journaling, install, rollback or cra
 | No end-to-end transaction coordinator or durable journal | Blocker | No install/rollback capability |
 
 **Decision:** keep all five modules as validation/read-only prototypes. Do not connect them to the Platform installer, elevate them, or point them at the user's live `C:\\SERMAX`. The next safe engineering task is to specify and test a Windows handle-based inventory result contract and its provenance, without implementing privileged installation. This audit does not close any TOCTOU acceptance gate.
+
+
+## 11.19 Proposed Windows handle-bound inventory contract
+
+**Audit date:** 2026-11-16.  
+**Status:** interface and acceptance specification only. No native filesystem code, installer, broker, or privileged operation was implemented by this section.
+
+### 11.19.1 Contract objective
+
+The inventory supplied to the release planner must describe the filesystem objects actually opened and inspected. It must not be a caller-authored collection of path strings and metadata. The inventory must bind together:
+
+- the admitted installation root and its volume/file identity;
+- each enumerated directory and regular file object;
+- the parent directory object through which each child was admitted;
+- metadata and content hash obtained through the same opened file object;
+- a live ownership scope that retains the relevant handles until the plan is consumed or explicitly invalidated.
+
+A path is a root-relative name for display, policy matching and manifest comparison. It is not proof of object identity and must never be used as the authority for a later privileged write.
+
+### 11.19.2 Identity source and limits
+
+For a supported Windows filesystem, query `FILE_ID_INFO` from the opened handle through `GetFileInformationByHandleEx(FileIdInfo)`. Record both `VolumeSerialNumber` and all 16 bytes of `FileId`. Microsoft documents that the pair identifies an opened file on one computer and can be compared across two open handles to determine whether they represent the same file.
+
+Do not use the 128-bit identifier by itself. Do not treat a file ID as a permanent identifier: Microsoft documents that file IDs can be reused over time and, in some cases, can change. The identity pair is an object-comparison aid, not a substitute for a live retained handle or safe namespace resolution.
+
+If `FileIdInfo` is unsupported, fails, or returns an all-zero ID on a filesystem that does not provide a 128-bit ID, the trusted inventory must fail closed for operations that require this identity. Do not silently fall back to `st_ino`, a 64-bit file index, timestamps, path strings or a synthetic identifier. Any future filesystem-specific fallback requires a separate documented contract and acceptance suite.
+
+The root and every child record must carry the volume serial and 128-bit file ID obtained from that object's own handle. A child whose volume identity differs from the admitted root is rejected unless an explicitly approved mount/volume policy says otherwise. The default policy for this updater is to reject volume crossings.
+
+### 11.19.3 Proposed opaque object model
+
+The trusted reader should return an in-process, non-serializable `InventorySnapshot` object. Its constructor is private to the Windows inventory backend. Callers must not be able to instantiate an authoritative snapshot from dictionaries, JSON, a database row or a deserialized cache.
+
+Conceptual fields:
+
+| Object | Required data | Authority/lifetime |
+|---|---|---|
+| Snapshot | random snapshot ID, root identity, volume identity, policy/version, creation time, generation/state | Owns all handles; valid only while open |
+| Root/directory entry | root-relative display path, volume serial, 128-bit file ID, attributes, reparse tag, directory handle | Handle retained by snapshot |
+| Regular-file entry | root-relative display path, parent entry ID, volume serial, 128-bit file ID, attributes, reparse tag, size, SHA-256, file handle | Handle retained by snapshot; hash and size read from this handle |
+| Plan entry | snapshot ID, referenced entry ID, expected object identity, action, manifest file record | Cannot outlive or detach from its snapshot |
+
+The implementation should use opaque internal entry identifiers rather than expose raw native handles as public values. Native handles remain private to the backend and are closed deterministically when the snapshot is disposed. The snapshot is single-owner or explicitly synchronized; concurrent consumers must not close handles while another phase uses them.
+
+No serialization of `InventorySnapshot` conveys authority. A diagnostic export may include paths, IDs, hashes and classifications, but must be marked informational and must never be accepted as input to the privileged planner or broker.
+
+### 11.19.4 Acquisition and observation rules
+
+1. Admit the root under a separately approved root-bootstrap contract. The unresolved API-contract issue in sections 4A and 11.1 remains a blocker. Do not claim that `FILE_ID_INFO` closes the root-path or ancestor-reparse race.
+2. Retain the admitted root handle. Record its volume/file identity and verify the expected root policy.
+3. Enumerate each directory using the retained directory handle. Resolve each child through the approved directory-relative mechanism. The exact native open primitive remains blocked until the API contract and concurrency semantics are established; a concatenated absolute path is not an acceptable substitute.
+4. Open a child without following its reparse point, query attributes and reparse tag through that opened handle, and reject reparse points and unsupported object types according to policy.
+5. Query `FILE_ID_INFO`, `FILE_STANDARD_INFO` and `FILE_ATTRIBUTE_TAG_INFO` through the same handle. Confirm expected file/directory type, volume identity and nonzero 128-bit file ID.
+6. For regular files, calculate SHA-256 by reading bytes from that same retained file handle. Obtain size from handle metadata, not a later path stat. Record the hash and size only after the read completes successfully.
+7. Retain each relevant child and parent directory handle for the entire lifetime of the snapshot. Do not close and later reopen by path to continue planning or installation.
+8. If an object is renamed, unlinked, replaced in its parent namespace, changes type, or becomes inaccessible during acquisition, mark the snapshot invalid and abort. Do not silently refresh a subset and combine observations from different generations.
+9. Do not assume a retained handle proves that the original name resolution was safe. Root admission, parent-relative opens and namespace mutation behavior remain separate security proof obligations under section 4A.
+
+### 11.19.5 Planner provenance and preconditions
+
+Replace the current public mapping-based trusted-planner boundary with an API that accepts only a live `InventorySnapshot` produced by the trusted Windows backend. The plan builder must reject:
+
+- ordinary mappings or records constructed by callers;
+- snapshots from another backend, root, volume, policy version or process generation;
+- disposed, invalidated or partially acquired snapshots;
+- entries whose parent relationship is absent or inconsistent;
+- duplicate/colliding normalized paths;
+- unsupported file identity, object type or reparse state;
+- manifest actions targeting protected or unknown classifications.
+
+A `replace` action must reference the exact existing regular-file entry and its retained handle. A `create` action must reference the retained parent-directory entry and record that the destination name was absent at inventory time. Absence at inventory time is not a commit-time guarantee; the eventual transaction must recheck the destination relative to the same retained parent under an approved race-safe contract and fail on collision.
+
+Plan entries must carry the snapshot ID and opaque entry ID, not accept a free-form `file_id` as authority. Before any future mutation, the transaction coordinator must verify that the snapshot remains live, the relevant handles remain valid, the observed volume/file identity matches the planned identity, and all transaction preconditions still hold. If the approved API cannot establish the required namespace guarantee, the write must not proceed.
+
+The existing manifest supports file `create` and `replace` only. Until explicit directory operations are approved, every destination parent directory must already exist in the admitted inventory. No implicit parent-directory creation is permitted.
+
+### 11.19.6 Snapshot invalidation and resource lifecycle
+
+Invalidate the entire snapshot on handle closure, failed identity query, volume mismatch, unsupported reparse state, unexpected object type, incomplete enumeration, read/hash failure, or detected mutation that violates the selected policy. A consumer must receive a typed failure and must not continue with a partial plan.
+
+Use deterministic context-manager or equivalent ownership semantics. Close all handles on normal completion, cancellation, exception and process shutdown. Bound the number of retained handles and inventory entries; if a configured bound is reached, abort before producing a trusted snapshot. Quota values must be measured against approved SERMAX installation layouts and explicitly selected, not guessed.
+
+A snapshot is ephemeral process state, not a durable transaction journal. A future transaction record may persist snapshot ID, identities and digests for audit, but after restart it must reacquire and revalidate objects under a newly approved transaction-recovery contract. It must never reconstruct handle authority from serialized IDs.
+
+### 11.19.7 Required Windows adversarial tests
+
+Run on supported Windows versions and explicitly identified filesystem types. At minimum:
+
+- Compare two handles to the same object and two handles to different objects using volume serial plus 128-bit file ID.
+- Verify fail-closed behavior when FileIdInfo is unsupported, returns zero, is malformed, or query fails.
+- Verify a file ID reused after deletion does not authorize a new object when the original retained handle is gone.
+- Replace a file between directory enumeration and open; the resulting record must describe only the object actually opened, or the snapshot must abort.
+- Replace/swap a parent directory, junction or symbolic link during child acquisition and hashing. No read may escape the approved root; otherwise the test is a release blocker.
+- Change a leaf to a reparse point between enumeration and open. The reparse object must be rejected without following it.
+- Rename or unlink files and directories while handles are retained. Verify documented share-mode behavior and snapshot invalidation.
+- Introduce a volume mount point or volume crossing beneath the root. Verify default rejection.
+- Exercise hard links, case-insensitive name collisions, Unicode normalization collisions, trailing dots/spaces, reserved names and path-prefix conflicts.
+- Interrupt enumeration and hashing, exhaust handle quotas, deny sharing, revoke access and simulate disk/filesystem errors. No partial snapshot may be accepted.
+- Attempt to pass caller-authored dictionaries, JSON exports, stale snapshots and snapshots from another root into the planner. All must be rejected.
+- Verify that a plan cannot be consumed after snapshot disposal or invalidation.
+- Run the suite on each supported filesystem/Windows combination. Do not claim NTFS, ReFS, SMB or removable-volume support from tests on a different filesystem.
+
+Tests must record Windows build, filesystem type, test commit, test command, outcome and relevant diagnostic evidence. A passing test demonstrates behavior on that tested configuration; it does not resolve the undocumented API-contract concerns in section 4A.
+
+### 11.19.8 Acceptance decision
+
+The inventory contract is not accepted for production until all of the following are true:
+
+1. Microsoft-supported API semantics establish safe root admission and child resolution under the declared threat model, including relevant concurrent namespace changes.
+2. The implementation obtains identity and metadata from opened handles and hashes content through those same handles.
+3. The planner accepts only live, provenance-bearing snapshots and cannot be authorized by serialized or caller-authored records.
+4. The Windows adversarial suite passes on every declared supported OS/filesystem combination.
+5. Snapshot lifetime, handle quotas, invalidation and cleanup are tested.
+6. The transaction coordinator consumes the same snapshot and exact package bytes later used for staging and commit.
+7. The release security matrix records the remaining limits and the evidence used to close each gate.
+
+**Decision:** this contract resolves the data-model gap conceptually, not the underlying Windows namespace-resolution security proof. Sections 4A and 11.1 remain controlling blockers. No implementation, privileged broker, installer connection or release approval follows from this specification.
+
+### 11.19.9 Microsoft references reviewed
+
+- `FILE_ID_INFO`: https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_id_info
+- `FILE_ID_128`: https://learn.microsoft.com/windows/win32/api/winnt/ns-winnt-file_id_128
+- `GetFileInformationByHandleEx`: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-getfileinformationbyhandleex
+- `BY_HANDLE_FILE_INFORMATION`, including file-ID reuse limitations: https://learn.microsoft.com/windows/win32/api/fileapi/ns-fileapi-by_handle_file_information
+- `FILE_INFO_BY_HANDLE_CLASS`: https://learn.microsoft.com/windows/win32/api/minwinbase/ne-minwinbase-file_info_by_handle_class
