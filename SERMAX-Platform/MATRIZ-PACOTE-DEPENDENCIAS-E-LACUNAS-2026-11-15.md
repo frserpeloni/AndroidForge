@@ -165,3 +165,45 @@ Foi identificada uma incompatibilidade que impede ligar os módulos atuais:
 **Classificação:** bloqueadores de integração e segurança. Os módulos permanecem protótipos de validação e leitura. Não conectar ao instalador, não elevar privilégios e não executar contra a instalação ativa. A auditoria detalhada consta na seção 11.18 de `installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md`.
 
 **Próxima tarefa permitida:** especificar o contrato do inventário Windows baseado em handles, incluindo identidade de volume/arquivo, retenção de handles, procedência do resultado e testes de concorrência. Não implementar serviço privilegiado nem instalação até aprovação arquitetural.
+
+
+## 10. Contrato proposto para inventário Windows vinculado a handles, 2026-11-16
+
+**Status:** especificação documental. Não há implementação nativa, serviço privilegiado, alteração no instalador ou teste executado nesta etapa.
+
+A auditoria da seção 9 identificou que o planejador exige `file_id`, mas o inventário real não o produz. A seção 11.19 de `installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md` define o contrato proposto para corrigir a procedência e a identidade dos objetos.
+
+### 10.1 Identidade de objeto
+
+- Consultar `FILE_ID_INFO` por `GetFileInformationByHandleEx(FileIdInfo)` no handle aberto.
+- Registrar o par `VolumeSerialNumber` + os 16 bytes do `FileId`.
+- Não tratar o ID como permanente. Sistemas de arquivos podem reutilizar IDs após exclusão.
+- Não substituir a identidade por `st_ino`, caminho, timestamp ou identificador fabricado.
+- Se a consulta falhar, o filesystem não suportar 128 bits ou o ID vier zerado, falhar fechado para o fluxo confiável.
+- Reter o handle do objeto e dos diretórios ancestrais relevantes durante todo o uso do snapshot. A identidade numérica não substitui o handle.
+
+A documentação Microsoft define o par volume/ID para comparar handles abertos e registra limitações de reutilização de IDs. Isso não resolve a segurança da resolução do caminho nem a corrida de troca de diretórios.
+
+### 10.2 Snapshot com procedência
+
+O inventário confiável deverá produzir um objeto opaco `InventorySnapshot`, instanciável somente pelo backend Windows. O objeto retém handles, identidade da raiz, identidade de cada arquivo/diretório, relação com o diretório pai, metadados e SHA-256 lido do próprio handle.
+
+Registros comuns, JSON exportado, cache serializado ou dicionários fornecidos pelo chamador não terão autoridade. O planejador aceitará somente snapshot vivo, íntegro, não invalidado e associado à raiz/política esperadas.
+
+Ações `replace` referenciam o handle/entrada do arquivo existente. Ações `create` referenciam o handle do diretório pai e a ausência observada do nome. A ausência deverá ser revalidada no commit sob contrato de namespace aprovado. Sem operações explícitas de diretório, todos os diretórios de destino deverão existir.
+
+### 10.3 Limites que continuam abertos
+
+- A admissão segura da raiz e a resolução de filhos por diretório ainda dependem de contrato Windows documentado e de garantias sobre mutações concorrentes. A seção 4A do desenho mantém esse bloqueio.
+- O identificador de arquivo não é permanente e não substitui o handle retido.
+- Mudança de volume, reparse point, tipo inesperado, falha de hash, enumeração incompleta ou fechamento de handle invalidam o snapshot.
+- O snapshot não é journal durável. Após reinício, a autoridade deve ser readquirida e revalidada.
+- A implementação não está autorizada por esta especificação.
+
+### 10.4 Testes exigidos
+
+Testar no Windows: comparação de handles, IDs zerados/indisponíveis, reuso de IDs, troca de arquivo e diretório durante enumeração/hash, junctions e symlinks, renomeação e remoção com handles retidos, volume crossing, hard links, colisões de nomes Unicode/case, limites de handles, interrupções e rejeição de snapshots serializados ou fabricados.
+
+Cada resultado deverá registrar build do Windows, filesystem, commit, comando, resultado e evidência. Testes em um filesystem não comprovam suporte a outro.
+
+**Decisão:** contrato de dados especificado; segurança da resolução de nomes permanece bloqueada. Nenhuma instalação, integração privilegiada ou liberação foi autorizada.
