@@ -207,3 +207,38 @@ Testar no Windows: comparação de handles, IDs zerados/indisponíveis, reuso de
 Cada resultado deverá registrar build do Windows, filesystem, commit, comando, resultado e evidência. Testes em um filesystem não comprovam suporte a outro.
 
 **Decisão:** contrato de dados especificado; segurança da resolução de nomes permanece bloqueada. Nenhuma instalação, integração privilegiada ou liberação foi autorizada.
+
+
+## 11. Validade do snapshot, confirmação e retomada transacional, 2026-11-16
+
+**Status:** especificação documental. Nenhum temporizador, journal, coordenador ou instalador foi implementado.
+
+A seção 11.20 do desenho do instalador separa três objetos que não devem ser confundidos:
+
+1. `InventorySnapshot`, estado efêmero em memória que mantém handles abertos.
+2. `ConfirmedPlan`, plano imutável vinculado ao pacote, manifesto, destino e escolhas exibidas ao usuário.
+3. `TransactionRecord`, journal durável de fases. Não preserva autoridade de handles após reinício.
+
+### 11.1 Estados e expiração
+
+O snapshot segue estados monotônicos: `ACQUIRING`, `VALID`, `PLAN_BOUND`, `INVALID`, `EXPIRED` e `DISPOSED`. Snapshot inválido ou expirado não volta a ser válido. Nova aquisição gera novo ID e geração.
+
+A validade temporal deverá usar relógio monotônico e limite máximo de planejamento definido por medição. O prazo é proteção de ciclo de vida e recursos, não prova de segurança. Ausência de evento do File Watcher não comprova ausência de alteração.
+
+### 11.2 Confirmação vinculada ao plano
+
+O digest de confirmação deverá incluir, no mínimo, identidade da release, hash exato do manifesto e ZIP, ID/geração do snapshot, identidade da raiz, destinos, ações, identidades esperadas dos arquivos existentes, política e modo de instalação.
+
+Qualquer alteração depois da confirmação invalida o digest. O processo deverá abortar antes de qualquer escrita e exigir novo preflight e nova confirmação. O digest não substitui assinatura, chave confiável ou handles vivos.
+
+### 11.3 Handoff e recuperação
+
+Antes da primeira mutação, o futuro coordenador deverá adquirir lock, verificar validade e identidade dos handles, confirmar o mesmo pacote imutável, revalidar precondições e persistir o journal. Se o processo reiniciar, os handles e a confirmação antiga perdem validade. A recuperação deverá adquirir novos handles e validar novamente, sem reconstruir autoridade a partir de IDs serializados.
+
+A espera pelo lock também consome o prazo do snapshot. Se expirar durante a espera, abortar sem escrita. A revalidação de namespace continua bloqueada pela seção 4A.
+
+### 11.4 Testes exigidos
+
+Testar expiração durante preflight, diálogo de confirmação, espera do lock e antes da escrita; mudanças no relógio do sistema; descarte concorrente de handles; alteração de pacote/destino/modo após confirmação; replay de confirmação; crash antes e depois do journal; journal adulterado; retomada após reinício; e silêncio de File Watcher com alteração concorrente.
+
+**Decisão:** a política de ciclo de vida e confirmação está especificada. Não existe transação segura implementada, nem autorização para conectar o protótipo ao instalador.
