@@ -160,7 +160,7 @@ class DevelopmentProposalTests(unittest.TestCase):
 
     def test_exact_match_edits_reject_missing_or_ambiguous_old_text(self):
         for source, expected_count in (
-            ("value = 1\n", 0),
+            ("value = 2\n", 0),
             ("value = 1\nvalue = 1\n", 2),
         ):
             with self.subTest(expected_count=expected_count), tempfile.TemporaryDirectory() as folder:
