@@ -5,6 +5,7 @@ name: SERMAX Development Agents
 # Current task is limited to one exact core edit and one new regression test.
 # Portable test fixtures use explicit newline construction to avoid escaped-text ambiguity.
 # Exact-match patch old/new text is supplied verbatim in the task.
+# Failed test output is retained in the task log for diagnosis before rollback.
 # Existing files are modified only through exact-match localized edits.
 
 on:
