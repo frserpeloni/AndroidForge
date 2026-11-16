@@ -499,3 +499,123 @@ Protocol references reviewed:
 - https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid
 - https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnamedpipeclientsessionid
 - https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-createnamedpipea
+
+
+## 11.15 Package authenticity, signing, and publisher trust
+
+**Status:** design proposal only. No signing code, release key, certificate, CI secret, broker, or installation behavior is being created or changed by this section.
+
+### 11.15.1 Separate package integrity from publisher authenticity
+
+The package format should retain a strict manifest and per-file SHA-256 digests, and add a detached digital signature over the exact manifest bytes.
+
+The checks have distinct purposes:
+
+- The detached signature establishes that the manifest was authorized by a signing key accepted by the broker trust policy and that the signed manifest bytes were not changed.
+- Each SHA-256 entry binds a manifest-listed relative path and expected file content to the signed manifest.
+- The broker must hash every staged payload file and compare the result with the signed manifest before installation.
+- A digest without a trusted signature is not proof of publisher identity. A valid signature over a manifest does not excuse missing, extra, duplicate, or mismatched payload entries.
+
+The broker must validate and install from the same broker-owned immutable staging snapshot. It must not validate one copy and later reopen a client-controlled source path.
+
+### 11.15.2 Candidate signature container
+
+Candidate format: detached CMS/PKCS #7 SignedData signature for the exact manifest byte sequence, stored as a separate signature file beside the manifest.
+
+The manifest should use strict UTF-8 JSON with a documented schema. The release signer emits one deterministic byte representation. The verifier rejects a byte sequence that violates encoding or schema rules, including duplicate JSON keys, invalid UTF-8, unsupported critical fields, ambiguous path encodings, and trailing data. Signature verification operates on the exact received manifest bytes, not a parsed-and-reserialized approximation.
+
+Windows CryptoAPI documents decoding signed messages through CryptMsgOpenToDecode and CryptMsgUpdate, retrieving signer information, and checking the signature with CryptMsgControl/CMSG_CTRL_VERIFY_SIGNATURE. SignTool documents detached PKCS #7 output and a PKCS #7 verification mode. These are candidate building blocks, not a completed implementation decision. The broker's own policy must additionally check the expected publisher identity and trust anchor; a generic successful PKCS #7 signature check is insufficient by itself.
+
+Authenticode/WinVerifyTrust is appropriate to evaluate signatures on supported Windows executable objects. It must not be assumed that verifying an EXE with Authenticode automatically verifies a separate JSON manifest. The exact detached-manifest verification API and policy require a Windows prototype and security review before implementation.
+
+### 11.15.3 Signed manifest fields
+
+The signed manifest should contain, at minimum:
+
+- Fixed product identifier and package format/schema version.
+- Release channel, such as stable or beta, with broker policy deciding which channels are accepted.
+- Product version and monotonically increasing release sequence.
+- Unique release identifier.
+- Minimum supported broker version and supported operating-system policy.
+- Complete allowlisted payload file list, each with normalized relative path, exact byte size, and SHA-256 digest.
+- Explicit package creation/issuance metadata and optional expiration policy.
+- Any migration metadata, subject to broker-owned policy. The manifest must never grant authority to overwrite or delete user data, memory, Terminal files, backups, or arbitrary paths.
+
+The broker, not the package, defines protected destinations, preserve rules, rollback authority, and permitted migration behavior. Client-supplied preserve lists are not authorization.
+
+### 11.15.4 Publisher trust and certificate policy
+
+The broker must use a trust anchor protected from standard-user modification. Candidate approaches are a pinned publisher public-key/SPKI identity or a pinned signing certificate with a controlled rollover mechanism. Relying solely on a user-writable certificate store or on a publisher name string is insufficient.
+
+At verification time, the broker must check all of the following:
+
+1. Cryptographic signature validity over the exact manifest bytes.
+2. Signer identity against the broker's protected publisher pin set.
+3. Certificate chain and applicable code-signing usage/policy, where certificates are used.
+4. Certificate validity at the applicable signing or trusted timestamp time.
+5. Revocation status under an explicit policy.
+6. Approved digest and signature algorithms, rejecting deprecated or disallowed algorithms.
+7. Release channel, product identity, broker compatibility, and anti-rollback policy.
+
+Microsoft documents WinVerifyTrust as a trust-provider operation for supported objects, and CertGetCertificateChain as a way to build a certificate chain and request revocation checks. The design must distinguish signature mathematics, certificate-chain trust, publisher pinning, and package authorization. They are separate checks.
+
+### 11.15.5 Timestamp and revocation behavior
+
+The release process should request a trusted RFC 3161 timestamp where the selected signature format and verification implementation support it. Timestamp validation must establish that the signature existed while the signing certificate was valid; it does not make a compromised signing key safe and does not replace revocation policy.
+
+Revocation handling must be specified for both connected and offline installations. The broker must not silently treat an unavailable CRL/OCSP response as a clean certificate. Proposed default: fail closed when required revocation status cannot be established, with a separately reviewed and narrowly scoped offline policy if SERMAX must support disconnected installations. The offline policy, cache age, trusted status data, and user-visible failure behavior remain undecided.
+
+### 11.15.6 Signing-key custody and release separation
+
+- The private release-signing key must never be committed to Git, included in a ZIP, stored in the installer package, or placed in ordinary build artifacts.
+- The build/test pipeline must not gain signing authority by default.
+- Release signing should be a separate, access-controlled stage, preferably backed by an HSM or managed signing service. If that is unavailable, key custody and operator controls require an explicit documented risk decision.
+- Developer workstations and pull-request jobs must not have access to production signing credentials.
+- Signing access must be limited, logged, reviewed, and revocable.
+- A test key may be used for isolated tests only. Test-key signatures must never be accepted by production broker policy.
+
+### 11.15.7 Rotation, compromise, and anti-rollback
+
+The broker trust policy must support planned key rotation without accepting arbitrary new keys. A transition should require authorization by an already trusted key or by a separately protected recovery trust anchor. The design must define overlap periods, key identifiers, activation sequence, retirement, and emergency revocation.
+
+The broker must persist the highest accepted release sequence and product/channel identity in broker-protected state. It rejects older or replayed releases. Reinstalling an equal or older version for recovery requires a separate administrative recovery policy, not a package flag. A signed timestamp or valid signature alone does not prevent replay of an old, legitimately signed package.
+
+### 11.15.8 Required negative and lifecycle tests
+
+Before production approval, test:
+
+- Invalid, missing, truncated, detached-content-mismatched, and altered signatures.
+- Unknown, unpinned, expired, revoked, wrong-purpose, and wrong-product signers.
+- Unsupported or weak digest/signature algorithms.
+- Certificate-chain failures, unavailable revocation endpoints, stale cached revocation data, and timestamp failures.
+- Duplicate manifest keys, malformed UTF-8, alternate path spellings, traversal, ADS, reserved names, duplicate paths, hard links/reparse entries, extra unlisted files, missing files, and size/hash mismatches.
+- Payload mutation during upload, after finalization, between validation and installation, and after service restart.
+- Old signed package replay, lower release sequence, channel downgrade, broker-version mismatch, and key rotation/revocation.
+- Signing key unavailable, compromised-key response, recovery-key rotation, and interrupted release publication.
+
+Every failure must reject the package before protected destination changes. Logs record release ID, signer key identifier, package digest, decision code, and transaction ID, without private keys, credentials, or sensitive user data.
+
+### 11.15.9 Decision gates still open
+
+No implementation should begin until the following are approved:
+
+1. Exact package/archive format and canonical manifest byte rules.
+2. Detached CMS/PKCS #7 format and Windows verification API, including exact signer pinning behavior.
+3. Publisher identity and protected trust-anchor storage.
+4. Certificate issuance, code-signing EKU, algorithm policy, timestamping, and revocation behavior.
+5. Signing-key custody, release separation, audit, rotation, and emergency recovery.
+6. Broker-owned anti-rollback state and recovery exception policy.
+7. Full negative test matrix on supported Windows versions.
+
+**Decision status:** candidate architecture only. No production signing identity or trust anchor exists in this change. No installer or broker implementation is authorized by this document.
+
+### 11.15.10 Microsoft references reviewed
+
+- https://learn.microsoft.com/windows/win32/seccrypto/signtool
+- https://learn.microsoft.com/windows/win32/seccrypto/decoding-signed-data
+- https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgcontrol
+- https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentodecode
+- https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-cryptmsgopentoencode
+- https://learn.microsoft.com/windows/win32/api/wintrust/nf-wintrust-winverifytrust
+- https://learn.microsoft.com/windows/win32/api/wincrypt/nf-wincrypt-certgetcertificatechain
+- https://learn.microsoft.com/windows/win32/seccrypto/using-signtool-to-verify-a-file-signature
