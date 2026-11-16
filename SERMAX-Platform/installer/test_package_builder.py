@@ -26,6 +26,33 @@ class PackageBuilderTests(unittest.TestCase):
             self.assertEqual(result["file_count"], 1)
             self.assertFalse((output / "payload" / "private.db").exists())
 
+    def test_rejects_source_modified_during_staging(self):
+        from unittest.mock import patch
+        import sermax_package_builder
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            source_file = source / "app.py"
+            source_file.write_text("original", encoding="utf-8")
+            output = root / "package"
+            real_copy = sermax_package_builder.shutil.copy2
+
+            def copy_then_mutate(src, dst, *args, **kwargs):
+                result = real_copy(src, dst, *args, **kwargs)
+                Path(src).write_text("changed during staging", encoding="utf-8")
+                return result
+
+            with patch.object(sermax_package_builder.shutil, "copy2", side_effect=copy_then_mutate):
+                with self.assertRaisesRegex(BuildError, "mudou durante a montagem"):
+                    build_package(
+                        source, output, "1",
+                        [(Path("app.py"), Path("app.py"))]
+                    )
+
+            self.assertFalse(output.exists())
+
     def test_rejects_output_inside_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
