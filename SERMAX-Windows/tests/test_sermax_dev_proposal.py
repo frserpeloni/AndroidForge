@@ -132,8 +132,10 @@ class DevelopmentProposalTests(unittest.TestCase):
     def test_exact_match_edits_preview_and_apply(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
+            newline = chr(10)
             (root / "sermax_core.py").write_text(
-                "def command():\n    return old_value\n", encoding="utf-8"
+                "def command():" + newline + "    return old_value" + newline,
+                encoding="utf-8",
             )
             workspace = WorkspaceAdapter(root)
             raw = json.dumps({
@@ -142,8 +144,8 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "path": "sermax_core.py",
                     "content": None,
                     "edits": [{
-                        "old": "    return old_value\n",
-                        "new": "    return new_value\n",
+                        "old": "    return old_value" + newline,
+                        "new": "    return new_value" + newline,
                     }],
                 }],
                 "tests": ["unittest"],
@@ -155,13 +157,14 @@ class DevelopmentProposalTests(unittest.TestCase):
             self.assertEqual(apply_proposal(workspace, proposal), ["sermax_core.py"])
             self.assertEqual(
                 workspace.read_text("sermax_core.py"),
-                "def command():\n    return new_value\n",
+                "def command():" + newline + "    return new_value" + newline,
             )
 
     def test_exact_match_edits_reject_missing_or_ambiguous_old_text(self):
+        newline = chr(10)
         for source, expected_count in (
-            ("value = 2\n", 0),
-            ("value = 1\nvalue = 1\n", 2),
+            ("value = 2" + newline, 0),
+            ("value = 1" + newline + "value = 1" + newline, 2),
         ):
             with self.subTest(expected_count=expected_count), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
@@ -172,7 +175,10 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "files": [{
                         "path": "module.py",
                         "content": None,
-                        "edits": [{"old": "value = 1\n", "new": "value = 2\n"}],
+                        "edits": [{
+                            "old": "value = 1" + newline,
+                            "new": "value = 2" + newline,
+                        }],
                     }],
                     "tests": ["unittest"],
                 }))
