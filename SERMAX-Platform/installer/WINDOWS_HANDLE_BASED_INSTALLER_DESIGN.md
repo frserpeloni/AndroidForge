@@ -366,3 +366,29 @@ A source review of the current branch at commit `78ff8109b052492ad5f5b037a7994f0
 - Keep the current GUI labeled as a development preview until a separate broker implementation, signed package pipeline, Windows adversarial tests, and recovery tests satisfy the acceptance gates.
 
 **Current conclusion:** the proposed broker is a new architecture, not a small hardening patch to the existing installer. The existing GUI/core cannot be made privileged by changing its launch level. The gap audit is evidence for planning only; no code was modified by this review.
+
+
+### 11.13 Gap audit against current installer code
+
+Static source review of commit `78ff8109b052492ad5f5b037a7994f0f6d65cc53` found that the current installer is not the broker architecture in sections 11.9–11.12.
+
+1. `installer_gui.py` calls `install_package(package, destination, ...)` directly in a worker thread. It lets the user select both package and destination. No Windows service, named-pipe server, client-token validation, service SID, or broker authorization exists in this path.
+2. The GUI defaults to `Path.home() / "SERMAX"`, a per-user destination, not the machine-wide protected root assumed by the provisional threat model.
+3. `sermax_installer_core.py` accepts caller-selected package and install paths. It validates paths, then uses path-based `Path`, `os.open`, `shutil.copy2`, `tempfile.mkstemp`, `Path.write_text`, `Path.read_bytes`, `os.replace`, and unlink operations. Rechecking does not bind later operations to the objects previously checked.
+4. The package loader checks JSON manifest hashes and sizes against files in the package directory. The inspected code has no signature verification, publisher identity check, trusted release manifest, or independent signing trust anchor. Hashes provide internal consistency, not publisher authenticity.
+5. The package builder has no signing step or protected release-key workflow.
+6. The README labels the GUI a development preview, says the installer is not distributable, and records that signing and publisher verification are absent.
+7. The client-authored manifest and `preserve_paths` must not be treated as authority by a future privileged broker to overwrite protected data or decide what user data is preserved.
+8. The current engine backs up and replaces files individually and attempts rollback. Its README correctly states this is not a globally atomic transaction. Durable journaling and crash recovery remain unimplemented.
+
+**Required transition; no implementation until the approval gate passes**
+
+- Treat the current GUI and core as an untrusted client/package-preparation layer. They must not receive elevated rights or write access to the protected application root.
+- Build a separate broker only after approval of service identity, destination, DACLs, pipe protocol, package trust anchor, and recovery model.
+- Move all privileged destination operations behind the broker. Do not elevate the existing Python core as-is or expose a generic privileged path API.
+- Broker must copy input into broker-owned staging, validate a strict signed release manifest and publisher identity, then install from that same snapshot.
+- Define package signing and key lifecycle before release packages. Never trust a hash or verification result supplied by the client.
+- Define migration for existing per-user `%USERPROFILE%\\SERMAX` and any future machine-wide destination. Never automatically move, overwrite, delete, or merge existing `C:\\SERMAX`, Terminal, memory, configuration, or backups. Require explicit authorization and tested preservation/rollback.
+- Keep the GUI marked development preview until broker, signed package pipeline, Windows adversarial tests, and recovery tests pass.
+
+**Conclusion:** the broker is a new architecture, not a small hardening patch. The current GUI/core must not be made privileged by changing its launch level. This audit is planning evidence only; no code was modified.
