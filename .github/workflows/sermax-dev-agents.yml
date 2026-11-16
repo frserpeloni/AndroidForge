@@ -1,6 +1,7 @@
 name: SERMAX Development Agents
 # Agent backend now requests schema-constrained JSON for code proposals and test verdicts.
 # Agent sandbox ownership is restored before TemporaryDirectory cleanup.
+# Linux agents run portable core tests; the Windows CI owns Win32-specific coverage.
 
 on:
   push:
