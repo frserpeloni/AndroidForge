@@ -206,6 +206,10 @@ class TestRunner:
         if suite not in ALLOWED_TESTS:
             raise WorkspaceError("Conjunto de testes não autorizado.")
         command = ALLOWED_TESTS[suite]
+        if suite == "unittest" and (self.workspace.root / "backend" / "test_api.py").is_file():
+            command = (
+                sys.executable, "-m", "unittest", "discover", "-s", "backend", "-v"
+            )
         env = {
             key: value for key, value in os.environ.items()
             if key in {"PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
