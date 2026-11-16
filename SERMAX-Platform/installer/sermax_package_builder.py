@@ -114,6 +114,14 @@ def build_package(source_root: Path, output_dir: Path, version: str,
                 raise BuildError(f"Origem fora da pasta autorizada: {source_rel}") from exc
             if not source.is_file():
                 raise BuildError(f"Origem não é arquivo regular: {source_rel}")
+
+            # Capture source identity by content before staging. The copied bytes
+            # must match this snapshot, and the source must remain unchanged
+            # throughout the copy. This detects ordinary concurrent content
+            # changes; it does not close Windows path/reparse TOCTOU races.
+            source_size_before = source.stat().st_size
+            source_hash_before = sha256(source)
+
             key = target_rel.as_posix().casefold()
             if any(key == old or key.startswith(old + "/") or old.startswith(key + "/") for old in seen):
                 raise BuildError(f"Destino duplicado ou conflitante: {target_rel}")
@@ -122,11 +130,24 @@ def build_package(source_root: Path, output_dir: Path, version: str,
             target.parent.mkdir(parents=True, exist_ok=True)
             _assert_no_reparse_components(target.parent)
             shutil.copy2(source, target)
+            staged_hash = sha256(target)
+            staged_size = target.stat().st_size
+            source_hash_after = sha256(source)
+            source_size_after = source.stat().st_size
+            if (source_hash_before != source_hash_after or
+                    source_size_before != source_size_after):
+                raise BuildError(
+                    f"Arquivo de origem mudou durante a montagem: {source_rel}"
+                )
+            if staged_hash != source_hash_before or staged_size != source_size_before:
+                raise BuildError(
+                    f"Conteúdo copiado diverge da origem validada: {source_rel}"
+                )
             staged_entries.append({
                 "source": f"payload/{target_rel.as_posix()}",
                 "target": target_rel.as_posix(),
-                "sha256": sha256(target),
-                "size_bytes": target.stat().st_size,
+                "sha256": staged_hash,
+                "size_bytes": staged_size,
             })
 
         preserve = preserve_paths or [
