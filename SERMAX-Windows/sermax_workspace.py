@@ -157,15 +157,15 @@ class TestRunner:
             ignore=shutil.ignore_patterns(".sermax_dev_backups", "__pycache__", ".git", ".venv-jarvis", "build", "dist"),
         )
         # O processo de testes roda como nobody, sem acesso ao ambiente/arquivos do runner.
-        subprocess.run(
-            ["sudo", "-n", "chown", "-R", "nobody:nogroup", str(sandbox)],
-            check=True,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            timeout=30,
-        )
         try:
+            subprocess.run(
+                ["sudo", "-n", "chown", "-R", "nobody:nogroup", str(sandbox)],
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=30,
+            )
             subprocess.run(
                 ["sudo", "-n", "chmod", "-R", "a+rwX", str(sandbox)],
                 check=True,
