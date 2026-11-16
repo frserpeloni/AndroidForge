@@ -24,8 +24,20 @@ PROTECTED_NAMES = {
 MAX_FILE_BYTES = 1_000_000
 MAX_OUTPUT_CHARS = 30_000
 MAX_OUTPUT_BYTES = MAX_OUTPUT_CHARS * 4
+if sys.platform.startswith("win"):
+    _UNITTEST_COMMAND = (
+        sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"
+    )
+else:
+    # A suíte completa contém testes de APIs Win32 e dependências exclusivas do Windows.
+    # No runner Linux, validar os testes portáteis do núcleo; a suíte completa roda na CI Windows.
+    _UNITTEST_COMMAND = (
+        sys.executable, "-m", "unittest", "discover", "-s", "tests",
+        "-p", "test_sermax_core*.py", "-v"
+    )
+
 ALLOWED_TESTS = {
-    "unittest": (sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"),
+    "unittest": _UNITTEST_COMMAND,
     "compileall": (sys.executable, "-m", "compileall", "-q", "."),
 }
 
