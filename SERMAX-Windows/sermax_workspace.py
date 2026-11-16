@@ -29,12 +29,9 @@ if sys.platform.startswith("win"):
         sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"
     )
 else:
-    # A suíte completa contém testes de APIs Win32 e dependências exclusivas do Windows.
-    # No runner Linux, validar os testes portáteis do núcleo; a suíte completa roda na CI Windows.
-    _UNITTEST_COMMAND = (
-        sys.executable, "-m", "unittest", "discover", "-s", "tests",
-        "-p", "test_sermax_core*.py", "-v"
-    )
+    # O runner Linux executa os módulos portáteis do núcleo e da equipe.
+    # A suíte completa, incluindo APIs Win32, roda na CI Windows.
+    _UNITTEST_COMMAND = (sys.executable, "tests/run_agent_suite.py")
 
 ALLOWED_TESTS = {
     "unittest": _UNITTEST_COMMAND,
