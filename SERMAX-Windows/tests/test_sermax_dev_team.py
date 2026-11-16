@@ -78,6 +78,8 @@ class DevelopmentTeamTests(unittest.TestCase):
                     ], "tests": ["unittest"]}, ensure_ascii=False)
                 if role == "testador":
                     self.assertIn('"status": "passed"', prompt)
+                    self.assertIn('"output_tail"', prompt)
+                    self.assertIn('"written_files"', prompt)
                     return '{"verdict":"PASS","evidence":"unittest retornou passed"}'
                 return f"resultado-{role}"
             team = DevelopmentTeam(Path(folder) / "team.sqlite3", model_call,
