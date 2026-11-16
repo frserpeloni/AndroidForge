@@ -15,7 +15,7 @@ on:
           Audite a próxima etapa do atualizador SERMAX: validação segura da área privada _update.
           Examine os módulos e testes fornecidos. Identifique lacunas reproduzíveis em abertura
           por handle, identidade de volume/FileId, reparse points, ACL, enumeração, concorrência
-          e falhas. Implemente uma correção pequena, limitada a no máximo três arquivos, com unittest. Evite reescrever módulos extensos. Trabalhe somente em sandbox.
+          e falhas. Implemente uma correção pequena, limitada a no máximo três arquivos, com unittest. Evite reescrever módulos extensos. No JSON, o campo tests deve ser uma lista de strings simples, por exemplo ["unittest"], nunca objetos. Trabalhe somente em sandbox.
           Não acesse C:\\SERMAX, não crie diretórios nem altere ACL na instalação. Não implemente
           staging, backup, journal, instalação ou rollback. Não altere main, workflows,
           infraestrutura dos agentes, credenciais, memórias, configurações, Jarvis, Pestinha,
@@ -89,7 +89,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "4096"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Audite e implemente a etapa segura de validação da área privada _update, conforme os limites deste workflow. Limite a proposta a no máximo três arquivos e prefira uma correção pequena com teste.' }}
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Audite e implemente a etapa segura de validação da área privada _update, conforme os limites deste workflow. Limite a proposta a no máximo três arquivos, prefira uma correção pequena com teste e retorne tests como lista de strings, por exemplo ["unittest"].' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
