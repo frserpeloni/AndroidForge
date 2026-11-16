@@ -11,8 +11,15 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: "Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Identifique uma falha reproduzível ou uma lacuna objetiva de segurança/correção. Se encontrar, implemente uma correção pequena com teste unittest; se não encontrar, acrescente um teste de regressão para comportamento existente ainda sem cobertura. Não altere infraestrutura, workflows, integrações Jarvis/Pestinha, memórias ou arquivos protegidos."
-        type: string
+        default: >-
+          Audite a próxima etapa do atualizador SERMAX: validação segura da área privada _update.
+          Examine os módulos e testes fornecidos. Identifique lacunas reproduzíveis em abertura
+          por handle, identidade de volume/FileId, reparse points, ACL, enumeração, concorrência
+          e falhas. Implemente a menor correção segura com unittest. Trabalhe somente em sandbox.
+          Não acesse C:\\SERMAX, não crie diretórios nem altere ACL na instalação. Não implemente
+          staging, backup, journal, instalação ou rollback. Não altere main, workflows,
+          infraestrutura dos agentes, credenciais, memórias, configurações, Jarvis, Pestinha,
+          terminal ou arquivos protegidos. Registre pendências que dependam de Windows x64.
 
 permissions:
   contents: write
@@ -82,7 +89,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "2048"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Execute o teste de aceitação da equipe SERMAX. Audite sermax_core.py e os testes existentes. Corrija uma falha objetiva ou acrescente um teste de regressão com unittest.' }}
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Audite e implemente a etapa segura de validação da área privada _update, conforme os limites deste workflow.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
