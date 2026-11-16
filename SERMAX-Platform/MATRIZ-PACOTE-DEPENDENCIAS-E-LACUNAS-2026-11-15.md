@@ -441,3 +441,50 @@ Testar queda controlada antes e depois de cada gravação, flush, publicação e
 Aprovar formato e metadados do marcador, primitiva de publicação por filesystem, regra de journal truncado, gate de inicialização, política de finalização após marcador novo sem COMMITTED, procedimento operador e matriz de armazenamento suportado.
 
 **Decisão:** contrato de recuperação documentado. Sem implementação ou testes de queda de energia. Permanecem os bloqueios de namespace da seção 4A, journal/broker, rollback e política de saúde. Não existe instalador distribuível.
+
+## 16. Limites de autorização e segurança do broker Windows, 2026-11-16
+
+**Estado:** contrato documental proposto. Nenhum serviço, broker, named pipe, ACL, privilégio, tela de consentimento ou operação privilegiada foi implementado.
+
+| Área | Estado observado | Critério obrigatório antes da implementação |
+|---|---|---|
+| Cliente gráfico e motor atual | GUI chama diretamente o motor Python e aceita caminhos informados pelo usuário | Permanecer sem elevação. Não expor funções que recebem caminhos por meio de wrapper privilegiado |
+| Serviço Windows | Não foi identificado serviço broker no fluxo atual do instalador | Definir identidade dedicada, SID do serviço, privilégios mínimos, instalação e proteção do binário |
+| IPC | Seção 11.14 especifica proposta de named pipe; não há servidor broker comprovado no fluxo atual | DACL explícita, rejeição de clientes remotos, autenticação do token/SID/sessão, protocolo limitado e autorização por operação |
+| Consentimento | Não há consentimento validado pelo broker | Aprovação explícita vinculada ao digest do pacote, manifesto, destino, conjunto de ações e transação |
+| Pacote | Instalador de diretório schema v1 não possui assinatura; atualizador ZIP Ed25519 é trilha separada | Broker valida assinatura, publicador, política, anti-rollback e snapshot de staging sob sua propriedade |
+| Destino | GUI aceita caminho de destino selecionado | Destino fixo e provisionado, sem caminho arbitrário em IPC |
+| Namespace e handles | Seção 4A continua bloqueando a garantia de resolução segura no Windows | Não aceitar fallback path-based. Demonstrar contrato suportado, ACLs de ancestrais e testes adversariais |
+| Journal e recuperação | Contratos documentais nas seções 11.21 a 11.24 | Journal, staging, backup e marcador protegidos; recuperação antes de liberar o aplicativo |
+| Dados do usuário | Memórias, SQLite, logs, modelos, configurações e backups estão fora do escopo de payload autorizado | Separação física/lógica e ACLs verificadas. Migração exige aprovação separada |
+| Auditoria e chaves | Não há provisionamento de chaves de produção nem trilha de auditoria do broker | Estado de confiança e anti-rollback protegidos; logs sob controle do serviço, sem segredos ou conteúdo de conversa |
+
+### 16.1 Ameaças cobertas pelo contrato
+
+- GUI comprometida, processo malicioso na mesma sessão e outro usuário local.
+- Pipe squatting, identidade falsa do servidor, token/sessão inesperados e falha de impersonação.
+- Mensagens malformadas, oversized, duplicadas, reordenadas ou reproduzidas.
+- Substituição de pacote, downgrade, publicador não confiável e replay de transação.
+- Reparse points, hard links, ADS, troca de ancestrais e ataques de namespace.
+- Concorrência, negação de serviço, queda do serviço e corrupção de journal, backup, marcador ou logs.
+
+A proposta inicial exclui administrador local, SYSTEM, kernel/boot comprometidos, modificação offline e comprometimento da chave ou pipeline de assinatura. Não declarar proteção contra esses agentes.
+
+### 16.2 Regras de autorização
+
+1. A conexão ao pipe não equivale a autorização para instalar.
+2. A identidade do cliente vem do token Windows, nunca de campos JSON ou PID isolado.
+3. O serviço não aceita caminho, comando, destino ou operação arbitrária.
+4. Aprovação humana é vinculada à versão, digests, destino, ações e transação exatos.
+5. Consentimento não supera falha de assinatura, política, ACL, anti-rollback, journal ou estado de recuperação.
+6. Requisições repetidas retornam o resultado existente ou rejeição estável, sem repetir mutação.
+7. O broker valida e instala o mesmo snapshot de pacote sob sua propriedade.
+8. Nenhuma escrita privilegiada ocorre quando a garantia de namespace ou a classificação transacional é ambígua.
+9. RECOVERY_REQUIRED bloqueia novas instalações e a inicialização normal do candidato até classificação segura.
+10. Dados pessoais, memórias, banco, logs, credenciais, modelos e backups ficam fora do payload e do rollback.
+
+### 16.3 Pendências de aprovação
+
+Identidade e privilégios do serviço; implantação machine-wide ou per-user; destino e DACLs; instalação/atualização/desinstalação do serviço; política de sessão IPC; experiência de consentimento; trust anchor e ciclo de chaves; quotas e concorrência; cancelamento e shutdown; interface de recuperação; suporte a sistemas de arquivos; testes com contas Windows distintas.
+
+**Decisão:** a seção 11.25 do documento técnico especifica o contrato do broker para revisão. Nenhum componente privilegiado foi implementado. O instalador continua não distribuível e a arquitetura não está autorizada para execução.
