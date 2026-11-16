@@ -1160,3 +1160,156 @@ Snapshot lifecycle is accepted only when the implementation proves that:
 6. Windows namespace revalidation has an approved, documented security contract and passes the adversarial suite.
 
 **Decision:** this section defines when a future snapshot and confirmation must be rejected. It does not make the current path-based inventory safe, implement a transaction engine, close section 4A, or authorize installation.
+
+
+## 11.21 Durable transaction journal and crash-recovery contract
+
+**Audit date:** 2026-11-16.  
+**Status:** specification only. No journal writer, coordinator, broker, installer, rollback engine or recovery command was implemented or tested.
+
+### 11.21.1 Purpose and authority boundary
+
+The journal records transaction intent, verified operations and durable phases. It is not a source of package authority. It must never authorize an unverified package, expand the signed file list, change the destination root, authorize user-data migration, recreate InventorySnapshot handles, revive a ConfirmedPlan, or trigger blind replay of an ambiguous operation.
+
+The journal belongs to the future broker/transaction owner. A client process must not write, replace, truncate, delete or select its storage path.
+
+### 11.21.2 Versioned record envelope
+
+The journal format has an explicit integer journal_format_version, independent of package schema and transaction protocol version. Unknown versions and unknown critical fields fail closed.
+
+Each transaction uses a cryptographically random transaction ID with at least 128 bits of entropy. IDs are never reused. Each framed record contains:
+- format version, transaction ID, strictly increasing sequence number, previous-record digest;
+- record type, prior/new state, UTC audit timestamp and nonsecret process correlation metadata;
+- product/release identity and sequence from the authenticated manifest;
+- exact manifest, archive/staged-package and confirmed-plan digests;
+- transaction protocol and policy versions, protected root identity and target references;
+- per-target expected before/after identity, type, size and SHA-256;
+- broker-owned staging/backup identifiers, relative names, sizes, hashes and verification status;
+- operation intent, result, verification result and stable error code;
+- checksum/digest over a deterministic, versioned encoding.
+
+Reject duplicate keys, malformed encodings, invalid types, unsupported critical fields, oversized records and trailing bytes. Canonicalization and digest algorithms must be explicit. Ordinary JSON serialization is not assumed canonical across runtimes.
+
+A previous-record digest detects gaps and edits in a chain, but is not tamper-proof if an attacker can rewrite the entire journal. MAC/signature choice and key custody remain open. Until approved, trust depends on broker ownership, restrictive ACLs and independent artifact verification. If ownership or ACL integrity is uncertain, enter RECOVERY_REQUIRED.
+
+### 11.21.3 Transaction state machine
+
+| State | Meaning | Permitted next states |
+|---|---|---|
+| PREPARED | Exact package, manifest, plan and preconditions are bound; journal initialized before protected mutation | STAGING_VERIFIED, ABORTED, RECOVERY_REQUIRED |
+| STAGING_VERIFIED | Staged payload read back and matched authenticated sizes/hashes | BACKUP_VERIFIED, ABORTED, RECOVERY_REQUIRED |
+| BACKUP_VERIFIED | Every replacement target has a verified backup, or is explicitly absent | COMMITTING, ABORTED, RECOVERY_REQUIRED |
+| COMMITTING | Per-target write-ahead intents and verified operations are processed | COMMITTED, ROLLBACK_REQUIRED, RECOVERY_REQUIRED |
+| COMMITTED | All targets and final marker passed verification; commit record is durable | terminal |
+| ROLLBACK_REQUIRED | Commit cannot safely continue | ROLLING_BACK, RECOVERY_REQUIRED |
+| ROLLING_BACK | Per-target rollback intents and verified restorations are processed | ROLLED_BACK, RECOVERY_REQUIRED |
+| ROLLED_BACK | Prior targets and marker were restored and verified; backups remain retained | terminal pending retention policy |
+| RECOVERY_REQUIRED | Journal, artifacts, namespace or operation outcome is ambiguous | reviewed recovery only |
+| ABORTED | Transaction ended before protected mutation, with no target changes | terminal |
+
+Transitions are validated and monotonic. COMMITTED, ROLLED_BACK and ABORTED are terminal for ordinary processing. A separately authorized recovery transaction is required for further changes.
+
+COMMITTING and ROLLING_BACK do not prove that every operation in that phase completed. Recovery inspects the last verified per-target record and actual filesystem state.
+
+### 11.21.4 Write-ahead protocol
+
+Every destructive or namespace-changing operation follows this order:
+
+1. Revalidate transaction, exact package snapshot, root policy, target parent and expected object under the approved filesystem security contract.
+2. Persist an operation-intent record with target, action, before-state, after-state, backup reference and unique operation ID.
+3. Flush and verify the journal record before starting the filesystem operation.
+4. Perform exactly one bounded operation through the approved broker-owned, handle-safe backend.
+5. Query the resulting object through the approved handle-bound method. Verify identity/type, size and SHA-256.
+6. Persist and flush an operation-completed record only after successful verification.
+7. On failure, or if actual state matches neither expected before-state nor after-state, stop in RECOVERY_REQUIRED. Never guess or blindly retry.
+
+No write without a durable intent. No completion record before post-operation verification. The installation marker/version record is last. If marker publication fails, the transaction is not COMMITTED.
+
+### 11.21.5 Journal durability and Windows I/O limits
+
+The journal uses broker-owned storage, restrictive ACLs and explicit handle ownership. It must not use the current path-based installer primitives for protected objects.
+
+For each update, the future writer must:
+- create a uniquely named temporary object in the same broker-owned journal directory;
+- detect short writes and disk-full errors;
+- call FlushFileBuffers on the file handle and treat failure as fatal;
+- publish the record with a primitive whose atomicity and handle/namespace semantics are documented for the selected Windows/filesystem contract;
+- reopen/read back the published record and verify framing, sequence, digest and transaction ID;
+- retain the prior valid journal generation until the new generation is verified.
+
+FlushFileBuffers flushes buffered information for the specified file. It does not, by itself, prove atomicity of a multi-file transaction or persistence of every directory metadata update. Journal publication, directory-entry durability, filesystem behavior, storage-controller cache and power-loss guarantees require separate validation.
+
+MoveFileExW with MOVEFILE_WRITE_THROUGH documents write-through behavior for the move/copy operation, but it is path-based and does not resolve the namespace-race blocker. This reference does not authorize its use for protected installer operations.
+
+If publication or read-back cannot be proven, stop before the next protected mutation. A torn tail, missing sequence, digest-chain break or conflicting generations requires RECOVERY_REQUIRED with all artifacts preserved.
+
+### 11.21.6 Staging and backup
+
+Staging and backups live under broker-owned roots with restrictive ACLs, unique transaction-scoped names and exclusive ownership. The client cannot modify them after intake.
+
+Before BACKUP_VERIFIED, every existing replacement target must have a backup copied from the exact admitted object, read back and checked against pre-state identity/size/hash evidence. Absent targets are recorded as absent, but still require commit-time collision checks. The prior installation marker is backed up if it will change. Required space for staging, backups, journal growth and rollback must be checked under an approved policy.
+
+A successful copy return is not proof of a verified backup. Never overwrite another transaction's backup. Missing, altered or unreadable backup blocks commit/rollback and requires recovery.
+
+Staging becomes immutable after verification. Any package, manifest, staged-file or policy digest mismatch invalidates the transaction. Install only from the exact broker-owned staged bytes that were validated.
+
+### 11.21.7 Startup classification and recovery
+
+At startup, before accepting a new install:
+1. Open the fixed journal root under the broker identity. Verify ownership, ACL policy, object types and supported filesystem.
+2. Enumerate records without following reparse points. Reject unexpected entries and volume crossings.
+3. Validate framing, format, transaction ID, sequence continuity, previous-record digest, checksum and allowed state transitions.
+4. Verify package/manifest/plan digests and release identity against broker-owned transaction metadata.
+5. Verify every referenced staging and backup object by broker-owned identity, size and hash, not name alone.
+6. Reacquire destination handles and revalidate root, parent and target identities. Never reuse old handles or confirmation state.
+7. Classify each operation as verified-before, verified-after or ambiguous by comparing actual objects with journal evidence.
+8. Continue only if the state machine and all before/after evidence yield one safe deterministic action. Otherwise enter RECOVERY_REQUIRED and preserve all artifacts.
+
+Recovery inspection is idempotent. Repeating it without filesystem changes must not mutate targets or advance state. A replayed intent must not repeat a destructive operation if the target already matches the verified after-state. A content hash alone may not establish object identity where identity is required.
+
+No automatic rollback when journal integrity, ACL, backup, target, package digest, root identity or prior operation outcome is uncertain.
+
+### 11.21.8 Retention and user-data preservation
+
+Backups and recovery artifacts remain broker-owned after COMMITTED or ROLLED_BACK until a separate retention policy is approved and the release is independently verified healthy.
+
+Journal cleanup must never remove memories, SQLite databases, histories, logs, preferences, attachments, Ollama models, Python environments, external service data, original Terminal, user backups or files outside the explicit signed program payload.
+
+Retention duration, quotas, operator approval and secure deletion semantics remain open. Do not invent a duration or delete automatically to recover disk space. If capacity is insufficient, reject a new transaction before mutation.
+
+### 11.21.9 Decisions still open
+
+Before implementation, approve:
+1. Journal root, service identity, owner, ACL and inheritance policy.
+2. Record framing/publication model and atomic publication primitive for every supported filesystem.
+3. Deterministic encoding and hash/checksum algorithm.
+4. Whether MAC/signature is required, with key source, protection, rotation and recovery.
+5. Maximum journal/record size, transaction count, staging/backup quotas and retention.
+6. Supported Windows builds/filesystems and power-loss guarantees.
+7. Operator procedure for RECOVERY_REQUIRED and evidence preservation.
+
+No production key, MAC key, ACL, quota, retention period or power-loss guarantee is selected here.
+
+### 11.21.10 Fault-injection and adversarial tests
+
+Run on supported Windows runners and disposable test roots. Record Windows build, filesystem, commit, command and result.
+
+Inject termination or I/O failure before/after every journal write, flush, publish and read-back; every staging write/flush/verification; each backup/copy/verification; after intent but before mutation; during/after rename or replace; after post-state verification but before completion record; after completion before next target; around marker publication; at every rollback phase; and during recovery.
+
+Also test disk full, quota exhaustion, access denied, sharing violation, device removal, filesystem error, abrupt process termination, simulated power loss/VM reset, truncated/corrupt/reordered/duplicated/replayed records, missing sequence, altered digest, wrong transaction ID, tampered/missing backup, changed staging bytes, stale package, changed root, substituted target, file-ID reuse, concurrent updater and repeated recovery.
+
+Acceptance requires no target write without a verified intent; no completion without post-state verification; no automatic continuation from ambiguity; each crash point ends in a verified committed state, verified restored state or preserved RECOVERY_REQUIRED; repeated recovery inspection is idempotent; user data and unrelated files remain unchanged.
+
+### 11.21.11 Acceptance decision
+
+The journal is not accepted for production until storage/ACL, record integrity, publication semantics, write-ahead protocol, backup verification, crash recovery and fault-injection tests pass on every declared Windows/filesystem configuration.
+
+**Decision:** state machine and recovery contract specified; execution remains unimplemented. Section 4A still blocks the handle-based backend. Section 11.1 broker trust boundaries remain proposals requiring approval. No installer, broker, rollback engine, recovery utility, package or production release was created or authorized.
+
+### 11.21.12 Microsoft references reviewed
+
+- FlushFileBuffers: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-flushfilebuffers
+- Flushing system-buffered I/O data to disk: https://learn.microsoft.com/windows/win32/fileio/flushing-system-buffered-i-o-data-to-disk
+- File caching and metadata behavior: https://learn.microsoft.com/windows/win32/fileio/file-caching
+- CreateFile write-through behavior: https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-createfilew
+- MoveFileExW and MOVEFILE_WRITE_THROUGH: https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-movefileexw
