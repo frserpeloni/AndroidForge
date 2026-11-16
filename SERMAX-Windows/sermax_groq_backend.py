@@ -173,7 +173,7 @@ class GroqChatBackend:
                     exc.close()
                 if exc.code == 429 and attempt < self.max_retries:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                    match = re.search(r"try again in ([0-9]+(?:\\.[0-9]+)?)s", detail, re.I)
+                    match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", detail, re.I)
                     try:
                         delay = (
                             float(retry_after) if retry_after
