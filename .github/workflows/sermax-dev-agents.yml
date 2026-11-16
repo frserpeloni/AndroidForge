@@ -12,6 +12,7 @@ name: SERMAX Development Agents
 # The planner objective is positional, not a named objetivo keyword.
 # Testador receives compact status/output evidence instead of a truncated verbose transcript.
 # Platform context now includes the exact middleware and relevant TestClient setup.
+# Require separate import and middleware edits for the new ipaddress dependency.
 # Existing files are modified only through exact-match localized edits.
 
 on:
@@ -26,7 +27,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: 'Endureça o controle local da API da Plataforma. Em backend/server.py, adicione import ipaddress e altere local_origin_guard para validar request.client.host antes das verificações existentes de Host e Origin. Aceite somente IP válido com is_loopback=True. Cliente ausente, IP inválido ou IP não loopback recebe HTTP 403. Preserve o comportamento atual de Host e Origin. Em backend/test_api.py, configure os TestClient usados nos testes locais com client IPv4 loopback (127.0.0.1), incluindo o cliente reaberto, e adicione teste que simula cliente 192.0.2.10 com Host local e espera 403. Altere somente backend/server.py e backend/test_api.py usando edições localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON obrigatoriamente deve conter summary, files e tests, com tests: ["unittest"].'
+        default: 'Endureça a proteção local da API SERMAX-Platform. A proposta DEVE conter duas edições separadas em backend/server.py: (1) adicionar `import ipaddress` como linha própria no bloco de imports; (2) atualizar local_origin_guard para validar request.client.host com ipaddress.ip_address(...).is_loopback, rejeitando cliente ausente, IP inválido e IP não loopback com HTTP 403, antes das verificações atuais de Host e Origin. Não deixe ipaddress sem import. Em backend/test_api.py, atualize os dois TestClient locais para usar client IPv4 loopback e acrescente teste com client 192.0.2.10, Host local e resposta esperada 403. Altere somente backend/server.py e backend/test_api.py, por edições old/new localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON deve conter obrigatoriamente summary, files e tests, com tests incluindo unittest.'
         type: string
 
 permissions:
@@ -119,7 +120,7 @@ jobs:
           SERMAX_DEV_WORKSPACE: "../SERMAX-Platform"
           SERMAX_DEV_ALLOWED_PATHS: "backend/server.py;backend/test_api.py"
           SERMAX_DEV_TASK: >-
-            ${{ inputs.task || 'Endureça o controle local da API da Plataforma. Em backend/server.py, adicione import ipaddress e altere local_origin_guard para validar request.client.host antes das verificações existentes de Host e Origin. Aceite somente IP válido com is_loopback=True. Cliente ausente, IP inválido ou IP não loopback recebe HTTP 403. Preserve o comportamento atual de Host e Origin. Em backend/test_api.py, configure os TestClient usados nos testes locais com client IPv4 loopback (127.0.0.1), incluindo o cliente reaberto, e adicione teste que simula cliente 192.0.2.10 com Host local e espera 403. Altere somente backend/server.py e backend/test_api.py usando edições localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON obrigatoriamente deve conter summary, files e tests, com tests: ["unittest"].' }}
+            ${{ inputs.task || 'Endureça a proteção local da API SERMAX-Platform. A proposta DEVE conter duas edições separadas em backend/server.py: (1) adicionar `import ipaddress` como linha própria no bloco de imports; (2) atualizar local_origin_guard para validar request.client.host com ipaddress.ip_address(...).is_loopback, rejeitando cliente ausente, IP inválido e IP não loopback com HTTP 403, antes das verificações atuais de Host e Origin. Não deixe ipaddress sem import. Em backend/test_api.py, atualize os dois TestClient locais para usar client IPv4 loopback e acrescente teste com client 192.0.2.10, Host local e resposta esperada 403. Altere somente backend/server.py e backend/test_api.py, por edições old/new localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON deve conter obrigatoriamente summary, files e tests, com tests incluindo unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
