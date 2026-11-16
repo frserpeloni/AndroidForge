@@ -41,6 +41,14 @@ class WorkspaceAdapterTests(unittest.TestCase):
             with self.assertRaises(WorkspaceError):
                 ws.write_text("escape/file.txt", "blocked")
 
+    def test_agent_unittest_suite_matches_runner_platform(self):
+        command = sermax_workspace.ALLOWED_TESTS["unittest"]
+        if sys.platform.startswith("win"):
+            self.assertIn("discover", command)
+            self.assertNotIn("test_sermax_core*.py", command)
+        else:
+            self.assertIn("test_sermax_core*.py", command)
+
     def test_test_runner_allowlist(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
