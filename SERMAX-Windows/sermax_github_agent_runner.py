@@ -42,8 +42,28 @@ def collect_code_context(project_root: Path) -> str:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(650, remaining)]
-        section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
+        if relative == "backend/server.py":
+            lines = content.splitlines()
+            middleware_at = next(
+                (index for index, line in enumerate(lines)
+                 if "async def local_origin_guard" in line),
+                None,
+            )
+            excerpts = ["\\n".join(lines[:24])]
+            if middleware_at is not None:
+                excerpts.append(
+                    "\\n".join(lines[max(0, middleware_at - 2):middleware_at + 20])
+                )
+            excerpt = "\\n...\\n".join(excerpts)
+        elif relative == "backend/test_api.py":
+            lines = content.splitlines()
+            excerpts = ["\\n".join(lines[:62])]
+            if len(lines) > 245:
+                excerpts.append("\\n".join(lines[248:260]))
+            excerpt = "\\n...\\n".join(excerpts)
+        else:
+            excerpt = content[: min(650, remaining)]
+        section = f"\\n--- ARQUIVO: {relative} ---\\n{excerpt}"
         sections.append(section)
         remaining -= len(section)
     return "\n".join(sections)
