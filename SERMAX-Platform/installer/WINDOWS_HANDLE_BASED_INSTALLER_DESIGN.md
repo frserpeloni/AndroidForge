@@ -268,3 +268,73 @@ The review package must include:
 - Windows adversarial test logs on every supported Windows build.
 
 Approval of this architecture is a separate decision. Documentation and research do not authorize implementation, service installation, privilege elevation, or changes to the original SERMAX environment.
+
+
+### 11.9 Provisional threat model
+
+The first supported security target for evaluation is a machine-wide Windows installation. The threat model must be explicit:
+
+**In scope**
+- A malicious or compromised process running as a standard, non-elevated interactive user.
+- A different standard local user.
+- A process in another logon session attempting to connect to the broker pipe.
+- Concurrent modification of client-writable package input and staging locations.
+- Malformed, oversized, replayed, or unauthorized broker requests.
+- Attempts to modify the service binary, service configuration, protected install tree, backup tree, or transaction state without authorization.
+
+**Out of scope for this initial target, and not claimed to be resisted**
+- A local administrator or process holding equivalent administrative privileges.
+- Kernel compromise, boot compromise, offline disk modification, or physical attacks.
+- Compromise of the trusted release-signing key or the trusted build/release pipeline.
+- A compromised Windows kernel or filesystem driver.
+
+The administrator exclusion is material. Administrators and SYSTEM can normally take ownership or change security configuration. The product must not claim protection from a hostile administrator. If resisting administrators becomes a requirement, this broker/ACL design is insufficient by itself and requires a separate platform security architecture.
+
+**Security objective**
+An in-scope unprivileged process must not be able to modify the installed executable tree, replace a parent directory, alter broker configuration, substitute the package after validation, or influence the broker into writing outside the fixed installation root. The broker must not provide a generic privileged file-write or command-execution primitive.
+
+### 11.10 Provisional access-control matrix
+
+This matrix is a design target for a machine-wide installation, not an approved SDDL and not evidence of effective permissions. Replace role names with resolved SIDs only during implementation and verify the resulting security descriptors on every supported Windows build.
+
+| Object | SYSTEM | Administrators | Broker service SID | Standard interactive users |
+|---|---|---|---|---|
+| Service executable and configuration | Full control | Full control for administration | Read/execute only | Read/execute only |
+| Protected application root and program files | Full control | Full control for administration | Modify only where transaction requires it | Read/execute; no create, write, delete, WRITE_DAC or WRITE_OWNER |
+| Broker-owned staging and transaction workspace | Full control | Full control for administration | Full control | No direct access |
+| Backup and rollback workspace | Full control | Full control for administration | Minimum read/write/delete required for transaction and recovery | No direct access |
+| User configuration and user documents | OS/admin policy | OS/admin policy | No broad access; explicit narrow access only if a migration requires it | User's normal per-user access |
+| Broker named pipe | System administration | No implicit access unless explicitly required | Server endpoint | Current authorized logon SID receives only client connection/read/write rights needed by the protocol; no pipe-instance creation right |
+
+Do not grant standard users ownership of the protected application root or its parents. Do not grant them WRITE_DAC, WRITE_OWNER, DELETE, FILE_DELETE_CHILD, FILE_ADD_FILE, or FILE_ADD_SUBDIRECTORY on protected directories. Audit inherited ACEs and explicit ACEs on every ancestor: a secure child DACL is not sufficient if an untrusted user can replace or rename an ancestor. Verify the owner as well as the DACL.
+
+The service SID must receive only the rights required for the broker's operations. A restricted service SID token may require access to be granted through both the normal and restricted SID checks; test the real service token and effective access rather than assuming that adding one ACE is sufficient. The service must not share a process with unrelated services if restricted-token behavior would broaden their impact or create compatibility coupling.
+
+For the pipe, avoid granting generic write if it also grants FILE_CREATE_PIPE_INSTANCE. Grant the precise client rights required by the protocol and reserve pipe-instance creation for the service. The server must authenticate each connection, verify the client token and logon session, authorize each request, and fail closed if impersonation or token inspection fails. If impersonating the client, always revert to the service identity in a guaranteed cleanup path before performing an authorized broker operation. Never continue privileged work after an impersonation failure.
+
+### 11.11 Broker authorization invariants
+
+- The destination root is a compile-time or securely provisioned installation identity, not a request field.
+- The protocol contains operation identifiers and bounded data, never shell commands or arbitrary filesystem paths.
+- Every request is checked against an allowlist of operations and package policy.
+- The broker independently authenticates package publisher identity using a trust anchor unavailable to the interactive user. A caller-supplied hash is not a trust anchor.
+- The broker copies input into service-owned staging and then validates, hashes, and installs from that exact staged snapshot.
+- The broker rejects symbolic links, junctions, other reparse tags, hard-link cases not explicitly supported, alternate data streams, path traversal, duplicate normalized names, reserved device names, unsupported file types, and manifest ambiguity.
+- The broker has strict message-size, file-count, total-uncompressed-size, nesting-depth, CPU-time, and transaction-time limits.
+- Every transaction has a unique identifier, durable phase journal, explicit commit point, and recovery policy. The journal and recovery data are not client-writable.
+- The broker does not expose a generic read-file, write-file, delete-file, move-file, or execute-file endpoint.
+- Every denied request and transaction failure is logged without recording secrets or trusting caller-provided log paths.
+
+### 11.12 Architecture approval gate
+
+Before implementation is authorized, reviewers must approve all of the following:
+
+1. The machine-wide threat model and administrator exclusion.
+2. The exact destination path and owner/ACL design for every parent and protected object.
+3. The service account, service SID type, enabled privileges, restricted SIDs, service-object DACL, and service binary protection.
+4. The named-pipe protocol, DACL, logon-session validation, impersonation failure behavior, and per-operation authorization.
+5. The independent package-signing trust anchor and key lifecycle.
+6. The user-data separation and migration/rollback policy.
+7. Windows adversarial test cases, test identities, supported OS builds, and acceptance thresholds.
+
+Until all seven items are reviewed and explicitly approved, this remains a design proposal. No service, installer, ACL, privilege, or original SERMAX environment changes are authorized.
