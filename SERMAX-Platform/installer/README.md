@@ -113,3 +113,12 @@ python -m py_compile installer_gui.py sermax_installer_core.py sermax_package_bu
 - Não modificar núcleo, Terminal, memórias ou dados sem autorização específica.
 
 O próximo estágio exige definir o manifesto oficial e a composição do pacote completo antes de gerar executável de instalação.
+
+
+## Evolução proposta do formato assinado
+
+O formato implementado no protótipo continua sendo o schema v1, sem assinatura digital. A proposta de schema v2 está documentada em `WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md`, seções 11.15 e 11.16.
+
+A proposta v2 mantém o pacote em diretório, acrescenta `manifest.p7s`, define manifesto canônico JCS e exige assinatura destacada CMS/PKCS #7, identidade do publicador, sequência monotônica e conferência do inventário completo de arquivos.
+
+**Atenção:** schema v2 ainda não está implementado. O construtor e o instalador atuais não geram nem verificam `manifest.p7s`. Não trate a proposta como pacote assinado, instalável ou validado. O protótipo segue sem distribuição autorizada.
