@@ -6,6 +6,7 @@ name: SERMAX Development Agents
 # Portable test fixtures use explicit newline construction to avoid escaped-text ambiguity.
 # Exact-match patch old/new text is supplied verbatim in the task.
 # Failed test output is retained in the task log for diagnosis before rollback.
+# Diagnostic output keeps the tail of unittest logs, including failure summaries.
 # Existing files are modified only through exact-match localized edits.
 
 on:
