@@ -13,7 +13,7 @@ name: SERMAX Development Agents
 # Testador receives compact status/output evidence instead of a truncated verbose transcript.
 # Platform context now includes the exact middleware and relevant TestClient setup.
 # Require separate import and middleware edits for the new ipaddress dependency.
-# The proposal tests field is a string array, exactly [unittest] for this task.
+# First Platform agent cycle only adjusts the TestClient loopback fixtures.
 # Existing files are modified only through exact-match localized edits.
 
 on:
@@ -28,7 +28,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: 'Endureça a proteção local da API SERMAX-Platform. A proposta DEVE conter duas edições separadas em backend/server.py: (1) adicionar `import ipaddress` como linha própria no bloco de imports; (2) atualizar local_origin_guard para validar request.client.host com ipaddress.ip_address(...).is_loopback, rejeitando cliente ausente, IP inválido e IP não loopback com HTTP 403, antes das verificações atuais de Host e Origin. Não deixe ipaddress sem import. Em backend/test_api.py, atualize os dois TestClient locais para usar client IPv4 loopback e acrescente teste com client 192.0.2.10, Host local e resposta esperada 403. Altere somente backend/server.py e backend/test_api.py, por edições old/new localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON deve conter obrigatoriamente summary, files e tests. Para esta tarefa, tests deve ser exatamente ["unittest"], uma lista de strings, nunca objetos.'
+        default: 'Preparação dos testes locais da SERMAX-Platform. Em backend/test_api.py, altere somente os dois construtores TestClient existentes: em setUp, use TestClient(server.app, client=("127.0.0.1", 50000)); no teste de reabertura, use TestClient(server.app, client=("127.0.0.1", 50001)). Não altere backend/server.py. Não acrescente testes nesta etapa. Use edições old/new localizadas, sem reescrever o arquivo. A saída JSON deve conter summary, files e tests, com tests exatamente ["unittest"] como lista de strings.'
         type: string
 
 permissions:
@@ -119,9 +119,9 @@ jobs:
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "3072"
           SERMAX_DEV_WORKSPACE: "../SERMAX-Platform"
-          SERMAX_DEV_ALLOWED_PATHS: "backend/server.py;backend/test_api.py"
+          SERMAX_DEV_ALLOWED_PATHS: "backend/test_api.py"
           SERMAX_DEV_TASK: >-
-            ${{ inputs.task || 'Endureça a proteção local da API SERMAX-Platform. A proposta DEVE conter duas edições separadas em backend/server.py: (1) adicionar `import ipaddress` como linha própria no bloco de imports; (2) atualizar local_origin_guard para validar request.client.host com ipaddress.ip_address(...).is_loopback, rejeitando cliente ausente, IP inválido e IP não loopback com HTTP 403, antes das verificações atuais de Host e Origin. Não deixe ipaddress sem import. Em backend/test_api.py, atualize os dois TestClient locais para usar client IPv4 loopback e acrescente teste com client 192.0.2.10, Host local e resposta esperada 403. Altere somente backend/server.py e backend/test_api.py, por edições old/new localizadas. Não reescreva arquivos completos. Não implemente autenticação, LAN, acesso remoto ou mudança de bind. A saída JSON deve conter obrigatoriamente summary, files e tests. Para esta tarefa, tests deve ser exatamente ["unittest"], uma lista de strings, nunca objetos.' }}
+            ${{ inputs.task || 'Preparação dos testes locais da SERMAX-Platform. Em backend/test_api.py, altere somente os dois construtores TestClient existentes: em setUp, use TestClient(server.app, client=("127.0.0.1", 50000)); no teste de reabertura, use TestClient(server.app, client=("127.0.0.1", 50001)). Não altere backend/server.py. Não acrescente testes nesta etapa. Use edições old/new localizadas, sem reescrever o arquivo. A saída JSON deve conter summary, files e tests, com tests exatamente ["unittest"] como lista de strings.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
