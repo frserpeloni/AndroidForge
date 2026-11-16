@@ -165,15 +165,33 @@ class TestRunner:
             stderr=subprocess.PIPE,
             timeout=30,
         )
+        try:
+            subprocess.run(
+                ["sudo", "-n", "chmod", "-R", "a+rwX", str(sandbox)],
+                check=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=30,
+            )
+        except Exception:
+            self._restore_sandbox_ownership(sandbox)
+            raise
+        return sandbox
+
+    def _restore_sandbox_ownership(self, sandbox: Path) -> None:
+        """Devolve a árvore temporária ao executor antes do cleanup do TemporaryDirectory."""
+        if os.name != "posix":
+            return
+        owner = f"{os.getuid()}:{os.getgid()}"
         subprocess.run(
-            ["sudo", "-n", "chmod", "-R", "a+rwX", str(sandbox)],
+            ["sudo", "-n", "chown", "-R", owner, str(sandbox)],
             check=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             timeout=30,
         )
-        return sandbox
 
     def run(self, suite: str) -> dict:
         if suite not in ALLOWED_TESTS:
@@ -190,9 +208,11 @@ class TestRunner:
 
         with tempfile.TemporaryDirectory(prefix="sermax-test-") as temporary:
             cwd = self.workspace.root
+            sandbox = None
             if self.isolate_as_nobody:
                 try:
                     cwd = self._prepare_isolated_workspace(temporary)
+                    sandbox = cwd
                 except (OSError, subprocess.SubprocessError) as exc:
                     return {
                         "suite": suite, "status": "isolation_failed", "returncode": None,
@@ -208,43 +228,47 @@ class TestRunner:
                     env.pop("PYTHONPATH", None)
                 env["SERMAX_ROOT"] = str(cwd)
 
-            with tempfile.TemporaryFile() as output_file:
-                try:
-                    process = subprocess.Popen(
-                        command, cwd=cwd, shell=False,
-                        stdin=subprocess.DEVNULL, stdout=output_file,
-                        stderr=subprocess.STDOUT, env=env,
-                    )
-                    status = "failed"
-                    while process.poll() is None:
-                        size = os.fstat(output_file.fileno()).st_size
-                        if size > MAX_OUTPUT_BYTES:
-                            process.kill()
-                            process.wait()
+            try:
+                with tempfile.TemporaryFile() as output_file:
+                    try:
+                        process = subprocess.Popen(
+                            command, cwd=cwd, shell=False,
+                            stdin=subprocess.DEVNULL, stdout=output_file,
+                            stderr=subprocess.STDOUT, env=env,
+                        )
+                        status = "failed"
+                        while process.poll() is None:
+                            size = os.fstat(output_file.fileno()).st_size
+                            if size > MAX_OUTPUT_BYTES:
+                                process.kill()
+                                process.wait()
+                                status = "output_limit"
+                                break
+                            if time.monotonic() - started > self.timeout_seconds:
+                                process.kill()
+                                process.wait()
+                                status = "timeout"
+                                break
+                            time.sleep(0.05)
+                        output_size = os.fstat(output_file.fileno()).st_size
+                        if status == "failed" and output_size > MAX_OUTPUT_BYTES:
                             status = "output_limit"
-                            break
-                        if time.monotonic() - started > self.timeout_seconds:
-                            process.kill()
-                            process.wait()
-                            status = "timeout"
-                            break
-                        time.sleep(0.05)
-                    output_size = os.fstat(output_file.fileno()).st_size
-                    if status == "failed" and output_size > MAX_OUTPUT_BYTES:
-                        status = "output_limit"
-                    returncode = process.returncode
-                    if status == "failed" and returncode == 0:
-                        status = "passed"
-                    output_file.seek(max(0, output_size - MAX_OUTPUT_BYTES))
-                    raw = output_file.read(MAX_OUTPUT_BYTES)
-                    output = raw.decode("utf-8", errors="replace")[-MAX_OUTPUT_CHARS:]
-                    return {
-                        "suite": suite, "status": status, "returncode": returncode,
-                        "output": output, "truncated": output_size > MAX_OUTPUT_BYTES,
-                    }
-                except OSError as exc:
-                    return {
-                        "suite": suite, "status": "failed", "returncode": None,
-                        "output": f"{type(exc).__name__}: {exc}"[:MAX_OUTPUT_CHARS],
-                        "truncated": False,
-                    }
+                        returncode = process.returncode
+                        if status == "failed" and returncode == 0:
+                            status = "passed"
+                        output_file.seek(max(0, output_size - MAX_OUTPUT_BYTES))
+                        raw = output_file.read(MAX_OUTPUT_BYTES)
+                        output = raw.decode("utf-8", errors="replace")[-MAX_OUTPUT_CHARS:]
+                        return {
+                            "suite": suite, "status": status, "returncode": returncode,
+                            "output": output, "truncated": output_size > MAX_OUTPUT_BYTES,
+                        }
+                    except OSError as exc:
+                        return {
+                            "suite": suite, "status": "failed", "returncode": None,
+                            "output": f"{type(exc).__name__}: {exc}"[:MAX_OUTPUT_CHARS],
+                            "truncated": False,
+                        }
+            finally:
+                if sandbox is not None:
+                    self._restore_sandbox_ownership(sandbox)
