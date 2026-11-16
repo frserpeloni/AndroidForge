@@ -27,9 +27,21 @@ PROPOSAL_SCHEMA = {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string"},
-                    "content": {"type": "string"},
+                    "content": {"type": ["string", "null"]},
+                    "edits": {
+                        "type": ["array", "null"],
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "old": {"type": "string"},
+                                "new": {"type": "string"},
+                            },
+                            "required": ["old", "new"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["path", "content"],
+                "required": ["path", "content", "edits"],
                 "additionalProperties": False,
             },
         },
