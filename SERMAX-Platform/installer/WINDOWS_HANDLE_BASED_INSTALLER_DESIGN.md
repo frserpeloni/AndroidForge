@@ -1673,3 +1673,195 @@ Before implementation, approve:
 7. Supported storage devices, caching configurations, Windows builds and power-loss test method.
 
 **Decision:** power-loss classification around marker and COMMITTED is specified only. No installer, recovery engine, broker, marker publisher, journal writer, automatic rollback policy, power-loss test or production release was implemented or authorized. Section 4A namespace resolution, journal storage/ACL/publication decisions in section 11.21.9, broker approval in section 11.1, rollback policy in section 11.22 and health-profile decisions in section 11.23 remain open.
+
+## 11.25 Broker authorization, service lifecycle and security boundary
+
+**Audit date:** 2026-11-16.  
+**Status:** security and authorization contract proposal only. No Windows service, broker executable, named-pipe server, ACL, privilege, consent screen, signing-key deployment or privileged operation was implemented or authorized.
+
+### 11.25.1 Observed implementation boundary
+
+The current Platform installer remains a development preview. The GUI invokes the Python installation engine directly and accepts caller-selected package and destination paths. The engine performs path-based operations. The inspected installer source does not establish a Windows service, broker process, named-pipe endpoint, service SID, client-token authorization or protected privileged-operation boundary.
+
+The existing named-pipe proposal in section 11.14 and trust-boundary proposal in sections 11.1–11.12 are design material, not evidence that these components exist. The existing signed Windows updater is a separate track and is not integrated with this Platform installer.
+
+Consequently:
+- The GUI, package builder and current installer core must remain unprivileged.
+- Do not elevate the current Python installer or expose its path-taking functions through an elevated wrapper.
+- Do not describe the proposed broker as implemented, available or tested.
+- Do not perform installation, rollback, marker or journal writes through the current path-based engine on a protected production installation.
+
+### 11.25.2 Threat model and security objective
+
+The initial target remains a machine-wide installation. The broker must defend against:
+- A compromised or malicious unprivileged SERMAX GUI or package-builder process.
+- Another process running as the same interactive user, including one in the same logon session.
+- A different standard local user or another logon session.
+- Pipe squatting, unauthorized pipe instances, client impersonation and service identity confusion.
+- Malformed, oversized, duplicate, reordered, replayed or concurrent IPC requests.
+- Package substitution between client selection, intake, validation and installation.
+- Reparse-point, hard-link, path traversal, alternate data stream, volume and namespace attacks.
+- Journal, staging, backup, marker, service configuration or audit-log tampering.
+- Downgrade, stale release, replayed transaction, duplicate operation and confused-deputy requests.
+- Denial of service through resource exhaustion, stalled uploads, lock retention or repeated malformed requests.
+
+The initial model does not claim resistance against local administrators, SYSTEM, kernel compromise, boot compromise, offline disk modification, physical attacks or compromise of the release-signing/build infrastructure. If administrator resistance becomes a requirement, this design needs a different security architecture.
+
+**Objective:** an in-scope unprivileged process must not gain arbitrary file-write, delete, rename, ACL-change, process-launch or command-execution authority through the broker. The broker may perform only a bounded, explicitly approved release transaction against its provisioned destination and broker-owned transaction state.
+
+### 11.25.3 Service identity and privilege boundary
+
+1. Select a dedicated virtual service account and per-service SID as the leading candidate. Evaluate a restricted service SID only after testing the real service token and every required access.
+2. Do not default to LocalSystem. Do not enable administrator privileges merely to simplify file operations. Any privilege must have a documented API need, exact scope, negative tests and explicit approval.
+3. Deny interactive logon to the service identity. Do not share the broker process with unrelated services.
+4. Grant the service only the access required to its fixed application root, staging, journal and backup locations. It must have no broad access to user documents, memories, conversation history, SQLite databases, credentials, Ollama models or unrelated application data.
+5. Protect the service executable, dependent DLLs, configuration, service registry configuration and parent directories against modification by standard users. Do not grant untrusted callers SERVICE_CHANGE_CONFIG, SERVICE_STOP, SERVICE_START, WRITE_DAC, WRITE_OWNER or service-binary write access.
+6. The service-object DACL and service-binary ACL must be reviewed separately. A pipe DACL does not protect the service configuration or executable.
+7. Do not accept a caller-selected service identity, service name, destination root, staging path, journal path or backup path.
+8. Keep the exact service account, service SID type, restricted SID set, enabled privileges, service-object DACL and installation mechanism unresolved until a token/ACL evidence package is reviewed.
+
+A dedicated service SID or virtual account is a candidate, not an approved configuration. The actual token must be captured on every supported Windows build and tested with effective access checks.
+
+### 11.25.4 Client authentication versus operation authorization
+
+The pipe DACL is the first access gate, not proof that the connecting process is the genuine SERMAX GUI. Any process granted access in the same authorized logon session may attempt to connect.
+
+For each connection and each state-changing request, the broker must:
+- Validate the Windows client token, user SID, logon SID, session ID, integrity level and required group/elevation facts using trusted OS APIs.
+- Reject anonymous, network, unexpected-session and unsupported identities.
+- Treat PID and executable path as diagnostic evidence only, not as identity proof.
+- Revalidate connection identity and authorization at the operation boundary. Do not trust identity claims inside JSON.
+- Use impersonation only for client authentication and token inspection. Revert to the service identity before privileged broker work, check that reversion succeeded, and fail closed if it did not.
+- Apply a separate authorization decision to every operation. A successful pipe connection does not authorize package intake, installation, rollback, marker publication or recovery.
+- Bind approval to the authenticated interactive user/session, exact release digest, manifest digest, destination identity, operation set and transaction ID. Any change to these fields invalidates the approval.
+
+The versioned, bounded message framing and initial operation allowlist remain specified in section 11.14. No generic path, file, process or command operation is permitted.
+
+### 11.25.5 Explicit user approval and release policy
+
+A normal installation transaction requires a clear user confirmation before the broker begins protected destination mutation. The confirmation display must show:
+- Product identity and publisher identity established by broker-side signature verification.
+- Release version and broker-computed package and manifest digests, shown in a human-usable form.
+- The fixed destination identity and whether this is an initial installation or an update.
+- The exact approved operation class and the program-file scope.
+- The expected restart/service interruption, if any.
+- The user-data preservation boundary and any migration requiring separate approval.
+
+The confirmation must be generated from broker-verified facts, not client-supplied labels. The broker must not accept a Boolean such as `approved: true` from an untrusted client as proof of consent. The approval interaction must be bound to the active transaction and expire if the package, manifest, destination, policy, session or transaction changes.
+
+The broker independently verifies:
+1. Product and package identity.
+2. Signature against a broker-protected production trust anchor.
+3. Signer policy, algorithm policy, key validity and revocation/rotation state.
+4. Manifest schema, normalized file list, types, sizes and hashes.
+5. Broker-owned staging digest and exact package snapshot to be installed.
+6. Release version and anti-rollback sequence against broker-owned state.
+7. Destination policy, transaction lock, user-data exclusions and required health/recovery gates.
+
+User consent never overrides a failed signature, revoked key, unsupported schema, downgrade rejection, malformed package, ACL failure, namespace uncertainty, journal inconsistency or RECOVERY_REQUIRED state.
+
+No silent update is authorized by this proposal. Any future unattended-update policy requires a separate explicit decision defining the publisher, release channel, allowed versions, trigger, notification, rollback and recovery behavior. It must not be inferred from a prior interactive approval.
+
+### 11.25.6 Request binding, replay prevention and idempotency
+
+Every state-changing request must bind, at minimum:
+- Protocol version and authenticated connection/session identity.
+- Unique request ID and transaction ID.
+- Unique operation ID and idempotency key.
+- Monotonic request/chunk sequence where streaming is used.
+- Product identity, release version, signed manifest digest and complete package digest.
+- Broker policy version, fixed destination identity and allowlisted action set.
+- Explicit user-approval record and its expiry.
+- Expected current transaction state and expected journal sequence.
+
+The broker rejects duplicate, stale, out-of-order, replayed, conflicting or cross-session requests. A repeated request ID must return the existing transaction result or a stable rejection; it must never repeat a protected mutation. The broker independently inspects actual filesystem and journal state after a timeout or disconnect. A missing client response does not prove that the operation failed.
+
+Do not serialize InventorySnapshot, ConfirmedPlan, native handles, access tokens or caller-provided path authority across IPC. These are broker-owned in-memory capabilities and must be reacquired after restart under the rules already specified in sections 11.19, 11.20 and 11.24.
+
+### 11.25.7 Filesystem and transaction authority
+
+- The destination is provisioned by the approved installation model. It is not selected by an IPC request.
+- The broker accepts package bytes or a narrowly controlled intake stream, copies them into broker-owned staging, closes and reopens the staged object, and verifies the exact bytes it will install.
+- The broker does not install from a client-writable source after validation.
+- All protected operations must use an accepted filesystem security contract. The namespace-resolution blocker in section 4A remains open. The proposed NT handle-relative approach is not a confirmed cross-version user-mode security guarantee.
+- Do not replace the section 4A blocker with a claim that a service, DACL or protected root automatically eliminates namespace races. Demonstrate parent ownership, effective ACLs, supported filesystem semantics and adversarial behavior.
+- The broker never falls back to path-based writes if handle-safe operations or namespace admission fail.
+- The broker may write only allowlisted program payload targets and its own transaction artifacts. User data remains outside the replaceable payload and rollback scope.
+- A single writer owns each protected root. Concurrent transactions are rejected or queued under an approved bounded policy. No second writer may bypass an active journal or recovery gate.
+- Cancellation is accepted only at explicitly defined safe points. Disconnect, timeout, GUI exit or service stop does not imply rollback and does not authorize deletion of transaction artifacts.
+- On startup, unfinished transactions are classified before normal application requests or new installations are accepted. If recovery cannot establish one safe state, remain RECOVERY_REQUIRED.
+
+### 11.25.8 Service lifecycle and recovery behavior
+
+The service lifecycle contract must cover:
+- Installation and update of the broker itself through a separately trusted mechanism.
+- Startup type, service dependencies, service account provisioning and service binary integrity.
+- Startup recovery gate before accepting install requests or releasing the candidate application.
+- Single-writer lock ownership and stale-lock recovery.
+- Graceful stop, forced termination, system shutdown, restart and service-crash behavior.
+- Bounded upload/request concurrency, timeouts, queue length, disk quotas and rate limits.
+- Health reporting that distinguishes service process liveness from recovery readiness and transaction readiness.
+- A separate trusted operator path for RECOVERY_REQUIRED when the ordinary SERMAX application must remain unavailable.
+- Broker uninstall and key/ACL cleanup without deleting user data, transaction evidence or user backups.
+
+A service restart must not reuse old handles, process references, approval tokens, cached inventory or health evidence. It reacquires and verifies state from broker-owned durable records. No new installation is accepted while recovery is unresolved.
+
+### 11.25.9 Audit, secrets and anti-rollback state
+
+The broker owns its audit stream and transaction journal. The client cannot select the log path, alter entries, truncate history or supply authoritative timestamps, identities or outcomes.
+
+Record event ID, transaction ID, operation ID, authenticated SID/session, policy version, release/manifest digest, decision, state transition, result code and evidence references. Bound log size and retention; protect the log directory with broker-only write access and appropriate read access. Detect truncation or integrity failure. Do not log passwords, tokens, private keys, memory contents, chat contents, full user documents or unnecessary personal data.
+
+Production public keys, key allowlists, revocation/rotation state and anti-rollback sequence must be broker-protected and unavailable for modification by the interactive client. Private release-signing keys must never be stored on the user's SERMAX computer. Key provisioning, rotation, emergency revocation and recovery from key compromise require a documented release-security procedure.
+
+### 11.25.10 Deny-by-default failure rules
+
+The broker must reject the request and perform no protected mutation when:
+- Client token inspection or impersonation reversion fails.
+- The caller is outside the approved user/session policy.
+- The protocol, schema, size, sequence, nonce, transaction state or idempotency check fails.
+- The package, signature, signer, digest, release policy or anti-rollback check fails.
+- User approval is absent, expired or bound to different transaction facts.
+- Service identity, protected-root ACL, parent ownership or service binary integrity is uncertain.
+- The namespace-resolution guarantee is unavailable or unsupported.
+- The journal, backup, marker, package snapshot or recovery classification is ambiguous.
+- The broker is already processing another transaction for the same root.
+- Required disk quota, staging capacity, evidence retention or health/recovery checks cannot be satisfied.
+
+No fallback to the GUI's direct installer, path-based writes, unsigned directory packages, client-side hash decisions or manual marker edits is permitted. Ambiguity enters RECOVERY_REQUIRED and preserves transaction evidence.
+
+### 11.25.11 Required adversarial verification
+
+Before architecture acceptance, run tests using separate standard-user accounts, multiple logon sessions and the actual broker service token. Include:
+- Unauthorized, anonymous, network and same-session malicious IPC clients.
+- Pipe squatting, pipe-instance creation attempts, wrong server identity and service spoofing.
+- Token/session/integrity mismatch, impersonation failure and RevertToSelf failure handling.
+- Malformed UTF-8, duplicate JSON keys, unknown critical fields, oversized frames, partial frames, invalid chunk sequence and slow-client exhaustion.
+- Replayed request IDs, transaction IDs, approval records, operation IDs and stale idempotency keys.
+- Concurrent install requests, service stop/restart, client disconnect, timeout and process crash at every transaction phase.
+- Package replacement during upload, after upload, during validation and before installation; invalid signature, untrusted signer, revoked key, downgrade and replayed release.
+- Destination and ancestor ACL changes, owner changes, service-binary/configuration tampering, reparse points, junctions, hard links, ADS, volume changes and namespace races.
+- Journal, backup, marker and audit-log tampering, truncation, quota exhaustion and disk-full conditions.
+- Attempts to read or modify memory, SQLite, logs, credentials, user documents, Ollama models, Python environments and backups.
+- Proof that a client cannot request arbitrary path writes, deletes, renames, ACL changes, process launches or commands.
+- Recovery startup gate and repeated inspection after service or machine restart.
+
+For each test, record Windows build, filesystem, service token and SID, client token and SID, effective ACLs, test identity, commit, package digest, transaction/journal sequence, attack, expected result and observed result. A pass applies only to the tested configuration.
+
+### 11.25.12 Decisions required before implementation
+
+The following remain explicit approval decisions:
+1. Machine-wide versus per-user product deployment and the exact protected destination.
+2. Service account, service SID type, restricted SIDs and minimum enabled privileges.
+3. Service installation/update/uninstall authority and protection of service binaries/configuration.
+4. Exact service-object, directory, staging, backup, journal, log and pipe DACLs.
+5. Supported Windows builds, filesystems, volume types and the namespace-resolution security contract.
+6. Client/session policy and whether same-session processes are accepted as possible IPC clients.
+7. User confirmation interface, approval lifetime and any future unattended-update policy.
+8. Production signing trust anchor, key provisioning, rotation, revocation and anti-rollback state.
+9. Package/resource quotas, concurrency, cancellation and service shutdown behavior.
+10. RECOVERY_REQUIRED operator procedure and trusted recovery interface.
+11. User-data separation, migration scope and preservation evidence.
+12. Adversarial test identities, acceptance thresholds and independent review.
+
+**Decision:** broker authorization and service security are specified for review only. The current installer remains an unprivileged development preview. No service, broker, IPC endpoint, ACL, privilege, consent interface, trust key, recovery operation or installer release was implemented or authorized. Sections 4A, 11.14, 11.21, 11.22, 11.23 and 11.24 remain binding unresolved gates.
