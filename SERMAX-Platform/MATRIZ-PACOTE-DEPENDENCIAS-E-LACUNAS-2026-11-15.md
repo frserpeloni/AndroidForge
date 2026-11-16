@@ -592,3 +592,17 @@ A GUI permite escolher pacote e destino e chama diretamente o motor Python. Não
 6. Testes adversariais em Windows e sistemas de arquivos suportados.
 
 Nenhum código, serviço, ACL, privilégio, pacote ou teste foi implementado ou executado nesta auditoria.
+
+
+## 20. Matriz de provisionamento e aceitação de ACLs, 2026-11-16
+
+Foi adicionada a especificação documental `SERMAX-Platform/installer/ACL-PROVISIONING-ACCEPTANCE-MATRIX.md`.
+
+O documento organiza:
+- Caminhos propostos para aplicação, binário do broker, staging, journal, backups, configuração do serviço e pipe local.
+- Proprietário esperado e separação de direitos entre Administradores, SYSTEM, SID do serviço e usuários padrão.
+- Direitos NTFS que precisam ser avaliados individualmente, incluindo `FILE_DELETE_CHILD`, `FILE_ADD_FILE`, `WRITE_DAC` e `WRITE_OWNER`.
+- Provisionamento administrativo, autenticação IPC e testes negativos com dois usuários padrão.
+- Critérios de bloqueio e evidências necessárias para aprovação.
+
+**Status:** especificação, sem SDDL final e sem implementação. Os caminhos são propostas para avaliação, não destinos aprovados. Não houve alteração de ACL, serviço, broker, pipe, privilégio ou instalação. A matriz não autoriza modificar `C:\SERMAX` ou dados existentes.
