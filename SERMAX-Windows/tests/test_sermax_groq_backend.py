@@ -155,6 +155,7 @@ class GroqBackendTests(unittest.TestCase):
             backend("Programador", "Implemente")
         self.assertEqual(mocked_open.call_count, 2)
         self.assertEqual(mocked_sleep.call_count, 1)
+        mocked_sleep.assert_called_once_with(3.0)
 
     def test_rejects_empty_prompt(self):
         backend = self.make_backend()
