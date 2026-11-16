@@ -1907,3 +1907,61 @@ Before selecting the account or SID mode, produce an evidence package from the a
 #### 11.26.4 Decision
 
 The dedicated virtual account with a per-service SID is the leading design candidate. Restricted SID mode is the preferred test target, not an approved production setting. LocalService is a fallback candidate; NetworkService and LocalSystem are not justified by the current local-only requirements. No account, service, ACL or privilege is authorized for implementation. Sections 4A and 11.25 remain blocking gates.
+
+
+### 11.27 Namespace-race decision: protect the namespace instead of relying on an undocumented open combination, 2026-11-16
+
+**Status:** architecture decision proposal for review. No implementation, ACL, service, broker or installer was changed or authorized.
+
+#### 11.27.1 What the documented Win32 interfaces establish
+
+- `CreateFileW` opens an object by a path string. `FILE_FLAG_OPEN_REPARSE_POINT` changes handling of the final component being opened: the call attempts to open the reparse-point object itself rather than performing normal reparse processing for that object. This is useful for inspecting or managing that leaf object.
+- The documented flag does not establish a general guarantee that every intermediate component in an arbitrary path is resolved without following reparse points. Do not treat it as a path-wide no-reparse switch.
+- `FILE_FLAG_BACKUP_SEMANTICS` permits opening a directory handle through `CreateFileW`; it does not itself confer backup privilege or bypass normal security checks.
+- `SetFileInformationByHandle` operates on an already opened handle. `FILE_RENAME_INFO.RootDirectory` supports a destination name relative to a directory handle. This documents a handle-based rename interface, but it does not prove that the directory namespace used to acquire the original handles was protected from concurrent replacement.
+- Share modes are enforced for the lifetime of each open handle. Omitting `FILE_SHARE_DELETE` can prevent later opens requesting delete access when compatible with existing opens. It is a coordination control, not a substitute for protected ownership and ACLs; existing handles and other access paths must be included in the threat model.
+
+#### 11.27.2 Revised security premise
+
+For the current machine-wide broker proposal, the primary defense against a standard-user namespace attacker should be **absence of attacker write authority over the installation namespace**, not an assumption that a particular native open flag makes an attacker-writable tree race-free.
+
+The trusted setup/update mechanism must provision a fixed installation root and secure every ancestor from the volume root through the installation directory. For every ancestor and protected object, verify owner, DACL, inherited ACEs and effective access. The interactive user and other in-scope standard users must not be able to:
+- create, replace, rename or delete directories or files in the protected tree;
+- add files or subdirectories to protected ancestors;
+- change DACLs or ownership;
+- replace the service executable, service configuration, staging, journal, backup or recovery objects;
+- introduce junctions, symbolic links or other reparse points into the protected namespace.
+
+The broker must fail closed if any ancestor is writable or replaceable by an in-scope untrusted identity, if ownership or effective access is uncertain, or if the root resolves to an unexpected volume/object. Do not repair an unexpected tree by broadening permissions or deleting entries automatically.
+
+The threat model explicitly excludes a local administrator, SYSTEM, kernel compromise and offline modification. The design must state this exclusion wherever it describes its security guarantees.
+
+#### 11.27.3 Broker operation model
+
+1. A trusted, administrator-controlled provisioning step creates the fixed machine-wide root, service-owned transaction directories and their security descriptors. The ordinary GUI cannot select or change the destination.
+2. On service start and before each transaction, the broker verifies the provisioned root identity, volume, owner, DACL and every ancestor's effective access against the approved policy. It rejects unexpected reparse points or a changed root identity.
+3. Only the broker identity and trusted system administrators receive the exact write rights required for the protected program tree. Standard interactive users receive read/execute access only. They receive no create, append, delete, delete-child, WRITE_DAC or WRITE_OWNER rights on the root or any ancestor.
+4. The broker runs in its own service process under the dedicated service identity described in section 11.26. No unrelated service or user-controlled code runs under that identity.
+5. Package input is treated as hostile. The broker copies it into broker-owned staging, validates the staged bytes and manifest, and installs from that same broker-owned snapshot. The GUI cannot modify staging, journal or backups.
+6. The broker derives all destination names from a fixed root and a strict manifest allowlist. It rejects absolute paths, traversal, alternate data streams, duplicate normalized names, unsupported types and reparse entries. It exposes no arbitrary path or command operation.
+7. Use documented Win32 handle operations for inspection, I/O and rename where their documented semantics fit. Retain handles during each transaction and select share modes deliberately. Handle-relative rename is a useful operation boundary, not proof that namespace admission was safe.
+8. If any standard-user write path to the protected namespace is found, stop. Do not attempt to compensate with repeated path checks, sleeps, retries or a fallback to the current direct GUI installer.
+
+#### 11.27.4 Required adversarial evidence
+
+- Inspect and test every ancestor, not only the final installation directory. Include inherited and explicit ACEs, owner, WRITE_DAC, WRITE_OWNER, DELETE, FILE_DELETE_CHILD, FILE_ADD_FILE and FILE_ADD_SUBDIRECTORY.
+- As the interactive user and a second standard user, attempt create, rename, delete, reparse-point insertion, DACL change and owner change at every ancestor and protected object. Every unauthorized operation must fail.
+- Verify the trusted provisioning path cannot be replaced by a standard user before or during service startup.
+- Race package source replacement during intake. The installed bytes must match the broker-owned staged digest, never a later read from the caller's path.
+- Race attempts against staging, backup, journal, marker and service binary paths. The attacker must lack mutation authority; unexpected identity or ACL changes must stop the transaction.
+- Test the actual service token, service SID mode, service-object DACL, process isolation and absence of user-controlled code under the broker identity.
+- Repeat on every supported Windows client build and filesystem. Record OS build, filesystem, volume, SIDs, owner, SDDL, effective access, test identity, commit and observed result.
+- Separately test crash recovery and transaction integrity. Passing ACL tests does not close journal, backup, health, rollback or package-signature gates.
+
+#### 11.27.5 Decision and limits
+
+The protected-namespace broker is the leading implementation direction because it removes the standard-user ability to race the destination namespace, rather than depending on an undocumented user-mode `NtCreateFile` flag combination. This is a conditional architecture choice, not proof that the current prototype is safe.
+
+The following remain blocking: exact deployment destination; complete ancestor ACL/owner evidence; service identity and token evidence; package trust and key lifecycle; staging and journal implementation; rollback and recovery; health gate; and the section 4A native API contract if any future component still relies on it. If the protected-root premise cannot be demonstrated on a supported configuration, do not ship the installer.
+
+No installer, service, broker, ACL, privilege, native filesystem wrapper or test was implemented in this review.
