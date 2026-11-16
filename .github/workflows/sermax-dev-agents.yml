@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - sermax-windows-integration-20261029
+      - sermax-platform-prototype-20261115
     paths:
       - ".github/workflows/sermax-dev-agents.yml"
   workflow_dispatch:
