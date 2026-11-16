@@ -7,6 +7,12 @@ on:
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
+  pull_request:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - "SERMAX-Platform/**"
+      - ".github/workflows/sermax-platform-ci.yml"
 
 permissions:
   contents: read
