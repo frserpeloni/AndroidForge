@@ -392,3 +392,99 @@ Static source review of commit `78ff8109b052492ad5f5b037a7994f0f6d65cc53` found 
 - Keep the GUI marked development preview until broker, signed package pipeline, Windows adversarial tests, and recovery tests pass.
 
 **Conclusion:** the broker is a new architecture, not a small hardening patch. The current GUI/core must not be made privileged by changing its launch level. This audit is planning evidence only; no code was modified.
+
+
+### 11.14 Named-pipe protocol specification, version 1 proposal
+
+This section defines a protocol candidate for review. It does not authorize implementation. A named-pipe DACL controls who can open the endpoint; it does not prove that the connecting process is the intended SERMAX GUI. Any process running under an identity granted pipe access may attempt to submit requests. The broker must therefore treat the client as untrusted even after the Windows access check succeeds.
+
+#### Transport and endpoint
+
+- Use a fixed local endpoint name under `\\.\\pipe\\`, provisionally `\\.\\pipe\\SERMAX.InstallerBroker.v1`. The final name must be versioned and owned by the broker service.
+- Create the pipe with an explicit security descriptor. Never pass a NULL security descriptor.
+- Set `PIPE_REJECT_REMOTE_CLIENTS`. Additionally deny network identities in the pipe DACL. Do not expose the broker over SMB or another network transport.
+- Use message mode or a documented length-prefixed framing protocol. The selected mode must define exact handling of partial reads, partial writes, disconnects, oversized frames, and malformed UTF-8.
+- Do not assume a single pipe read returns a complete request. Parse bounded frames and reject truncation, extra trailing bytes, invalid encodings, duplicate JSON keys, unknown critical fields, and unsupported protocol versions.
+- Limit concurrent clients and outstanding requests. One installation transaction per protected root is allowed at a time.
+- The broker owns pipe creation, instance creation rights, connection lifecycle, and cleanup. A client must not receive rights to create additional pipe instances.
+
+#### Connection authentication
+
+For every connection, the broker must:
+
+1. Complete the Windows pipe access check using the explicit pipe DACL.
+2. Obtain the client access token through a checked impersonation or documented token-query sequence. If impersonation fails, execute no client request.
+3. Read and validate the token user SID, logon SID, session ID, integrity level, and relevant group/elevation state. Reject anonymous, network, unexpected, or unsupported identities.
+4. Compare the pipe client session with the approved interactive session policy. Obtain the client PID only as diagnostic context; PID alone is not authentication.
+5. Bind the authenticated token facts to the connection and revalidate them for each privileged operation where the design requires it. Never trust user name, SID, PID, session, or elevation claims sent in JSON.
+6. If impersonation is used, revert before privileged broker work. Check `RevertToSelf`; if it fails, stop processing, close the connection, and terminate the broker process/service according to Microsoft's documented fail-safe guidance. Do not continue in an unknown thread security context.
+
+A logon SID restriction distinguishes logon sessions, not individual applications. The protocol must explicitly acknowledge that another process in the same authorized logon session can connect. Do not claim that the pipe DACL authenticates the GUI binary. The broker remains safe against such a client because it accepts only narrowly authorized operations and independently validates signed packages.
+
+#### Message framing and schema
+
+Each control message is UTF-8 JSON preceded by a fixed-width unsigned 32-bit little-endian byte length. The length counts only the JSON payload, not the prefix. A frame exceeding the configured maximum is rejected before allocating its full payload. Package bytes are transferred in separate bounded binary chunk frames; they are never embedded as base64 in JSON.
+
+Every control request includes:
+- `protocol_version`: integer, initially 1.
+- `request_id`: random 128-bit identifier, unique per connection.
+- `operation`: one allowlisted operation.
+- `client_nonce`: random per connection/request value for correlation, not a substitute for authentication.
+- `payload`: operation-specific object with strict schema.
+
+Every response includes:
+- `protocol_version`
+- `request_id`
+- `status`: `ok`, `rejected`, `busy`, or `error`
+- `error_code`: stable machine-readable code when not successful.
+- `message`: bounded, non-sensitive diagnostic text.
+- `payload`: operation-specific result.
+
+Reject unknown operations, duplicate request IDs, replayed transaction submissions, unknown critical fields, and unsupported schema versions. Do not echo secrets or arbitrary attacker-controlled text into privileged logs.
+
+#### Initial operation allowlist
+
+| Operation | Purpose | Authorization and restrictions |
+|---|---|---|
+| `GetBrokerStatus` | Return broker version, protocol version, readiness, and current transaction state | Read-only; disclose no secrets or filesystem paths beyond approved product metadata |
+| `BeginPackageUpload` | Start a package intake transaction | Enforce connection identity, quotas, one active transaction per root, and independent publisher policy |
+| `WritePackageChunk` | Stream bounded package bytes into broker-owned staging | Valid transaction ID, strict sequence number, bounded chunk, exact byte count; no caller-selected staging path |
+| `FinalizePackageUpload` | Close intake and validate the broker-owned snapshot | Verify total size, digest, signed manifest, publisher identity, package policy, version and anti-rollback rules |
+| `RequestInstall` | Request installation of the validated transaction | Only validated, trusted package; fixed destination; idempotency key; transaction lock; no arbitrary target path |
+| `GetTransactionStatus` | Read status for an opaque transaction ID owned by the authenticated session | No arbitrary file reads; disclose only transaction metadata |
+| `Disconnect` | Close the client session | No effect on a committed transaction; incomplete uploads are marked abandoned and cleaned by broker recovery policy |
+
+No generic `ReadFile`, `WriteFile`, `DeleteFile`, `MoveFile`, `RunCommand`, `Execute`, `SetDestination`, `SetAcl`, or `RollbackToCallerPath` operation is permitted. Cancellation semantics are deferred until the transaction journal and safe cancellation points are designed. A client disconnect must not interrupt an already committed transaction or cause arbitrary rollback.
+
+#### Package upload and authenticity
+
+- The client sends a package stream, not a filesystem destination path.
+- The broker creates a unique staging object under a broker-owned directory with a restrictive DACL and exclusive ownership.
+- Each chunk carries transaction ID, monotonically increasing sequence number, declared chunk length, and bytes. Reject gaps, duplicates, reordering, overrun, and unexpected end-of-stream.
+- Enforce configured maximum package bytes, manifest bytes, file count, per-file size, total expanded size, path length, compression ratio, and processing time. Set concrete limits only after measuring the approved SERMAX release composition; until then, the limits are unresolved approval inputs.
+- The broker computes the digest while receiving and verifies it again from the closed broker-owned object.
+- Validate a signed release manifest against a trust anchor protected from interactive-user modification. Verify signer identity, signature algorithm policy, key validity/revocation policy, product identity, version, file list, hashes, and sizes.
+- Enforce anti-rollback using broker-owned installed-version state. A client cannot request downgrade by changing JSON fields or a local marker. Emergency rollback requires a separate privileged administrative policy and audited approval.
+- Install from the exact validated broker-owned package snapshot. Never reopen or read from the client source path after intake.
+
+#### Replay, concurrency, and availability
+
+- Use random request IDs and transaction IDs, per-connection sequencing, and idempotency keys. These prevent accidental duplicate processing; they do not authenticate the caller.
+- Persist transaction state before reporting a phase as durable. Recover incomplete uploads as abandoned; never treat partial data as installable.
+- Serialize installs against one destination root using a broker-owned lock and transaction journal.
+- Enforce connection, upload, disk-space, CPU, and time quotas. Reserve enough space for staging, backup, and rollback before beginning installation.
+- Rate-limit failed authentication and malformed requests. Log stable error codes and security events without secrets.
+- A client timeout or disconnect must return no implication that installation failed or succeeded. The client queries transaction status using the opaque transaction ID.
+
+#### Protocol acceptance tests
+
+- Access from an unauthorized SID, anonymous identity, network identity, different logon SID, wrong session, and same-session non-GUI process.
+- Failed impersonation and failed `RevertToSelf`, proving that no request executes under an unintended service token.
+- PID reuse and client exit/restart during authentication and upload.
+- Partial headers, partial payloads, oversized frames, malformed UTF-8/JSON, duplicate keys, unknown operations, unsupported versions, and trailing data.
+- Duplicate/replayed request IDs, transaction IDs, sequence numbers, chunks, and idempotency keys.
+- Client disconnect at every upload and install phase, service crash, machine restart, disk full, and concurrent install requests.
+- Same-session malicious client attempting every allowlisted operation, path traversal, destination override, package substitution, downgrade, and quota exhaustion.
+- Verify that no request can cause arbitrary command execution, arbitrary file access, arbitrary destination selection, or modification of protected user data.
+
+**Decision status:** protocol proposal only. The transport, DACL, client identity checks, operation allowlist, package trust policy, quota values, and recovery semantics require review and explicit approval before implementation.
