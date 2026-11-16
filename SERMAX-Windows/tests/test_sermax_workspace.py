@@ -61,13 +61,16 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 "        self.assertTrue(True)\n",
                 encoding="utf-8",
             )
+            suite_script = chr(10).join((
+                "import sys, unittest",
+                "suite = unittest.defaultTestLoader.discover('tests')",
+                "result = unittest.TextTestRunner(verbosity=2).run(suite)",
+                "sys.exit(0 if result.wasSuccessful() else 1)",
+            )) + chr(10)
             (tests_dir / "run_agent_suite.py").write_text(
-                "import sys, unittest\n"
-                "suite = unittest.defaultTestLoader.discover('tests')\n"
-                "result = unittest.TextTestRunner(verbosity=2).run(suite)\n"
-                "sys.exit(0 if result.wasSuccessful() else 1)\n",
-                encoding="utf-8",
+                suite_script, encoding="utf-8"
             )
+            self.assertTrue((tests_dir / "run_agent_suite.py").is_file())
             ws = WorkspaceAdapter(root)
             runner = TestRunner(ws)
             with self.assertRaises(WorkspaceError):
