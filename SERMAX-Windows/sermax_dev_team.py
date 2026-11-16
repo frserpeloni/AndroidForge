@@ -33,8 +33,13 @@ ROLE_INSTRUCTIONS = {
     ),
     "programador": (
         "Retorne exclusivamente JSON válido com as chaves summary, files e tests. "
-        "files é lista de objetos path e content. tests deve incluir unittest e "
-        "pode incluir compileall. Altere somente código/testes/documentação do produto. "
+        "Cada item de files deve ter path, content e edits. Para arquivo novo, use "
+        "content com o texto completo e edits=null. Para arquivo existente, use "
+        "content=null e edits como lista de objetos old/new. Cada trecho old precisa "
+        "corresponder exatamente uma vez ao conteúdo atual. Prefira edições localizadas; "
+        "nunca reescreva um arquivo grande para uma alteração pequena. Não crie stubs, "
+        "imports fictícios nem dependências simuladas. tests deve incluir unittest e "
+        "pode incluir compileall. Altere somente os caminhos autorizados pela tarefa. "
         "Não altere infraestrutura da equipe, workflows, credenciais ou memórias. "
         "Não inclua markdown e não afirme execução."
     ),
@@ -216,7 +221,7 @@ class DevelopmentTeam:
                             correction_prompt = (
                                 f"{prompt}\n\nA tentativa {attempt} foi rejeitada pelo "
                                 f"validador: {detail}\n"
-                                "Corrija a proposta e retorne exclusivamente o JSON completo "
+                                "Corrija a proposta e retorne exclusivamente o JSON completo, usando edits old/new para arquivos existentes "
                                 "exigido. Preserve o escopo permitido. Inclua unittest em tests. "
                                 "Não alegue que executou testes."
                             )
