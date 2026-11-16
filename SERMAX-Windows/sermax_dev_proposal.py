@@ -57,7 +57,7 @@ def _validate_development_path(path: str) -> None:
         and lowered[-1].endswith("_regression.py")
     )
     allowed_paths = {
-        item.replace("\\\\", "/").casefold()
+        item.replace(chr(92), "/").casefold()
         for item in os.environ.get("SERMAX_DEV_ALLOWED_PATHS", "").split(";")
         if item.strip()
     }
