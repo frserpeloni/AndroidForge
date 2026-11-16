@@ -1965,3 +1965,13 @@ The protected-namespace broker is the leading implementation direction because i
 The following remain blocking: exact deployment destination; complete ancestor ACL/owner evidence; service identity and token evidence; package trust and key lifecycle; staging and journal implementation; rollback and recovery; health gate; and the section 4A native API contract if any future component still relies on it. If the protected-root premise cannot be demonstrated on a supported configuration, do not ship the installer.
 
 No installer, service, broker, ACL, privilege, native filesystem wrapper or test was implemented in this review.
+
+References:
+- https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilew
+- https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-points
+- https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfileinformationbyhandle
+- https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_rename_info
+- https://learn.microsoft.com/en-us/windows/win32/fileio/file-security-and-access-rights
+- https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile
+- https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes
+- https://learn.microsoft.com/en-us/answers/questions/6056645/does-user-mode-ntcreatefile-support-obj-dont-repar
