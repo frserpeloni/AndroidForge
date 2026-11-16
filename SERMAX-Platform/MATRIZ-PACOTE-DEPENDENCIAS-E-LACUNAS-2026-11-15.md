@@ -290,3 +290,55 @@ A documentação Microsoft descreve FlushFileBuffers como flush dos buffers do a
 Injetar falha antes/depois de cada escrita, flush, publicação, backup, substituição, verificação, marcador e rollback. Testar disco cheio, interrupção, reinício, journal truncado/adulterado/reordenado, replay, backup alterado, pacote antigo, troca de raiz e recuperação repetida. Cada cenário termina em estado comprovado ou RECOVERY_REQUIRED com artefatos preservados.
 
 **Decisão:** contrato documental concluído. A seção 4A continua bloqueando o backend de handles. O broker da seção 11.1 ainda exige aprovação. Não há instalador distribuível nem autorização de implementação nesta etapa.
+
+
+## 13. Rollback por arquivo e verificação da restauração, 2026-11-16
+
+**Status:** especificação documental. Nenhum código de restauração/exclusão, motor transacional, broker, instalador ou teste de rollback foi executado.
+
+A seção 11.22 de installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md define o protocolo.
+
+### 13.1 Estados por arquivo
+
+Cada alvo mantém estado próprio: NOT_STARTED, APPLY_INTENT, APPLIED_VERIFIED, RESTORE_INTENT, RESTORED_VERIFIED, NO_CHANGE_VERIFIED ou RECOVERY_REQUIRED. O journal geral não substitui o estado individual de cada arquivo.
+
+### 13.2 Classificação antes da restauração
+
+Cada alvo é classificado como:
+- BEFORE: objeto original ainda presente e compatível com identidade e evidências do estado anterior. Registrar NO_CHANGE_VERIFIED.
+- AFTER: objeto exato instalado pela transação, com identidade, tipo, tamanho e hash esperados. Elegível à restauração com backup validado.
+- AMBIGUOUS: objeto ausente ou diferente, alteração externa, identidade incerta ou falha na prova de namespace. Parar em RECOVERY_REQUIRED.
+
+Não sobrescrever objeto inesperado. Não decidir por caminho ou hash isolado quando a identidade do objeto é exigida.
+
+### 13.3 Ordem e protocolo
+
+Restaurar em ordem inversa aos registros de aplicação verificada. Para cada alvo: validar backup e metadados; revalidar alvo/pai; persistir RESTORE_INTENT; restaurar; ler de volta; verificar conteúdo, tipo, tamanho e metadados aprovados; registrar a nova identidade; persistir RESTORED_VERIFIED.
+
+Para arquivo originalmente ausente, remover somente o objeto exato criado pela transação, após intenção durável e revalidação. Se outro objeto o substituiu, não excluir.
+
+Backup ausente, adulterado ou ilegível bloqueia a restauração. Não reconstruir a versão anterior usando o pacote novo.
+
+### 13.4 Metadados e identidade
+
+Hash confirma bytes, não ACL, proprietário, timestamps, alternate data streams, hard links ou demais atributos. A lista de metadados preservados precisa ser definida por classe de arquivo e filesystem antes da implementação.
+
+Restauração por cópia pode gerar novo file ID. O journal registra a nova identidade e verifica equivalência de conteúdo/metadados aprovados. Não declara que o objeto antigo foi recriado.
+
+### 13.5 Marcador e anti-rollback
+
+Restaurar o marcador da versão depois dos arquivos. Ele nunca deve anunciar a versão anterior enquanto houver arquivo novo ou ambíguo. Falha no marcador impede ROLLED_BACK.
+
+Rollback de arquivos não reduz automaticamente o contador anti-rollback do broker. Recuperação de versão antiga exige política e autorização próprias.
+
+### 13.6 Reinício e falhas
+
+Após reinício, reler journal, readquirir handles e reclassificar todos os alvos. Para RESTORE_INTENT sem conclusão, verificar se o estado restaurado já existe, se o objeto ainda está no estado AFTER ou se há ambiguidade. Nunca presumir que uma chamada interrompida não alterou o arquivo.
+
+ROLLED_BACK exige todos os alvos RESTORED_VERIFIED ou NO_CHANGE_VERIFIED, marcador restaurado, verificação final e registro durável.
+
+### 13.7 Testes exigidos
+
+Testar falhas em cada ponto do rollback, restauração em ordem inversa, arquivos originais/não alterados/alterados externamente, backups ausentes ou adulterados, metadados, arquivos recém-criados, troca de identidade, disco cheio, acesso negado, reinício e repetição da recuperação. Comprovar que dados do usuário e arquivos fora da allowlist permanecem intactos.
+
+**Decisão:** protocolo documental concluído. A seção 4A ainda bloqueia a resolução segura de nomes. ACL/journal e autorização do broker continuam pendentes. Não existe rollback implementado ou instalador distribuível.
