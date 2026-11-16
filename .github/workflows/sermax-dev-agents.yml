@@ -1,4 +1,5 @@
 name: SERMAX Development Agents
+# Agent backend now requests schema-constrained JSON for code proposals and test verdicts.
 
 on:
   push:
