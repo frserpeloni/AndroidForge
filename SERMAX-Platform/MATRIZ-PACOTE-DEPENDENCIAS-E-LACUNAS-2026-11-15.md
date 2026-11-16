@@ -242,3 +242,51 @@ A espera pelo lock também consome o prazo do snapshot. Se expirar durante a esp
 Testar expiração durante preflight, diálogo de confirmação, espera do lock e antes da escrita; mudanças no relógio do sistema; descarte concorrente de handles; alteração de pacote/destino/modo após confirmação; replay de confirmação; crash antes e depois do journal; journal adulterado; retomada após reinício; e silêncio de File Watcher com alteração concorrente.
 
 **Decisão:** a política de ciclo de vida e confirmação está especificada. Não existe transação segura implementada, nem autorização para conectar o protótipo ao instalador.
+
+
+## 12. Journal transacional e recuperação após falhas, 2026-11-16
+
+**Status:** especificação documental. Nenhum journal, serviço, instalador, backup transacional, rollback ou mecanismo de recuperação foi implementado ou testado.
+
+A seção 11.21 de installer/WINDOWS_HANDLE_BASED_INSTALLER_DESIGN.md define o contrato proposto.
+
+### 12.1 Máquina de estados
+
+Estados: PREPARED, STAGING_VERIFIED, BACKUP_VERIFIED, COMMITTING, COMMITTED, ROLLBACK_REQUIRED, ROLLING_BACK, ROLLED_BACK, RECOVERY_REQUIRED e ABORTED. As transições são monotônicas e validadas. Estados terminais não retornam ao fluxo normal. Estado ambíguo não autoriza repetição automática.
+
+### 12.2 Registro durável
+
+Cada registro vincula versão do formato, ID aleatório da transação, sequência monotônica, digest do registro anterior, estado, intenção/resultado, release, hashes do manifesto/pacote/plano, raiz protegida, alvos, hashes/identidades anteriores e posteriores, referências de staging/backup e código de erro.
+
+O hash encadeado detecta alterações e lacunas, mas não impede adulteração completa por quem controla o journal. ACL, proprietário, identidade do serviço, formato, checksum/MAC/assinatura e custódia de chaves permanecem decisões abertas.
+
+### 12.3 Regra write-ahead
+
+Para cada alteração:
+1. Revalidar pacote, raiz, alvo e precondições.
+2. Persistir intenção da operação.
+3. Confirmar flush e leitura/verificação do registro.
+4. Executar uma operação delimitada.
+5. Verificar identidade, tipo, tamanho e hash do resultado.
+6. Persistir conclusão somente após a verificação.
+
+Sem intenção durável, nenhuma escrita. Sem verificação posterior, nenhuma conclusão. Divergência entre estado anterior e posterior leva a RECOVERY_REQUIRED.
+
+### 12.4 Backup e recuperação
+
+- Cada arquivo substituído exige backup independente, leitura de retorno e validação de hash.
+- O marcador da instalação é publicado por último.
+- A recuperação readquire handles e valida todos os objetos. Nunca reutiliza handles, snapshot ou confirmação de processo anterior.
+- Journal corrompido, sequência ausente, backup alterado, pacote divergente ou resultado ambíguo bloqueiam retomada automática.
+- Backups e artefatos de recuperação permanecem preservados até política de retenção aprovada.
+- Memórias, SQLite, histórico, Terminal, configurações, modelos Ollama, ambientes Python e arquivos fora do payload autorizado ficam fora da transação.
+
+### 12.5 Limites de durabilidade
+
+A documentação Microsoft descreve FlushFileBuffers como flush dos buffers do arquivo indicado. Isso não comprova atomicidade de uma transação com vários arquivos nem persistência de toda alteração de diretório após perda de energia. O método de publicação do journal, filesystem, metadados e cache físico precisam de validação separada. Não há garantia de power-loss aprovada.
+
+### 12.6 Testes exigidos
+
+Injetar falha antes/depois de cada escrita, flush, publicação, backup, substituição, verificação, marcador e rollback. Testar disco cheio, interrupção, reinício, journal truncado/adulterado/reordenado, replay, backup alterado, pacote antigo, troca de raiz e recuperação repetida. Cada cenário termina em estado comprovado ou RECOVERY_REQUIRED com artefatos preservados.
+
+**Decisão:** contrato documental concluído. A seção 4A continua bloqueando o backend de handles. O broker da seção 11.1 ainda exige aprovação. Não há instalador distribuível nem autorização de implementação nesta etapa.
