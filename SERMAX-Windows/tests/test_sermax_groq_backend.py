@@ -35,7 +35,7 @@ class GroqBackendTests(unittest.TestCase):
         self.assertEqual(backend.max_tokens, 4096)
 
     @patch("sermax_groq_backend.urllib.request.urlopen")
-    def test_sends_configured_token_budget_and_returns_content(self, mocked_open):
+    def test_sends_completion_budget_and_returns_content(self, mocked_open):
         mocked_open.return_value = FakeResponse({
             "choices": [{"message": {"content": "resposta"}}]
         })
@@ -43,9 +43,78 @@ class GroqBackendTests(unittest.TestCase):
         self.assertEqual(backend("Analista", "Analise esta tarefa"), "resposta")
         request = mocked_open.call_args.args[0]
         payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(payload["max_tokens"], 2048)
+        self.assertEqual(payload["max_completion_tokens"], 2048)
         self.assertEqual(payload["model"], "openai/gpt-oss-20b")
+        self.assertEqual(payload["reasoning_effort"], "low")
         self.assertNotIn("test-key", request.data.decode("utf-8"))
+        self.assertNotIn("response_format", payload)
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_programmer_uses_strict_proposal_schema(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{"message": {"content": '{"summary":"ok","files":[],"tests":[]}'}}]
+        })
+        backend = self.make_backend()
+        backend("programador", "Retorne a proposta")
+        payload = json.loads(mocked_open.call_args.args[0].data.decode("utf-8"))
+        response_format = payload["response_format"]
+        self.assertEqual(response_format["type"], "json_schema")
+        self.assertTrue(response_format["json_schema"]["strict"])
+        schema = response_format["json_schema"]["schema"]
+        self.assertEqual(
+            schema["required"], ["summary", "files", "tests"]
+        )
+        self.assertFalse(schema["additionalProperties"])
+        self.assertEqual(
+            schema["properties"]["files"]["items"]["required"],
+            ["path", "content"],
+        )
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_tester_uses_strict_verdict_schema(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{"message": {"content": '{"verdict":"PASS","evidence":"ok"}'}}]
+        })
+        backend = self.make_backend()
+        backend("testador", "Avalie os testes")
+        payload = json.loads(mocked_open.call_args.args[0].data.decode("utf-8"))
+        response_format = payload["response_format"]
+        self.assertEqual(response_format["type"], "json_schema")
+        schema = response_format["json_schema"]["schema"]
+        self.assertEqual(
+            schema["properties"]["verdict"]["enum"], ["PASS", "FAIL"]
+        )
+        self.assertEqual(schema["required"], ["verdict", "evidence"])
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_unsupported_model_falls_back_to_json_object_mode(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{"message": {"content": '{"summary":"ok"}'}}]
+        })
+        backend = self.make_backend(model="modelo/sem-json-schema")
+        backend("programador", "Retorne JSON")
+        payload = json.loads(mocked_open.call_args.args[0].data.decode("utf-8"))
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertNotIn("reasoning_effort", payload)
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_empty_content_reports_finish_reason_and_usage(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{
+                "message": {"content": ""},
+                "finish_reason": "length",
+            }],
+            "usage": {
+                "completion_tokens": 2048,
+                "completion_tokens_details": {"reasoning_tokens": 1900},
+            },
+        })
+        backend = self.make_backend()
+        with self.assertRaisesRegex(
+            GroqAPIError,
+            "finish_reason=length.*completion_tokens=2048.*reasoning_tokens=1900",
+        ):
+            backend("programador", "Retorne JSON")
 
     @patch("sermax_groq_backend.time.sleep")
     @patch("sermax_groq_backend.urllib.request.urlopen")
