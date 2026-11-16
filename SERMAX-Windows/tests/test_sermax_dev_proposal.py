@@ -1,6 +1,8 @@
 import json
+import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from sermax_workspace import WorkspaceAdapter
@@ -76,6 +78,56 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "files": [{"path": protected, "content": "x"}],
                     "tests": ["unittest"],
                 }))
+
+    def test_test_only_mode_accepts_only_new_regression_test_files(self):
+        valid = json.dumps({
+            "summary": "Teste de regressão",
+            "files": [{
+                "path": "tests/test_sermax_core_regression.py",
+                "content": "import unittest\\n",
+            }],
+            "tests": ["unittest"],
+        })
+        with patch.dict(os.environ, {"SERMAX_DEV_TEST_ONLY": "1"}):
+            proposal = parse_proposal(valid)
+            self.assertEqual(
+                proposal.files[0].path,
+                "tests/test_sermax_core_regression.py",
+            )
+            for path in (
+                "sermax_core.py",
+                "sermax_jarvis_adapter.py",
+                "tests/test_sermax_core.py",
+                "docs/notes.md",
+            ):
+                raw = json.dumps({
+                    "summary": "Teste de regressão",
+                    "files": [{"path": path, "content": "x"}],
+                    "tests": ["unittest"],
+                })
+                with self.subTest(path=path), self.assertRaises(ProposalError):
+                    parse_proposal(raw)
+
+    def test_test_only_mode_rejects_overwriting_existing_regression_test(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "tests").mkdir()
+            target = root / "tests" / "test_sermax_core_regression.py"
+            target.write_text("ORIGINAL = True\\n", encoding="utf-8")
+            workspace = WorkspaceAdapter(root)
+            raw = json.dumps({
+                "summary": "Teste de regressão",
+                "files": [{
+                    "path": "tests/test_sermax_core_regression.py",
+                    "content": "CHANGED = True\\n",
+                }],
+                "tests": ["unittest"],
+            })
+            with patch.dict(os.environ, {"SERMAX_DEV_TEST_ONLY": "1"}):
+                proposal = parse_proposal(raw)
+                with self.assertRaises(ProposalError):
+                    preview_proposal(workspace, proposal)
+            self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL = True\\n")
 
     def test_apply_and_test_rolls_back_when_tests_fail(self):
         class FailedRunner:
