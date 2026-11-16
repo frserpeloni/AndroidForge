@@ -3,6 +3,7 @@ name: SERMAX Development Agents
 # Agent sandbox ownership is restored before TemporaryDirectory cleanup.
 # Linux agents run portable core and team tests; the Windows CI owns Win32-specific coverage.
 # Current task is limited to one exact core edit and one new regression test.
+# Portable test fixtures use explicit newline construction to avoid escaped-text ambiguity.
 # Existing files are modified only through exact-match localized edits.
 
 on:
