@@ -21,19 +21,15 @@ WINDOWS_CONTEXT_FILES = (
 PLATFORM_CONTEXT_FILES = (
     "backend/server.py",
     "backend/test_api.py",
-    "README.md",
 )
 
 
 def collect_code_context(project_root: Path) -> str:
     """Anexa trechos reais e limitados dos arquivos relevantes ao contexto dos papéis."""
     sections = []
-    remaining = 3_000
-    context_files = (
-        PLATFORM_CONTEXT_FILES
-        if (project_root / "backend" / "server.py").is_file()
-        else WINDOWS_CONTEXT_FILES
-    )
+    is_platform_workspace = (project_root / "backend" / "server.py").is_file()
+    remaining = 4_200 if is_platform_workspace else 3_000
+    context_files = PLATFORM_CONTEXT_FILES if is_platform_workspace else WINDOWS_CONTEXT_FILES
     for relative in context_files:
         path = project_root / relative
         if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
