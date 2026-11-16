@@ -65,9 +65,18 @@ class GroqBackendTests(unittest.TestCase):
             schema["required"], ["summary", "files", "tests"]
         )
         self.assertFalse(schema["additionalProperties"])
+        file_schema = schema["properties"]["files"]["items"]
         self.assertEqual(
-            schema["properties"]["files"]["items"]["required"],
-            ["path", "content"],
+            file_schema["required"],
+            ["path", "content", "edits"],
+        )
+        self.assertEqual(
+            file_schema["properties"]["edits"]["type"],
+            ["array", "null"],
+        )
+        self.assertEqual(
+            file_schema["properties"]["edits"]["items"]["required"],
+            ["old", "new"],
         )
 
     @patch("sermax_groq_backend.urllib.request.urlopen")
