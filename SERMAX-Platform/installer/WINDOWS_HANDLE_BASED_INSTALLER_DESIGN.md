@@ -488,3 +488,14 @@ No generic `ReadFile`, `WriteFile`, `DeleteFile`, `MoveFile`, `RunCommand`, `Exe
 - Verify that no request can cause arbitrary command execution, arbitrary file access, arbitrary destination selection, or modification of protected user data.
 
 **Decision status:** protocol proposal only. The transport, DACL, client identity checks, operation allowlist, package trust policy, quota values, and recovery semantics require review and explicit approval before implementation.
+
+
+Protocol references reviewed:
+- https://learn.microsoft.com/windows/win32/ipc/named-pipe-security-and-access-rights
+- https://learn.microsoft.com/windows/win32/ipc/named-pipes
+- https://learn.microsoft.com/windows/win32/api/namedpipeapi/nf-namedpipeapi-impersonatenamedpipeclient
+- https://learn.microsoft.com/windows/win32/api/securitybaseapi/nf-securitybaseapi-reverttoself
+- https://learn.microsoft.com/windows/win32/ipc/impersonating-a-named-pipe-client
+- https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnamedpipeclientprocessid
+- https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-getnamedpipeclientsessionid
+- https://learn.microsoft.com/windows/win32/api/winbase/nf-winbase-createnamedpipea
