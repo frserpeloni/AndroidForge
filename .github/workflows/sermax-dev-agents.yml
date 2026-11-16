@@ -1,7 +1,8 @@
 name: SERMAX Development Agents
 # Agent backend now requests schema-constrained JSON for code proposals and test verdicts.
 # Agent sandbox ownership is restored before TemporaryDirectory cleanup.
-# Linux agents run portable core tests; the Windows CI owns Win32-specific coverage.
+# Linux agents run portable core and team tests; the Windows CI owns Win32-specific coverage.
+# Current task is limited to one exact core edit and one new regression test.
 
 on:
   push:
@@ -15,7 +16,7 @@ on:
       task:
         description: "Tarefa técnica para a equipe SERMAX"
         required: false
-        default: "Adicione exatamente um novo teste unittest para `sermax_core.normalizar`. Verifique que a função remove espaços no início e no fim, converte letras para minúsculas e substitui sequências de espaços, tabulações e quebras de linha por um único espaço. Crie somente `tests/test_sermax_core_regression.py`. Não altere arquivos de produção, módulos, imports, adaptadores, infraestrutura, workflows ou testes existentes. Não crie stubs, mocks de módulos ausentes ou dependências. Retorne uma proposta com um único arquivo e a suíte unittest."
+        default: "Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. Bug confirmado: o código normaliza a mensagem em `comando`, mas extrai o objetivo de `mensagem.split(" ",1)[1].strip()`, que falha quando a entrada tem espaços iniciais ou repetidos. Faça edição localizada old/new substituindo a extração para `comando.split(" ",1)[1].strip()`. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando entrada com espaços no início e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest."
         type: string
 
 permissions:
@@ -103,8 +104,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "2048"
-          SERMAX_DEV_TEST_ONLY: "1"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Adicione exatamente um novo teste unittest para `sermax_core.normalizar`. Verifique que a função remove espaços no início e no fim, converte letras para minúsculas e substitui sequências de espaços, tabulações e quebras de linha por um único espaço. Crie somente `tests/test_sermax_core_regression.py`. Não altere arquivos de produção, módulos, imports, adaptadores, infraestrutura, workflows ou testes existentes. Não crie stubs, mocks de módulos ausentes ou dependências. Retorne uma proposta com um único arquivo e a suíte unittest.' }}
+          SERMAX_DEV_ALLOWED_PATHS: "sermax_core.py;tests/test_sermax_core_command_regression.py"
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Corrija o comando /plano e /planejar em sermax_core.responder_comando_local. Bug confirmado: o código normaliza a mensagem em `comando`, mas extrai o objetivo de `mensagem.split(" ",1)[1].strip()`, que falha quando a entrada tem espaços iniciais ou repetidos. Faça edição localizada old/new substituindo a extração para `comando.split(" ",1)[1].strip()`. Adicione somente `tests/test_sermax_core_command_regression.py` com testes unittest para /plano e /planejar usando entrada com espaços no início e espaços ou tabulações repetidos. Faça mock de sermax_planejador.planejar e confirme que recebe somente o objetivo. Altere exatamente `sermax_core.py` e o novo teste. Não reescreva arquivos completos. Não crie stubs, dependências ou alterações fora do escopo. A proposta deve incluir unittest.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
