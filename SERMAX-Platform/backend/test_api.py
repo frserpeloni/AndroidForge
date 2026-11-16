@@ -52,6 +52,18 @@ class PlatformApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 403)
 
+    def test_external_ip_is_rejected(self):
+        # Cliente com IP externo (não loopback)
+        external_client = TestClient(server.app, client=("192.0.2.10", 50002))
+        try:
+            response = external_client.get(
+                "/api/health",
+                headers={**self.headers, "host": "127.0.0.1:8765"}
+            )
+            self.assertEqual(response.status_code, 403)
+        finally:
+            external_client.close()
+
     def test_chat_is_saved_and_can_be_reopened(self):
         server.CORE_MODULE = FakeCore
         response = self.client.post(

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from fastapi import FastAPI, HTTPException, Request
+import ipaddress
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -151,12 +152,27 @@ def startup() -> None:
 
 @app.middleware("http")
 async def local_origin_guard(request: Request, call_next):
+    # Validação do cabeçalho Host (mantida para compatibilidade)
     host = request.headers.get("host", "")
     if host not in {"127.0.0.1:8765", "localhost:8765"}:
         return JSONResponse(status_code=403, content={"detail": "A API aceita somente acesso local."})
+
+    # Validação do cabeçalho Origin (mantida)
     origin = request.headers.get("origin")
     if origin and origin not in {"http://127.0.0.1:8765", "http://localhost:8765"}:
         return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
+
+    # Nova verificação do IP real do cliente
+    client = request.client
+    if client is None:
+        return JSONResponse(status_code=403, content={"detail": "Cliente desconhecido."})
+    try:
+        ip = ipaddress.ip_address(client.host)
+    except ValueError:
+        return JSONResponse(status_code=403, content={"detail": "IP inválido."})
+    if not ip.is_loopback:
+        return JSONResponse(status_code=403, content={"detail": "Acesso externo não permitido."})
+
     return await call_next(request)
 
 
