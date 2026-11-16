@@ -61,6 +61,13 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 "        self.assertTrue(True)\n",
                 encoding="utf-8",
             )
+            (tests_dir / "run_agent_suite.py").write_text(
+                "import sys, unittest\n"
+                "suite = unittest.defaultTestLoader.discover('tests')\n"
+                "result = unittest.TextTestRunner(verbosity=2).run(suite)\n"
+                "sys.exit(0 if result.wasSuccessful() else 1)\n",
+                encoding="utf-8",
+            )
             ws = WorkspaceAdapter(root)
             runner = TestRunner(ws)
             with self.assertRaises(WorkspaceError):
