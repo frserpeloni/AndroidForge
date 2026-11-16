@@ -1550,3 +1550,126 @@ Before implementation, approve the health profile schema, required capability po
 The health gate is accepted only when the candidate process is proven to match the signed release, every required probe passes, evidence is durably bound to the transaction, the marker is published and verified last, and the final COMMITTED journal record is durable and read back.
 
 **Decision:** post-install health and the COMMITTED boundary are specified only. The existing endpoint proves API liveness at a basic level and does not prove full readiness. No endpoint, health runner, installer, broker, transaction engine, migration, rollback policy or production release was implemented or authorized. The namespace-resolution blocker in section 4A, journal decisions in section 11.21.9, broker approval in section 11.1 and rollback policy in section 11.22 remain open.
+
+
+## 11.24 Power-loss recovery around marker publication and COMMITTED
+
+**Audit date:** 2026-11-16.  
+**Status:** recovery protocol specification only. No journal writer, marker publisher, recovery broker, installer, power-loss test or production operation was implemented.
+
+### 11.24.1 Scope and invariant
+
+This section defines recovery classification when Windows, the process, the storage device or power fails around the installation marker and final COMMITTED journal record.
+
+The authoritative success condition remains: the exact authenticated payload is verified, required health evidence is valid for that transaction, the marker is published and read back, and a valid final COMMITTED record is durably published and read back.
+
+The marker alone never proves COMMITTED. A successful API return, a process exit code, a browser opening, a journal intent, or an in-memory state never proves COMMITTED.
+
+Recovery runs under the broker identity before the candidate application is exposed to normal use or a new installation is accepted. If the recovery authority is unavailable or cannot establish a unique safe state, block normal startup of the candidate and preserve all transaction artifacts. Do not let an ordinary client process repair or rewrite the marker or journal.
+
+### 11.24.2 Required write-ahead records
+
+The journal must distinguish these immutable, transaction-bound events:
+- MARKER_PUBLISH_INTENT, containing transaction ID, marker target identity, verified old marker evidence, exact new marker bytes/digest, backup reference, release/manifest digest and operation ID;
+- MARKER_PUBLISHED_VERIFIED, recorded only after independent read-back proves the exact new marker bytes, identity and approved metadata;
+- COMMIT_RECORD_INTENT, identifying the unique final COMMITTED record sequence, previous-record digest and exact record digest;
+- COMMITTED, the complete final record published using the approved journal protocol, flushed, reopened and validated.
+
+Each event uses the existing journal envelope, strict sequence, transaction ID and hash-chain rules from section 11.21. A duplicate or conflicting intent, sequence gap, unknown event or invalid digest fails closed. The final COMMITTED record is terminal and must not be rewritten to make recovery appear successful.
+
+The journal publication primitive and its power-loss semantics must be approved for every supported filesystem. A temporary-file pattern, FlushFileBuffers call or rename name alone is not a proof of atomicity or directory-entry durability.
+
+### 11.24.3 Recovery evidence reacquisition
+
+After restart, discard all in-memory handles, cursors, process references, confirmations, health results and cached filesystem observations.
+
+The broker must:
+1. Verify its own identity, fixed journal root, ACLs, supported volume and filesystem contract.
+2. Parse the complete journal chain, validate framing, transaction ID, record sequence, previous digests, record digests and allowed transitions.
+3. Locate the latest valid marker intent and any matching marker completion and commit records.
+4. Reacquire the installation root, marker, payload targets, backup and staging objects through the approved handle-safe backend.
+5. Independently verify target identities, types, content hashes and required metadata against the signed release and journal.
+6. Verify the marker as one of: exact OLD state, exact NEW state, or AMBIGUOUS. Compare identity, bytes, digest and approved metadata; a filename or parseable version string is insufficient.
+7. Revalidate the signed manifest, package digest, release policy, required health evidence and transaction lock. A health result from a process that no longer exists is stale. Start a fresh candidate process and rerun required probes when the policy requires it.
+8. Record a recovery classification before any new protected mutation.
+
+No previous handle or old health result is reused. Repeated inspection without external changes must be idempotent.
+
+### 11.24.4 Marker classification and permitted response
+
+| Observed state after restart | Interpretation | Required response |
+|---|---|---|
+| Exact OLD marker, exact verified payload BEFORE | Marker publication did not take effect; transaction is not committed | Record classification. Abort or rollback only under approved policy. Do not claim success. |
+| Exact OLD marker, payload is exact verified NEW | Marker was not published or did not persist; transaction is not committed | Keep candidate unavailable. Revalidate health and policy. Re-publication requires explicit recovery authorization and a new durable marker intent if the original intent cannot be safely resumed. Otherwise RECOVERY_REQUIRED. |
+| Exact NEW marker, payload exact NEW, health evidence fresh and valid, no valid COMMITTED record | Marker publication likely completed but final commit record is absent | Transaction remains non-COMMITTED. Recovery may finish only if an approved deterministic policy authorizes it, all evidence is independently reacquired, and a valid COMMIT_RECORD_INTENT can be established. Otherwise RECOVERY_REQUIRED. |
+| Exact NEW marker, payload exact NEW, valid complete COMMITTED record and valid journal chain | Commit record survived and validates after restart | Treat as COMMITTED only after full independent verification of the final record, payload, marker, release identity and journal chain. Do not rewrite the terminal record. |
+| Exact NEW marker, payload missing, mixed, changed or ambiguous | Marker advertises a release whose payload cannot be proven | RECOVERY_REQUIRED. Keep candidate unavailable. Do not repair by copying from an unverified source or silently lower the marker. |
+| Marker missing, truncated, malformed, wrong identity or metadata mismatch | Marker state is ambiguous or damaged | RECOVERY_REQUIRED. Preserve marker bytes, backup, journal and payload. Do not infer OLD or NEW from partial contents. |
+| Journal chain broken, torn final record, conflicting generations or unknown critical field | Commit authority cannot be established | RECOVERY_REQUIRED. Do not accept a COMMITTED state from an isolated record or filename. Preserve all generations and evidence. |
+| Valid COMMITTED record but payload or marker no longer matches | Post-commit tampering, storage failure or later damage | Historical transaction remains COMMITTED. Block normal use and require a separately authorized repair transaction. Never rewrite history as rollback. |
+
+The table classifies evidence; it does not grant automatic rollback or marker republishing authority.
+
+### 11.24.5 Power loss at each publication boundary
+
+- **Before MARKER_PUBLISH_INTENT is durable:** no marker mutation is allowed to have started. Recovery verifies payload and marker before deciding whether the transaction is still safely abortable.
+- **After intent, before marker operation:** inspect the marker. If exact OLD, no publication is proven. Do not blindly repeat the operation.
+- **During marker replacement:** treat any state other than exact OLD or exact NEW as AMBIGUOUS. A partially written, missing, substituted or metadata-mismatched marker enters RECOVERY_REQUIRED.
+- **After marker operation, before MARKER_PUBLISHED_VERIFIED:** independently inspect the marker. Exact NEW can be recorded as verified only after all identity/content/metadata checks pass. Exact OLD means no publication is proven. Anything else is ambiguous.
+- **After MARKER_PUBLISHED_VERIFIED, before COMMIT_RECORD_INTENT:** transaction is still not committed. Revalidate all targets and health evidence. Continue only under approved recovery policy.
+- **After COMMIT_RECORD_INTENT, before final record publication:** transaction is still not committed. Verify whether the exact final record exists and validates. If absent, recovery must follow the approved journal protocol; it must not invent or skip sequence numbers.
+- **During final record publication or flush:** a partial/torn record is not COMMITTED. Preserve it and enter RECOVERY_REQUIRED unless the journal's approved recovery rules unambiguously establish a valid prior state and safe continuation.
+- **After a complete COMMITTED record is published, before the writer receives read-back confirmation:** on restart, independently parse and verify the full journal chain and final record, then verify marker and payload. A complete valid final record that survives restart may be recognized as COMMITTED only if the approved durability contract proves the publication requirements. If durability cannot be established, RECOVERY_REQUIRED.
+- **After COMMITTED is verified:** the transaction is terminal. Subsequent failures require a new repair transaction.
+
+Do not assume an interrupted filesystem call had no effect. Inspect actual state through reacquired handles.
+
+### 11.24.6 No blind replay and no false success
+
+Recovery must never:
+- replay marker replacement because the caller did not receive a success response;
+- append a second COMMITTED record to hide an uncertain first publication;
+- accept a marker without matching the exact signed manifest/release digest;
+- accept a COMMITTED record without the full preceding valid journal chain;
+- declare success from the presence of a version file, executable, process, URL or HTTP status alone;
+- run rollback or delete backups when the before/after classification is ambiguous;
+- expose a mixed or unverified candidate to the user.
+
+Every recovery action is a new durable intent followed by one bounded operation, independent read-back and a completion record. A unique operation ID prevents duplicate logical actions, but it does not replace inspection of the actual filesystem state.
+
+### 11.24.7 Startup gate and user-data isolation
+
+The recovery broker must classify unfinished transactions before the candidate application accepts requests. If the broker cannot run, the journal cannot be read, or the root/marker/payload is ambiguous, fail closed and present a recovery-required status through a separate trusted recovery path. Do not launch a possibly mixed candidate just to expose its own health endpoint.
+
+Recovery is restricted to the signed program payload, its transaction-owned marker and broker-owned transaction artifacts. Memories, SQLite databases, conversation history, preferences, logs, attachments, Ollama models, Python environments, external services, original Terminal outside the allowlist and user backups remain excluded.
+
+No recovery probe may write a test conversation, alter memory, migrate the database or clean user data. No cleanup occurs as part of power-loss recovery.
+
+### 11.24.8 Required power-loss and storage-fault matrix
+
+Run on every declared Windows build, supported filesystem and storage configuration using disposable test roots and controlled VM power cuts or equivalent fault injection. Test interruption:
+- before/after each marker intent write, flush, publication and read-back;
+- during marker replacement, including torn data and namespace interruption;
+- before/after marker verification and health evidence revalidation;
+- before/after COMMIT_RECORD_INTENT, final record write, flush, publication and read-back;
+- with full disk, quota exhaustion, write cache enabled, access denied, sharing violation, volume removal, filesystem errors and abrupt VM power-off;
+- with exact OLD marker, exact NEW marker, missing marker, corrupt marker, substituted marker, mixed payload, changed target and invalid backup;
+- with valid COMMITTED record, missing record, torn tail, duplicate sequence, broken hash chain, conflicting journal generations and wrong transaction ID;
+- after restart, during repeated recovery inspection and during every separately authorized recovery action.
+
+Acceptance requires every injected cut to yield exactly one of: independently verified COMMITTED, a policy-authorized and fully verified rollback/abort, or RECOVERY_REQUIRED with all artifacts preserved. No ambiguous case may produce success. Repeated inspection without external changes must not mutate the payload or advance the journal. User data and unrelated files must remain unchanged.
+
+Record machine/VM configuration, Windows build, filesystem, storage configuration, commit, release digest, exact injection point, journal sequence, marker classification, target identities/hashes and recovery result. A test result applies only to the configuration tested.
+
+### 11.24.9 Decisions and acceptance gate
+
+Before implementation, approve:
+1. Marker format, exact bytes, identity and metadata contract.
+2. Marker publication primitive and power-loss semantics per supported filesystem.
+3. Journal record publication, flush, read-back and torn-tail policy.
+4. Broker startup gate and recovery interface when the normal application cannot start.
+5. Whether exact NEW marker plus valid payload but absent COMMITTED record can ever be finalized automatically, and under which independently verifiable evidence.
+6. Operator authorization and audit procedure for RECOVERY_REQUIRED.
+7. Supported storage devices, caching configurations, Windows builds and power-loss test method.
+
+**Decision:** power-loss classification around marker and COMMITTED is specified only. No installer, recovery engine, broker, marker publisher, journal writer, automatic rollback policy, power-loss test or production release was implemented or authorized. Section 4A namespace resolution, journal storage/ACL/publication decisions in section 11.21.9, broker approval in section 11.1, rollback policy in section 11.22 and health-profile decisions in section 11.23 remain open.
