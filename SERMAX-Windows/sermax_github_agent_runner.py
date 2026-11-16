@@ -10,30 +10,50 @@ from sermax_dev_team import DevelopmentTeam
 from sermax_groq_backend import GroqChatBackend
 from sermax_workspace import TestRunner, WorkspaceAdapter
 
+# Contexto direcionado à etapa autorizada do atualizador transacional.
+# Os agentes recebem código real e testes relacionados à área privada _update.
 CONTEXT_FILES = (
-    "sermax_core.py",
-    "sermax_jarvis_adapter.py",
-    "sermax_pestinha_adapter.py",
-    "sermax_dev_team.py",
-    "sermax_workspace.py",
-    "sermax_dev_proposal.py",
+    ("sermax_windows_private_area.py", "def create_private_directory_component"),
+    ("sermax_windows_private_area_acl_policy.py", "def validate_private_area_acl"),
+    ("sermax_windows_acl_inspection.py", "def inspect_directory_acl"),
+    ("sermax_windows_root.py", "def open_managed_directory_for_private_area"),
+    ("sermax_windows_handle_inventory.py", "def inventory_directory_handle"),
+    ("sermax_update_inventory_contract.py", "def classify_inventory"),
+    ("tests/test_sermax_windows_private_area.py",
+     "def test_rejects_component_outside_fixed_allowlist"),
+    ("tests/test_sermax_windows_private_area_acl_policy.py",
+     "def test_accepts_exact_protected_policy_and_empty_directory"),
+    ("tests/test_sermax_windows_private_area_acl_policy_windows.py",
+     "def test_reads_back_exact_protected_acl_from_same_retained_handle"),
+    ("tests/test_sermax_windows_handle_inventory.py",
+     "def test_hashes_file_from_stable_directory"),
 )
 
 
 def collect_code_context(project_root: Path) -> str:
-    """Anexa trechos reais e limitados dos arquivos relevantes ao contexto dos papéis."""
+    """Anexa trechos reais e limitados dos módulos e testes de _update."""
     sections = []
-    remaining = 3_000
-    for relative in CONTEXT_FILES:
+    remaining = 5_600
+    for relative, marker in CONTEXT_FILES:
         path = project_root / relative
         if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
             continue
         try:
-            content = path.read_text(encoding="utf-8")
+            lines = path.read_text(encoding="utf-8").splitlines()
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(650, remaining)]
-        section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
+
+        start = next(
+            (index for index, line in enumerate(lines) if marker in line),
+            None,
+        )
+        if start is None:
+            excerpt = "\n".join(lines)[:500]
+        else:
+            excerpt = "\n".join(lines[start:])[:520]
+        section = f"\n--- ARQUIVO: {relative}, trecho {marker} ---\n{excerpt}"
+        if len(section) > remaining:
+            section = section[:remaining]
         sections.append(section)
         remaining -= len(section)
     return "\n".join(sections)
@@ -52,12 +72,20 @@ def main() -> int:
     code_context = collect_code_context(project_root)
     evidence = (
         "Ambiente: GitHub Actions. Workspace isolado: SERMAX-Windows. "
-        "Não altere memórias, infraestrutura dos agentes, workflows, credenciais, "
-        "configurações de permissões ou arquivos fora do escopo. "
-        "Propostas aceitas: somente .py e .md do produto. Toda proposta exige unittest. "
-        "O Programador terá a proposta validada antes de ser aplicada. "
-        "O executor roda os testes e faz rollback se algum falhar. "
-        "O Testador deve emitir JSON PASS/FAIL com evidência real.\n"
+        "ESCOPO AUTORIZADO: próxima etapa de validação segura da área privada _update. "
+        "Audite a abertura relativa por handle, identidade de volume/FileId, reparse "
+        "points, ACL, enumeração, concorrência e falhas. "
+        "Não acesse nem escreva em C:\\SERMAX. Não crie diretórios nem altere ACL "
+        "fora de sandbox descartável. Não implemente staging, backup, journal, "
+        "instalação ou rollback nesta etapa. "
+        "Não altere workflows, infraestrutura dos agentes, credenciais, memórias, "
+        "configurações, integrações Jarvis/Pestinha, terminal ou arquivos protegidos. "
+        "Propostas aceitas: somente .py e .md do produto e testes relacionados. "
+        "Toda proposta exige unittest. O executor roda os testes em sandbox isolada "
+        "e faz rollback se algum falhar. O Testador deve emitir JSON PASS/FAIL com "
+        "evidência real. Não alegue validação de acesso efetivo somente pela leitura "
+        "da DACL. Se uma garantia depender de Windows x64 e não for testada no CI, "
+        "registre a pendência e mantenha o fluxo bloqueado.\n"
         "CONTEXTO DE CÓDIGO REAL:\n" + code_context
     )
     team = DevelopmentTeam(
