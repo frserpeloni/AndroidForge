@@ -837,3 +837,79 @@ For the future unified SERMAX release, prefer one reviewed package contract and 
 8. Run install/update/rollback tests on clean Windows VMs and on a disposable copy of an existing installation. No test may target the user's live `C:\\SERMAX`.
 
 **Decision:** section 11.15 and 11.16 remain historical exploratory proposals. For the existing SERMAX Windows update track, Ed25519 + signed JSON schema 1 + ZIP is the implementation to audit, not CMS/PKCS #7 + directory schema v2. For the Platform installer track, the unsigned directory schema v1 remains development-only. Neither track is a validated installer or release.
+
+
+## 11.18 Static integration audit: inventory, manifest and plan
+
+**Audit date:** 2026-11-16.  
+**Scope:** static inspection of `SERMAX-Windows/sermax_update_inventory.py`, `sermax_update_inventory_contract.py`, `sermax_update_manifest.py`, `sermax_update_package.py` and their tests. No code was executed or changed in this audit.
+
+### 11.18.1 Blocking contract mismatch: file identity is required but not produced
+
+The plan builder requires every `replace` destination to contain a `file_id` string matching 32 hexadecimal characters. The value is copied to `InventoryPlanEntry.current_file_id`.
+
+The actual `inventory_directory()` output contains `path`, `type`, `size`, `sha256` and `classification`. It does not emit `file_id`, volume identity, or a retained file handle. Therefore the actual inventory output cannot be passed directly to `build_inventory_plan()` for any `replace` action.
+
+The current contract tests conceal this integration gap by constructing inventory dictionaries through a test helper that manually inserts a synthetic `file_id`. The tests prove validation of a supplied identifier, not production of a real Windows file identity.
+
+**Required correction before integration:** define a Windows handle-based inventory record with volume identity and the appropriate file identity obtained from the opened object. Keep the relevant handles alive through the operation that consumes the plan, or explicitly reopen and verify the same object using a documented race-safe contract. A path string plus a fabricated or stale file ID is not sufficient. Do not substitute `st_ino` or another path-derived field without validating its Windows semantics and identity guarantees.
+
+### 11.18.2 Inventory reads remain path-based
+
+The current inventory implementation:
+- checks each directory entry with `DirEntry.stat(follow_symlinks=False)`;
+- then hashes the file with `Path.open("rb")`;
+- then obtains size again with `Path.stat(follow_symlinks=False)`;
+- recursively enumerates directories through `os.scandir(Path)`.
+
+The no-follow check and the later open are separate path operations. A concurrent replacement of a file or parent directory can change the object reached between those operations. The root is checked with `lstat`, then canonicalized with `resolve(strict=True)`; this does not prove that every ancestor used to reach the supplied root was admitted without following a reparse point.
+
+Consequently, the current implementation is a useful read-only inventory prototype, but it is not the handle-based, race-resistant inventory described in its contract. Because it reads file contents to calculate hashes, a path race is also a potential unintended read outside the intended root, not merely a stale report.
+
+**Required correction before use on a trusted installation:** root admission, directory enumeration, file opens, metadata queries and hashing must be bound to retained handles under an explicitly approved Windows API contract. Reject reparse points and unexpected volume changes. If the documented API contract cannot provide the required guarantee, do not claim race resistance and keep the inventory out of the trusted installation path.
+
+### 11.18.3 Plan builder trusts caller-supplied inventory records
+
+`build_inventory_plan()` validates record shapes, path collisions, classifications and selected metadata, but accepts ordinary caller-supplied mappings. It does not establish that those records were emitted by `inventory_directory()`, nor that their `classification`, `file_id`, size or hash came from a trusted read operation.
+
+The intended precondition says that inventory must come from a trusted layer. That provenance is currently a convention in a docstring, not an enforced interface. The `classify_inventory()` helper can assign `managed` from an explicit allowlist, but it does not authenticate the underlying filesystem observations or retain object handles.
+
+**Required correction before integration:** use a private/typed inventory result produced only by the trusted handle-based reader, or have one orchestrator own inventory acquisition, classification, manifest verification and plan construction without accepting externally authored dictionaries. Revalidate object identity and required metadata at the point of use. A serialized inventory file must never become authority for privileged writes.
+
+### 11.18.4 Directory creation is not represented by the current plan
+
+For every nested manifest target, `build_inventory_plan()` requires each parent directory to exist in the inventory and be a directory. The manifest supports file actions `create` and `replace`, but has no directory-entry action or explicit directory-creation plan.
+
+This supports new files inside existing directories, as shown by the tests. It does not support a release that introduces a new directory tree. The installer cannot infer permission to create missing ancestors from the file path alone.
+
+**Required correction:** either require every package destination directory to exist and state that limitation in the package contract, or add explicit, authenticated directory operations with collision, protected-path, ACL and rollback rules. Do not silently create missing parent directories in a privileged installer.
+
+### 11.18.5 Package validator boundary
+
+`validate_release_archive()` correctly expects an already validated `ValidatedManifest` and checks the ZIP member set, names, file sizes, content hashes, supported compression methods and selected special-file indicators without extracting the archive. Its tests exercise these validation boundaries.
+
+It returns package metadata and an archive digest, not an immutable staged package or a handle to the validated archive. The function receives the complete archive as a `bytes` object, so a future streaming broker cannot simply assume this API provides bounded-memory streaming. The current configured archive cap is 512 MiB and total uncompressed cap is 4 GiB; those are code defaults, not measured release requirements or approved broker quotas.
+
+The caller must preserve the exact validated bytes/snapshot through later staging. Reopening a caller-controlled path after validation would reintroduce a package substitution window.
+
+### 11.18.6 Manifest and plan are not yet one authenticated transaction
+
+The manifest validator authenticates a deterministic JSON payload with an injected verifier. The package validator accepts the resulting validated manifest object. The plan builder independently validates raw manifest bytes and authenticates them again. There is no production orchestrator binding one exact manifest byte sequence, one exact ZIP byte sequence, one inventory snapshot, one package validation result and one plan into a durable transaction identity.
+
+No current module performs staging, backup, journaling, install, rollback or crash recovery. No current test proves that the package bytes validated are the same bytes later installed, or that the file objects planned are the same objects later replaced.
+
+**Required correction:** define one transaction context containing the authenticated manifest digest, archive digest, release identity, inventory generation, retained object identities, plan, and broker-owned staged snapshot. Every later phase must consume that same context or verify a documented immutable equivalent. Persist a durable transaction journal before any mutation.
+
+### 11.18.7 Audit disposition
+
+| Finding | Severity for release | Disposition |
+|---|---|---|
+| Real inventory omits required file identity | Blocker | Actual inventory cannot plan replacements |
+| Inventory hashes and stats by path after no-follow checks | Blocker | Not race-resistant; do not use on trusted installation |
+| Root ancestors are not admitted by retained handles | Blocker | Root trust is incomplete |
+| Plan accepts ordinary caller-authored mappings | Blocker | Provenance is not enforced |
+| Missing parent directories cannot be planned | Functional limitation | Package contract or explicit directory operations required |
+| ZIP validation returns metadata, not immutable staged content | Blocker for installer integration | Must bind validated bytes to broker-owned staging |
+| No end-to-end transaction coordinator or durable journal | Blocker | No install/rollback capability |
+
+**Decision:** keep all five modules as validation/read-only prototypes. Do not connect them to the Platform installer, elevate them, or point them at the user's live `C:\\SERMAX`. The next safe engineering task is to specify and test a Windows handle-based inventory result contract and its provenance, without implementing privileged installation. This audit does not close any TOCTOU acceptance gate.
