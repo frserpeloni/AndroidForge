@@ -133,7 +133,7 @@ class DevelopmentProposalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
             (root / "sermax_core.py").write_text(
-                "def command():\\n    return old_value\\n", encoding="utf-8"
+                "def command():\n    return old_value\n", encoding="utf-8"
             )
             workspace = WorkspaceAdapter(root)
             raw = json.dumps({
@@ -142,8 +142,8 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "path": "sermax_core.py",
                     "content": None,
                     "edits": [{
-                        "old": "    return old_value\\n",
-                        "new": "    return new_value\\n",
+                        "old": "    return old_value\n",
+                        "new": "    return new_value\n",
                     }],
                 }],
                 "tests": ["unittest"],
@@ -155,13 +155,13 @@ class DevelopmentProposalTests(unittest.TestCase):
             self.assertEqual(apply_proposal(workspace, proposal), ["sermax_core.py"])
             self.assertEqual(
                 workspace.read_text("sermax_core.py"),
-                "def command():\\n    return new_value\\n",
+                "def command():\n    return new_value\n",
             )
 
     def test_exact_match_edits_reject_missing_or_ambiguous_old_text(self):
         for source, expected_count in (
-            ("value = 1\\n", 0),
-            ("value = 1\\nvalue = 1\\n", 2),
+            ("value = 1\n", 0),
+            ("value = 1\nvalue = 1\n", 2),
         ):
             with self.subTest(expected_count=expected_count), tempfile.TemporaryDirectory() as folder:
                 root = Path(folder)
@@ -172,7 +172,7 @@ class DevelopmentProposalTests(unittest.TestCase):
                     "files": [{
                         "path": "module.py",
                         "content": None,
-                        "edits": [{"old": "value = 1\\n", "new": "value = 2\\n"}],
+                        "edits": [{"old": "value = 1\n", "new": "value = 2\n"}],
                     }],
                     "tests": ["unittest"],
                 }))
