@@ -109,3 +109,20 @@ Until then, the installer must remain marked unsafe for production distribution.
 ## 9. Explicit non-goals
 
 This work does not authorize changes to `main`, the original `C:\\SERMAX` installation, SERMAX core, Terminal, user memory, backups, SERMAX Control, or Drive Connect. It does not authorize remote access or network exposure of the Platform API.
+
+
+## 10. Adjacent audit finding: package builder
+
+A separate review of `sermax_package_builder.py` found the same path-based pattern in the package creation pipeline. It validates source and output paths with `lstat` and repeated reparse checks, then reads and copies files through `Path.open`, `shutil.copy2`, `tempfile.mkdtemp`, and `os.replace`. A concurrent directory-entry swap can invalidate a prior check before a later operation.
+
+This is a distinct work item from installer extraction and must not be considered fixed by the installer backend alone.
+
+Required follow-up before treating package production as hardened:
+
+1. Define whether package source trees and output directories are writable by untrusted concurrent processes in the supported threat model.
+2. If they are, apply retained-handle and relative-name operations to source reads, staging, manifest writes, and final publication.
+3. Add Windows junction/reparse race tests for both source and output trees.
+4. Ensure cleanup after failure only removes the exact staging directory object created by the builder, not a path substituted after validation.
+5. Record separate acceptance results for package building and package installation.
+
+The GUI source currently labels itself: `Development preview, not a distributable installer.` Keep that status until the installer acceptance gate in section 8 passes. A secure installer backend alone does not validate the package builder.
