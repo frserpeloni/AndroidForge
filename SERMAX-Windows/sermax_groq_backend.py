@@ -17,6 +17,44 @@ class GroqAPIError(RuntimeError):
     """Falha controlada na comunicação com a API Groq."""
 
 
+PROPOSAL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "files": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        },
+        "tests": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["unittest", "compileall"]},
+        },
+    },
+    "required": ["summary", "files", "tests"],
+    "additionalProperties": False,
+}
+
+TESTER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["PASS", "FAIL"]},
+        "evidence": {"type": "string"},
+    },
+    "required": ["verdict", "evidence"],
+    "additionalProperties": False,
+}
+
+STRICT_JSON_MODELS = {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}
+
+
 class GroqChatBackend:
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -46,6 +84,26 @@ class GroqChatBackend:
         if not self.model:
             raise GroqAPIError("GROQ_MODEL não foi definido.")
 
+    def _response_format(self, role: str) -> dict | None:
+        normalized_role = str(role).casefold()
+        if normalized_role == "programador":
+            schema_name, schema = "sermax_development_proposal", PROPOSAL_SCHEMA
+        elif normalized_role == "testador":
+            schema_name, schema = "sermax_test_verdict", TESTER_SCHEMA
+        else:
+            return None
+
+        if self.model in STRICT_JSON_MODELS:
+            return {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": schema,
+                },
+            }
+        return {"type": "json_object"}
+
     def __call__(self, role: str, prompt: str) -> str:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("Prompt vazio.")
@@ -64,8 +122,14 @@ class GroqChatBackend:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": self.max_tokens,
+            "max_completion_tokens": self.max_tokens,
         }
+        if self.model in STRICT_JSON_MODELS:
+            payload["reasoning_effort"] = "low"
+        response_format = self._response_format(role)
+        if response_format is not None:
+            payload["response_format"] = response_format
+
         request = urllib.request.Request(
             self.ENDPOINT,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -83,9 +147,24 @@ class GroqChatBackend:
                 ) as response:
                     raw = response.read(2_000_000)
                 data = json.loads(raw.decode("utf-8"))
-                answer = data["choices"][0]["message"]["content"]
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    raise GroqAPIError("A Groq retornou uma resposta sem choices.")
+                choice = choices[0]
+                message = choice.get("message") or {}
+                answer = message.get("content")
                 if not isinstance(answer, str) or not answer.strip():
-                    raise GroqAPIError("A Groq retornou conteúdo vazio.")
+                    usage = data.get("usage") or {}
+                    details = usage.get("completion_tokens_details") or {}
+                    finish_reason = choice.get("finish_reason", "desconhecido")
+                    completion_tokens = usage.get("completion_tokens", "desconhecido")
+                    reasoning_tokens = details.get("reasoning_tokens", "desconhecido")
+                    raise GroqAPIError(
+                        "A Groq retornou conteúdo vazio "
+                        f"(finish_reason={finish_reason}, "
+                        f"completion_tokens={completion_tokens}, "
+                        f"reasoning_tokens={reasoning_tokens})."
+                    )
                 return answer
             except urllib.error.HTTPError as exc:
                 try:
@@ -94,7 +173,7 @@ class GroqChatBackend:
                     exc.close()
                 if exc.code == 429 and attempt < self.max_retries:
                     retry_after = exc.headers.get("Retry-After") if exc.headers else None
-                    match = re.search(r"try again in ([0-9]+(?:\.[0-9]+)?)s", detail, re.I)
+                    match = re.search(r"try again in ([0-9]+(?:\\.[0-9]+)?)s", detail, re.I)
                     try:
                         delay = (
                             float(retry_after) if retry_after
