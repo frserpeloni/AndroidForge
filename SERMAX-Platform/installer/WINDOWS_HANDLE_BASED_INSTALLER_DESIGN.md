@@ -1975,3 +1975,52 @@ References:
 - https://learn.microsoft.com/en-us/windows/win32/api/winternl/nf-winternl-ntcreatefile
 - https://learn.microsoft.com/en-us/windows/win32/api/ntdef/ns-ntdef-_object_attributes
 - https://learn.microsoft.com/en-us/answers/questions/6056645/does-user-mode-ntcreatefile-support-obj-dont-repar
+
+
+### 11.28 Source audit of the current installer and package builder, 2026-11-16
+
+**Status:** static source review only. No code was modified or executed in this audit.
+
+#### 11.28.1 Installer core: observed sequence
+
+The current `sermax_installer_core.py` performs these operations:
+
+- `_is_reparse_point()` uses `Path.lstat()`, `Path.is_symlink()` and Windows file attributes to inspect a path.
+- `_assert_no_reparse_components()` walks an absolute path component by component using separate path-based metadata queries.
+- `_revalidate_install_path()` checks lexical containment with `os.path.abspath()` and repeats the component inspection. Its own docstring correctly states that this narrows, but does not eliminate, TOCTOU.
+- Installation creates destination directories, reads marker and source files through path APIs, backs up with `shutil.copy2`, stages with `tempfile.mkstemp` followed by path-based `shutil.copy2`, verifies staged size/hash through separate path opens, then replaces targets with `os.replace`.
+- Rollback restores from backup paths with `shutil.copy2` and `os.replace`.
+
+The repeated checks are useful defense-in-depth against static malicious paths. They do not bind the checked directory entry to the later copy, read, write or replace operation. A concurrent actor with write authority over the destination tree can attempt a substitution between those calls. The cooperative lock does not stop such an actor.
+
+#### 11.28.2 Package builder: observed sequence
+
+The current `sermax_package_builder.py`:
+
+- Checks source and output components using path-based `lstat`/reparse inspection.
+- Computes source size and SHA-256 through path-based reads.
+- Copies with `shutil.copy2`, then hashes and stats the staged file, and reads the source again to compare the before/after size and hash.
+- Publishes the completed temporary directory with `os.replace`.
+- Cleans a failed temporary directory with `shutil.rmtree`.
+
+The content comparisons are valuable: they detect many ordinary content changes and ensure that the staged bytes match the captured source digest. They do not prove that every read came from the same file object, prevent a source path from being redirected between operations, or make cleanup refer to the exact directory object if an attacker can mutate the temporary parent namespace. The source code itself explicitly acknowledges that the checks do not close Windows path/reparse TOCTOU races.
+
+#### 11.28.3 GUI and trust boundary
+
+The current GUI lets the interactive user choose both package directory and destination, then calls the Python installation engine directly in a worker thread. The reviewed path contains no Windows broker, service identity, authenticated IPC, protected fixed destination or separate privileged installation boundary.
+
+Therefore the current installer is an unprivileged development preview. It must not be represented as safe for production installation against a concurrent local path attacker. The package builder is a separate security boundary and needs its own acceptance evidence; installer hardening does not automatically harden package creation.
+
+#### 11.28.4 Scope and disposition
+
+No code changes are recommended until the protected-root and broker architecture decisions are approved. The immediate acceptance target is to provision a protected root and all ancestors so that standard users cannot mutate the namespace, then test the actual service token and effective ACLs. The broker must own staging and transaction artifacts and install from the exact validated snapshot.
+
+The following are distinct unresolved gates:
+1. Protected-root provisioning and ancestor ACL proof.
+2. Broker service identity, token and IPC authorization.
+3. Package intake, staging ownership and authenticity.
+4. Transaction journal, backup, rollback and crash recovery.
+5. Package builder source/output namespace protection.
+6. Windows adversarial testing on every supported OS/filesystem configuration.
+
+No installer, service, broker, ACL, privilege, package or test was implemented or executed by this review.
