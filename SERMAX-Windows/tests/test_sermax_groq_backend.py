@@ -70,6 +70,25 @@ class GroqBackendTests(unittest.TestCase):
 
     @patch("sermax_groq_backend.time.sleep")
     @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_parses_long_retry_delay_from_minutes_and_seconds(self, mocked_open, mocked_sleep):
+        rate_limit = urllib.error.HTTPError(
+            "https://api.groq.com/openai/v1/chat/completions",
+            429,
+            "Too Many Requests",
+            Message(),
+            io.BytesIO(b'{"error":{"message":"Please try again in 9m48.384s."}}'),
+        )
+        mocked_open.side_effect = [
+            rate_limit,
+            FakeResponse({"choices": [{"message": {"content": "recuperado"}}]}),
+        ]
+        backend = self.make_backend(max_retries=1)
+        self.assertEqual(backend("Analista", "Analise"), "recuperado")
+        self.assertAlmostEqual(mocked_sleep.call_args.args[0], 589.384)
+        self.assertEqual(mocked_open.call_count, 2)
+
+    @patch("sermax_groq_backend.time.sleep")
+    @patch("sermax_groq_backend.urllib.request.urlopen")
     def test_stops_after_retry_limit(self, mocked_open, mocked_sleep):
         def rate_limit_error():
             return urllib.error.HTTPError(
