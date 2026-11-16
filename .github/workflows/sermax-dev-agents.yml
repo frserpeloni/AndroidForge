@@ -10,6 +10,7 @@ name: SERMAX Development Agents
 # The responder command API accepts one positional message argument.
 # Planner mock assertions include the model and URL keyword arguments.
 # The planner objective is positional, not a named objetivo keyword.
+# Testador receives compact status/output evidence instead of a truncated verbose transcript.
 # Existing files are modified only through exact-match localized edits.
 
 on:
