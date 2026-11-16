@@ -1865,3 +1865,45 @@ The following remain explicit approval decisions:
 12. Adversarial test identities, acceptance thresholds and independent review.
 
 **Decision:** broker authorization and service security are specified for review only. The current installer remains an unprivileged development preview. No service, broker, IPC endpoint, ACL, privilege, consent interface, trust key, recovery operation or installer release was implemented or authorized. Sections 4A, 11.14, 11.21, 11.22, 11.23 and 11.24 remain binding unresolved gates.
+
+
+### 11.26 Service-account selection review, 2026-11-16
+
+**Status:** architecture review only. No Windows service, account, SID, ACL, privilege, installer or broker was created or configured.
+
+#### 11.26.1 Candidate comparison
+
+| Candidate | Isolation and local access | Network behavior | SERMAX broker assessment |
+|---|---|---|---|
+| Dedicated virtual account, `NT SERVICE\\SermaxInstallerBroker` | Unique managed local service identity; access can be granted directly to its service SID. No administrator-managed password. | If the service accesses domain resources, it uses the computer account credentials. | Preferred candidate for a single-machine broker, subject to actual-token and ACL tests. Deny outbound network access unless a separately approved requirement exists. |
+| `NT AUTHORITY\\LocalService` | Low local privilege, but shared base account. A per-service SID can narrow resource ACLs; it does not turn the shared logon account into a unique virtual account. | Anonymous credentials on network access. | Compatibility fallback only if the dedicated virtual account fails a documented requirement. Retain a unique service SID and test cross-service isolation. |
+| `NT AUTHORITY\\NetworkService` | Low local privilege, shared base account. A per-service SID can narrow local ACLs. | Presents computer credentials to remote servers. | No justification for a local-only installer broker. Avoid the additional machine-identity network capability. |
+| `NT AUTHORITY\\SYSTEM` / LocalSystem | Extensive local access, effectively administrative authority for many local resources. | Uses computer credentials on network access. | Reject as the default. Any exceptional requirement needs a specific API-level justification, threat analysis and separate approval. |
+| Ordinary local/domain user account | Dedicated identity is possible, but credential lifecycle and provisioning become operational responsibilities. | Depends on account and domain configuration. | Not preferred for a single-machine product unless a concrete deployment requirement rules out a virtual account. |
+
+#### 11.26.2 Proposed target configuration
+
+1. Use a dedicated own-process Windows service with the virtual account `NT SERVICE\\SermaxInstallerBroker`; do not share its process with unrelated services.
+2. Give the service a per-service SID. The service SID is the ACL principal for broker-owned staging, journal, audit and narrowly scoped installation resources.
+3. Treat `SERVICE_SID_TYPE_RESTRICTED` as the target to evaluate, not as a proven configuration. Microsoft documents that this mode adds the service SID and additional SIDs to the restricted SID list. Access checks must succeed under both normal and restricted SID evaluation. Capture the real token and verify every required file, registry, event-log, pipe and service-control operation.
+4. If restricted mode prevents a required operation, do not silently broaden permissions. Identify the exact failed access, assess whether the operation is necessary, and compare a corrected DACL against the unrestricted service-SID mode. Any fallback requires recorded review and approval.
+5. Start with no optional privileges. Add a privilege only when a specific documented Windows API requires it. Record the privilege, API, scope, enabled state and negative test proving that unrelated privileged operations remain unavailable.
+6. The broker has no network requirement in the current design. Deny outbound network access at the applicable host/firewall policy boundary. Do not rely on the virtual account's network identity being harmless merely because the application currently has no network feature.
+7. Keep service installation, configuration changes, service-object DACL, binary directory and recovery authority under an explicit administrator-controlled setup/update process. The interactive GUI must not be able to reconfigure or replace the broker.
+8. Do not grant the broker broad access to user profiles, SERMAX memory, SQLite, chat history, Ollama models, Python environments, credentials or backups. Define separate, minimal resource ACLs.
+
+#### 11.26.3 Acceptance evidence
+
+Before selecting the account or SID mode, produce an evidence package from the actual target Windows client build and each supported build:
+
+- Confirm the virtual account can be configured for the service on the target Windows client editions. The documented minimum for virtual accounts is Windows 7 / Windows Server 2008 R2; this is a platform capability statement, not a substitute for testing the supported product matrix.
+- Record service name, configured logon account, service SID type, process token groups, restricted SIDs, enabled and disabled privileges, integrity level and logon SID.
+- Capture owner, SDDL and effective access results for the service object, binary/configuration directory, every protected-root ancestor, staging, journal, backups, audit log and named pipe.
+- Test access as the broker, the interactive standard user, a second standard user, an administrator and SYSTEM. Include both allowed and denied operations.
+- Verify that the broker cannot modify its own binary/configuration, change service configuration, access user data outside explicit policy, access arbitrary paths, launch arbitrary processes or reach network resources.
+- Repeat tests with `SERVICE_SID_TYPE_RESTRICTED` and compare the results with the unrestricted service-SID configuration. Record any compatibility failure instead of weakening ACLs by guesswork.
+- Verify service stop, restart, crash and machine restart. No stale token, handle, approval, inventory or in-memory authority may survive as trusted state.
+
+#### 11.26.4 Decision
+
+The dedicated virtual account with a per-service SID is the leading design candidate. Restricted SID mode is the preferred test target, not an approved production setting. LocalService is a fallback candidate; NetworkService and LocalSystem are not justified by the current local-only requirements. No account, service, ACL or privilege is authorized for implementation. Sections 4A and 11.25 remain blocking gates.
