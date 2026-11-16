@@ -213,7 +213,7 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
                     f"{result.get('suite', 'suite desconhecida')}: "
                     f"status={result.get('status')}, "
                     f"returncode={result.get('returncode')}\\n"
-                    f"{str(result.get('output', ''))[:6000]}"
+                    f"{str(result.get('output', ''))[-6000:]}"
                 )
             raise RuntimeError(
                 "Testes da proposta falharam.\\n" + "\\n".join(details)[:12000]
