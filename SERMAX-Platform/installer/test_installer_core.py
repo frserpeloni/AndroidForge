@@ -39,6 +39,50 @@ def _hold_installation_lock_for_test(root, acquired, release):
 
 
 class InstallerCoreTests(unittest.TestCase):
+    @unittest.expectedFailure
+    @unittest.skipIf(os.name == "nt", "Este teste usa symlink POSIX; a variante Windows exige junction.")
+    def test_known_toctou_parent_swap_must_not_write_outside_install_root(self):
+        from unittest.mock import patch
+        import sermax_installer_core
+
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            package = base / "package"
+            destination = base / "SERMAX"
+            outside = base / "outside"
+            package.mkdir()
+            destination.mkdir()
+            outside.mkdir()
+            write_package(package, {"app/core.txt": "new payload"})
+            target_parent = destination / "app"
+            target_parent.mkdir()
+            held_parent = destination / "app-held"
+            real_copy = sermax_installer_core.shutil.copy2
+            external_write_observed = {"value": False}
+            swapped = {"value": False}
+
+            def swap_parent_then_copy(source, target, *args, **kwargs):
+                if not swapped["value"] and Path(target).name.startswith(".sermax-install-"):
+                    target_parent.rename(held_parent)
+                    target_parent.symlink_to(outside, target_is_directory=True)
+                    swapped["value"] = True
+                result = real_copy(source, target, *args, **kwargs)
+                if Path(target).parent == outside and Path(target).exists():
+                    external_write_observed["value"] = True
+                return result
+
+            with patch.object(
+                sermax_installer_core.shutil, "copy2",
+                side_effect=swap_parent_then_copy
+            ):
+                with self.assertRaises(PackageError):
+                    install_package(package, destination)
+
+            self.assertFalse(
+                external_write_observed["value"],
+                "O instalador escreveu temporário fora da raiz após troca do diretório pai."
+            )
+
     def test_installation_lock_blocks_another_process_and_releases_on_exit(self):
         with tempfile.TemporaryDirectory() as tmp:
             destination = Path(tmp) / "SERMAX"
