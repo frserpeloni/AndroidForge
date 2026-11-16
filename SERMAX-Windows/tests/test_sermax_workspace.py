@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import sys
@@ -108,6 +109,23 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 self.assertFalse((sandbox / ".venv-jarvis").exists())
                 self.assertFalse((sandbox / ".sermax_dev_backups").exists())
                 self.assertEqual(mocked.call_count, 2)
+
+    @unittest.skipUnless(os.name == "posix", "Ownership restoration is POSIX-only.")
+    def test_restores_sandbox_ownership_to_current_executor(self):
+        with tempfile.TemporaryDirectory() as folder:
+            workspace = WorkspaceAdapter(folder)
+            runner = TestRunner(workspace, isolate_as_nobody=True)
+            sandbox = Path(folder) / "sandbox"
+            with patch("sermax_workspace.os.getuid", return_value=123), \
+                    patch("sermax_workspace.os.getgid", return_value=456), \
+                    patch("sermax_workspace.subprocess.run") as mocked_run:
+                runner._restore_sandbox_ownership(sandbox)
+            command = mocked_run.call_args.args[0]
+            self.assertEqual(
+                command,
+                ["sudo", "-n", "chown", "-R", "123:456", str(sandbox)],
+            )
+            self.assertTrue(mocked_run.call_args.kwargs["check"])
 
     def test_windows_install_path_is_rejected_by_path_guard(self):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))
