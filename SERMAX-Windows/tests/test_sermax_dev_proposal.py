@@ -129,6 +129,92 @@ class DevelopmentProposalTests(unittest.TestCase):
                     preview_proposal(workspace, proposal)
             self.assertEqual(target.read_text(encoding="utf-8"), "ORIGINAL = True\\n")
 
+    def test_exact_match_edits_preview_and_apply(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "sermax_core.py").write_text(
+                "def command():\\n    return old_value\\n", encoding="utf-8"
+            )
+            workspace = WorkspaceAdapter(root)
+            raw = json.dumps({
+                "summary": "Corrige um trecho localizado",
+                "files": [{
+                    "path": "sermax_core.py",
+                    "content": None,
+                    "edits": [{
+                        "old": "    return old_value\\n",
+                        "new": "    return new_value\\n",
+                    }],
+                }],
+                "tests": ["unittest"],
+            })
+            proposal = parse_proposal(raw)
+            diff = preview_proposal(workspace, proposal)[0]["diff"]
+            self.assertIn("-    return old_value", diff)
+            self.assertIn("+    return new_value", diff)
+            self.assertEqual(apply_proposal(workspace, proposal), ["sermax_core.py"])
+            self.assertEqual(
+                workspace.read_text("sermax_core.py"),
+                "def command():\\n    return new_value\\n",
+            )
+
+    def test_exact_match_edits_reject_missing_or_ambiguous_old_text(self):
+        for source, expected_count in (
+            ("value = 1\\n", 0),
+            ("value = 1\\nvalue = 1\\n", 2),
+        ):
+            with self.subTest(expected_count=expected_count), tempfile.TemporaryDirectory() as folder:
+                root = Path(folder)
+                (root / "module.py").write_text(source, encoding="utf-8")
+                workspace = WorkspaceAdapter(root)
+                proposal = parse_proposal(json.dumps({
+                    "summary": "Edição exata",
+                    "files": [{
+                        "path": "module.py",
+                        "content": None,
+                        "edits": [{"old": "value = 1\\n", "new": "value = 2\\n"}],
+                    }],
+                    "tests": ["unittest"],
+                }))
+                with self.assertRaisesRegex(
+                    ProposalError, f"ocorrências encontradas: {expected_count}"
+                ):
+                    preview_proposal(workspace, proposal)
+
+    def test_edit_proposal_rejects_both_content_and_edits(self):
+        raw = json.dumps({
+            "summary": "Ambíguo",
+            "files": [{
+                "path": "module.py",
+                "content": "value = 1\\n",
+                "edits": [{"old": "value = 1", "new": "value = 2"}],
+            }],
+            "tests": ["unittest"],
+        })
+        with self.assertRaises(ProposalError):
+            parse_proposal(raw)
+
+    def test_proposal_path_allowlist_enforces_exact_paths(self):
+        allowed = "sermax_core.py;tests/test_sermax_core_command_regression.py"
+        with patch.dict(os.environ, {"SERMAX_DEV_ALLOWED_PATHS": allowed}):
+            proposal = parse_proposal(json.dumps({
+                "summary": "Correção permitida",
+                "files": [{
+                    "path": "sermax_core.py",
+                    "content": None,
+                    "edits": [{"old": "old", "new": "new"}],
+                }],
+                "tests": ["unittest"],
+            }))
+            self.assertEqual(proposal.files[0].path, "sermax_core.py")
+            for path in ("sermax_executor.py", "docs/notes.md"):
+                with self.subTest(path=path), self.assertRaises(ProposalError):
+                    parse_proposal(json.dumps({
+                        "summary": "Fora do escopo",
+                        "files": [{"path": path, "content": "x"}],
+                        "tests": ["unittest"],
+                    }))
+
     def test_apply_and_test_rolls_back_when_tests_fail(self):
         class FailedRunner:
             def run(self, suite):
