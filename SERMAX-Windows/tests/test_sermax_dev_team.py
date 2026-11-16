@@ -7,6 +7,16 @@ from sermax_dev_team import DevelopmentTeam
 from sermax_workspace import WorkspaceAdapter, TestRunner
 
 
+def _write_agent_suite(root):
+    script = (
+        "import sys, unittest\\n"
+        "suite = unittest.defaultTestLoader.discover('tests')\\n"
+        "result = unittest.TextTestRunner(verbosity=2).run(suite)\\n"
+        "sys.exit(0 if result.wasSuccessful() else 1)\\n"
+    )
+    (root / "tests" / "run_agent_suite.py").write_text(script, encoding="utf-8")
+
+
 class DevelopmentTeamTests(unittest.TestCase):
     def test_roles_share_one_model_callback_and_run_sequentially(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -58,6 +68,7 @@ class DevelopmentTeamTests(unittest.TestCase):
                 "import unittest\nclass GeneratedTests(unittest.TestCase):\n"
                 "    def test_value(self):\n        self.assertEqual(2 + 2, 4)\n",
                 encoding="utf-8")
+            _write_agent_suite(root)
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             def model_call(role, prompt):
@@ -85,6 +96,7 @@ class DevelopmentTeamTests(unittest.TestCase):
                 "import unittest\nclass T(unittest.TestCase):\n"
                 "    def test_ok(self): self.assertTrue(True)\n",
                 encoding="utf-8")
+            _write_agent_suite(root)
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             def model_call(role, prompt):
@@ -118,6 +130,7 @@ class DevelopmentTeamTests(unittest.TestCase):
                 "import unittest\nclass GeneratedTests(unittest.TestCase):\n"
                 "    def test_value(self): self.assertEqual(1 + 1, 2)\n",
                 encoding="utf-8")
+            _write_agent_suite(root)
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             programmer_calls = []
@@ -159,6 +172,7 @@ class DevelopmentTeamTests(unittest.TestCase):
                 "import unittest\nclass T(unittest.TestCase):\n"
                 "    def test_ok(self): self.assertTrue(True)\n",
                 encoding="utf-8")
+            _write_agent_suite(root)
             workspace = WorkspaceAdapter(root)
             runner = TestRunner(workspace)
             calls = []
