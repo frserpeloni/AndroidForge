@@ -71,7 +71,10 @@ def parse_proposal(raw: str) -> ValidatedProposal:
     if (
         not isinstance(tests, list)
         or not tests
-        or any(test not in {"unittest", "compileall"} for test in tests)
+        or any(
+            not isinstance(test, str) or test not in {"unittest", "compileall"}
+            for test in tests
+        )
         or "unittest" not in tests
     ):
         raise ProposalError("A proposta precisa incluir a suíte unittest autorizada.")
