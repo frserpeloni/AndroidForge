@@ -47,7 +47,7 @@ class WorkspaceAdapterTests(unittest.TestCase):
             self.assertIn("discover", command)
             self.assertNotIn("test_sermax_core*.py", command)
         else:
-            self.assertIn("test_sermax_core*.py", command)
+            self.assertIn("tests/run_agent_suite.py", command)
 
     def test_test_runner_allowlist(self):
         with tempfile.TemporaryDirectory() as folder:
