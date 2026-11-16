@@ -121,7 +121,7 @@ jobs:
           SERMAX_DEV_WORKSPACE: "../SERMAX-Platform"
           SERMAX_DEV_ALLOWED_PATHS: "backend/server.py;backend/test_api.py"
           SERMAX_DEV_TASK: >-
-            ${{ inputs.task || 'Preparação dos testes locais da SERMAX-Platform. Em backend/test_api.py, altere somente os dois construtores TestClient existentes: em setUp, use TestClient(server.app, client=("127.0.0.1", 50000)); no teste de reabertura, use TestClient(server.app, client=("127.0.0.1", 50001)). Não altere backend/server.py. Não acrescente testes nesta etapa. Use edições old/new localizadas, sem reescrever o arquivo. A saída JSON deve conter summary, files e tests, com tests exatamente ["unittest"] como lista de strings.' }}
+            ${{ inputs.task || 'Implementar proteção por IP de origem local na API SERMAX-Platform. Em backend/server.py, importar ipaddress e alterar somente o middleware local_origin_guard: manter as validações atuais de Host e Origin e rejeitar com HTTP 403 se request.client estiver ausente, se o IP não puder ser interpretado ou se não for loopback, usando ipaddress.ip_address(request.client.host).is_loopback. Não confiar somente no cabeçalho Host. Em backend/test_api.py, acrescentar teste que crie TestClient com client=("192.0.2.10", 50002), envie GET /api/health com Host local e confirme HTTP 403; fechar o cliente em finally. Manter o teste de loopback existente aprovando. Fazer edições old/new localizadas, sem reescrever arquivos. Não tocar em outros arquivos. JSON exato com summary, files e tests, tests igual a ["unittest"].' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
