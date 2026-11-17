@@ -9,4 +9,4 @@ Regras:
 - Não excluir definitivamente sem autorização específica.
 - Não mover código ativo, arquivos de usuário, memórias, backups funcionais ou dependências necessárias.
 
-Estado inicial da operação: nenhum componente foi movido para esta pasta. A auditoria ainda precisa comprovar cada candidato antes de qualquer retirada.
+Itens atualmente preservados: consulte `INDEX.md`. Cada movimentação exige evidência de ausência de uso interno e substituição compatível. A auditoria continua.
