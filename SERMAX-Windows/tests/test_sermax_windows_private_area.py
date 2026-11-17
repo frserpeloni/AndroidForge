@@ -115,6 +115,13 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["root"], parent_handle)
         self.assertEqual(calls[0]["name"], "_update")
+        self.assertEqual(
+            calls[0]["access"],
+            private_area.FILE_LIST_DIRECTORY
+            | private_area.FILE_ADD_SUBDIRECTORY
+            | private_area.FILE_READ_ATTRIBUTES
+            | private_area.SYNCHRONIZE,
+        )
         self.assertEqual(calls[0]["disposition"], private_area.FILE_CREATE)
         self.assertEqual(
             calls[0]["options"],
@@ -246,10 +253,17 @@ class PrivateAreaWindowsIntegrationTests(unittest.TestCase):
                 private_area, "INVALID_HANDLE_VALUE"
             ) else ctypes.c_void_p(-1).value)
             child = None
+            nested = None
             try:
                 child = private_area.create_private_directory_component(
                     parent, "_update"
                 )
+                nested = private_area.create_private_directory_component(
+                    child, "staging"
+                )
+                nested_metadata = private_area.query_handle_metadata(nested)
+                self.assertTrue(nested_metadata["is_directory"])
+                self.assertFalse(nested_metadata["is_reparse_point"])
                 metadata = private_area.query_handle_metadata(child)
                 self.assertTrue(metadata["is_directory"])
                 self.assertFalse(metadata["is_reparse_point"])
@@ -262,6 +276,8 @@ class PrivateAreaWindowsIntegrationTests(unittest.TestCase):
                         parent, "_update"
                     )
             finally:
+                if nested is not None:
+                    private_area.close_handle(nested)
                 if child is not None:
                     private_area.close_handle(child)
                 self.assertTrue(close(parent))
