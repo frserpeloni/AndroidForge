@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sqlite3
 import sys
 import threading
+import urllib.error
+import urllib.request
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -235,6 +238,66 @@ def models():
     return {"selection": "automatic", "manual_options": ["Automático", "Ollama local", "OpenJarvis"],
             "connection": "not_verified",
             "note": "A disponibilidade dos motores será verificada pelo núcleo na primeira chamada."}
+
+
+@app.get("/api/engines/status")
+def engines_status():
+    """Diagnóstico local. Não inicia motores nem envia prompts."""
+    ollama = {"reachable": False, "models": [], "detail": "Não foi possível consultar o Ollama local."}
+    request = urllib.request.Request(
+        "http://127.0.0.1:11434/api/tags",
+        headers={"Accept": "application/json"},
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=1.5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            models = payload.get("models", []) if isinstance(payload, dict) else []
+            ollama = {
+                "reachable": True,
+                "models": [
+                    item.get("name")
+                    for item in models
+                    if isinstance(item, dict) and isinstance(item.get("name"), str)
+                ],
+                "detail": "API local respondeu.",
+            }
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+        ollama["detail"] = f"{type(exc).__name__}: serviço local indisponível."
+
+    adapter_root = Path(os.environ.get("SERMAX_ROOT", CORE_DIR)).expanduser()
+    jarvis_python = Path(
+        os.environ.get("SERMAX_JARVIS_PYTHON", adapter_root / ".venv-jarvis" / "Scripts" / "python.exe")
+    ).expanduser()
+    jarvis_worker = adapter_root / "sermax_jarvis_worker.py"
+    jarvis_configured = jarvis_python.is_file() and jarvis_worker.is_file()
+
+    core = CORE_MODULE
+    route_info = getattr(core, "ultimo_diagnostico_roteamento", {}) if core is not None else {}
+    if not isinstance(route_info, dict):
+        route_info = {}
+    last_backend = route_info.get("backend")
+    if last_backend not in {"openjarvis", "ollama", "nao_executado"}:
+        last_backend = "nao_executado"
+
+    return {
+        "core_loaded": core is not None,
+        "ollama": ollama,
+        "openjarvis": {
+            "environment_files_present": jarvis_configured,
+            "detail": (
+                "Executável Python e worker encontrados. A execução do worker ainda não foi testada por este diagnóstico."
+                if jarvis_configured
+                else "Ambiente Python ou worker não encontrado no caminho configurado."
+            ),
+        },
+        "last_route": {
+            "backend": last_backend,
+            "fallback": str(route_info.get("fallback") or "")[:300],
+        },
+        "read_only": True,
+        "inference_started": False,
+    }
 
 
 @app.get("/api/memory")
