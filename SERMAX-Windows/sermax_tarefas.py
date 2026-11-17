@@ -1,8 +1,6 @@
 """Execução sequencial e restrita de tarefas locais do SERMAX.
 Sem shell, rede externa, escrita de arquivos ou ações destrutivas.
 """
-import re
-
 MAX_TAREFAS = 5
 MAX_PLANO = 800
 
