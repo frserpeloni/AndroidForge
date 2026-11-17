@@ -27,6 +27,7 @@ FILE_ATTRIBUTE_DIRECTORY = 0x00000010
 FILE_LIST_DIRECTORY = 0x00000001
 FILE_ADD_SUBDIRECTORY = 0x00000004
 FILE_SHARE_READ = 0x00000001
+READ_CONTROL = 0x00020000
 
 ALLOWED_PRIVATE_COMPONENTS = frozenset({
     "_update", "staging", "backups", "journal", "logs", "locks",
@@ -147,3 +148,82 @@ def create_private_directory_component(parent_handle, component: str):
                 f"Falha na validação e também ao fechar o handle: {close_error}"
             ) from close_error
         raise
+
+
+
+def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) -> dict:
+    """Inspeciona _update preexistente e aborta sem reparar qualquer divergência.
+
+    A identidade do filho é obtida em enumeração estável do handle pai e
+    confirmada novamente na abertura relativa. O mesmo handle filho permanece
+    aberto durante inspeção ACL, metadados e enumeração do conteúdo.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise PrivateAreaError("A validação exige Windows x64.")
+
+    from sermax_windows_directory_handle import (
+        enumerate_stable_directory_handle,
+        open_verified_child_component,
+    )
+    from sermax_windows_acl_inspection import inspect_directory_acl
+    from sermax_windows_private_area_acl_policy import (
+        validate_private_area_acl,
+    )
+
+    child_handle = None
+    try:
+        parent = query_handle_metadata(parent_handle)
+        if (
+            not parent["is_directory"]
+            or parent["is_reparse_point"]
+            or parent["delete_pending"]
+        ):
+            raise PrivateAreaError("O handle pai não é diretório regular validado.")
+
+        entries = enumerate_stable_directory_handle(parent_handle)
+        matches = [entry for entry in entries if entry.name.casefold() == "_update"]
+        if len(matches) != 1:
+            raise PrivateAreaError(
+                "_update ausente ou ambíguo; nenhuma criação ou reparo foi tentado."
+            )
+        entry = matches[0]
+        if not entry.is_directory:
+            raise PrivateAreaError("_update existente não é diretório.")
+
+        child_handle = open_verified_child_component(
+            parent_handle, entry, desired_access=READ_CONTROL
+        )
+        metadata = query_handle_metadata(child_handle)
+        if (
+            not metadata["is_directory"]
+            or metadata["is_reparse_point"]
+            or metadata["delete_pending"]
+        ):
+            raise PrivateAreaError("_update não é diretório regular.")
+
+        inspection = inspect_directory_acl(child_handle)
+        contents = [
+            item
+            for item in enumerate_stable_directory_handle(child_handle)
+            if item.name not in {".", ".."}
+        ]
+        return validate_private_area_acl(
+            inspection,
+            expected_owner_sid=expected_owner_sid,
+            expected_volume_serial=parent["volume_serial_number"],
+            expected_file_id_128=entry.file_id,
+            directory_identity={
+                "volume_serial_number": metadata["volume_serial_number"],
+                "file_id_128": metadata["file_id_128"],
+            },
+            directory_entries=contents,
+        )
+    except PrivateAreaError:
+        raise
+    except Exception as exc:
+        raise PrivateAreaError(
+            f"_update preexistente não passou na validação somente leitura: {exc}"
+        ) from exc
+    finally:
+        if child_handle is not None:
+            close_handle(child_handle)
