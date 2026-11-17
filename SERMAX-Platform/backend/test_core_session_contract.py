@@ -59,5 +59,26 @@ class CoreSessionContractTests(unittest.TestCase):
         self.assertEqual(history["messages"][0]["status"], "error")
 
 
+    def test_none_global_session_is_restored_after_core_failure(self):
+        class RaisingCoreWithNone:
+            sessao = None
+
+            @classmethod
+            def perguntar(cls, message):
+                cls.sessao.append({"role": "user", "content": message})
+                raise RuntimeError("falha simulada com sessao original nula")
+
+        server.CORE_MODULE = RaisingCoreWithNone
+        response = self.client.post(
+            "/api/chat",
+            json={"message": "Solicitacao com sessao nula"},
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIsNone(RaisingCoreWithNone.sessao)
+
+
+
 if __name__ == "__main__":
     unittest.main()
