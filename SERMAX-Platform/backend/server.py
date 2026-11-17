@@ -187,6 +187,8 @@ def project_or_404(conn: sqlite3.Connection, project_id: str, include_archived: 
 @app.on_event("startup")
 def startup() -> None:
     initialize_database()
+    from attachment_service import initialize_attachment_schema
+    initialize_attachment_schema()
 
 
 @app.middleware("http")
