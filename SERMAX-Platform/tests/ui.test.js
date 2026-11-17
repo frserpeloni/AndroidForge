@@ -52,7 +52,7 @@ function setup() {
       state.tasks.push(task);
       return response(task, 201);
     }
-    const taskStatusMatch = url.match(/^\\/api\\/tasks\\/([^/]+)\\/status$/);
+    const taskStatusMatch = url.match(/^\/api\/tasks\/([^/]+)\/status$/);
     if (taskStatusMatch && method === "PATCH") {
       const task = state.tasks.find(item => item.id === decodeURIComponent(taskStatusMatch[1]));
       if (!task) return response({ detail: "Tarefa não encontrada" }, 404);
