@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import queue
 import sqlite3
 import sys
 import threading
@@ -17,7 +18,7 @@ from typing import Any, Iterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 import ipaddress
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -27,6 +28,7 @@ DATA_DIR = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-pl
 DB_PATH = DATA_DIR / "platform.sqlite3"
 MAX_MESSAGE_CHARS = 8000
 CHAT_LOCK = threading.Lock()
+STREAM_SLOT = threading.Lock()
 CORE_MODULE: Any = None
 CORE_ERROR: str | None = None
 
@@ -560,8 +562,7 @@ def get_conversation(conversation_id: str):
     return {"conversation": dict(conversation), "messages": [dict(row) for row in messages]}
 
 
-@app.post("/api/chat")
-def chat(payload: ChatInput):
+def _chat_request(payload: ChatInput, on_update=None):
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=422, detail="Mensagem vazia.")
@@ -621,7 +622,10 @@ def chat(payload: ChatInput):
                     ),
                 })
             core.sessao = conversation_context
-            answer = core.perguntar(message)
+            if on_update is None:
+                answer = core.perguntar(message)
+            else:
+                answer = core.perguntar(message, receber_parte=on_update)
             if not isinstance(answer, str) or not answer.strip():
                 raise ValueError("O núcleo não retornou uma resposta válida.")
         except Exception as exc:
@@ -644,6 +648,75 @@ def chat(payload: ChatInput):
             )
             conn.execute("UPDATE conversations SET updated_at=? WHERE id=?", (finished, conversation_id))
         return {"conversation_id": conversation_id, "answer": answer, "created_at": finished}
+
+
+@app.post("/api/chat")
+def chat(payload: ChatInput):
+    """Endpoint síncrono legado, mantido para compatibilidade."""
+    return _chat_request(payload)
+
+
+@app.post("/api/chat/stream")
+def chat_stream(payload: ChatInput):
+    """SSE com snapshots acumulados. A inferência continua se o cliente desconectar."""
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Mensagem vazia.")
+    if not STREAM_SLOT.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Já existe uma resposta em streaming. Aguarde a conclusão.")
+
+    updates: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue(maxsize=1)
+    finished = threading.Event()
+
+    def publish(event_name: str, data: dict[str, Any]) -> None:
+        item = (event_name, data)
+        try:
+            updates.put_nowait(item)
+        except queue.Full:
+            try:
+                updates.get_nowait()
+            except queue.Empty:
+                pass
+            try:
+                updates.put_nowait(item)
+            except queue.Full:
+                pass
+
+    def run_request() -> None:
+        try:
+            result = _chat_request(payload, on_update=lambda snapshot: publish(
+                "snapshot", {"text": str(snapshot)}
+            ))
+            publish("complete", result)
+        except HTTPException as exc:
+            publish("error", {"status_code": exc.status_code, "detail": str(exc.detail)})
+        except Exception as exc:
+            publish("error", {
+                "status_code": 503,
+                "detail": f"Falha na resposta: {type(exc).__name__}: {str(exc)[:300]}",
+            })
+        finally:
+            finished.set()
+            STREAM_SLOT.release()
+
+    # A thread começa antes do retorno HTTP. Assim, a reserva é liberada mesmo
+    # se o navegador fechar a conexão antes de consumir o corpo SSE.
+    worker = threading.Thread(target=run_request, name="sermax-chat-stream", daemon=True)
+    worker.start()
+
+    def event_stream():
+        while not finished.is_set() or not updates.empty():
+            try:
+                event_name, data = updates.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            yield f"event: {event_name}\\ndata: {json.dumps(data, ensure_ascii=False)}\\n\\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 if __name__ == "__main__":
