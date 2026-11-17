@@ -78,7 +78,7 @@ No diretório `backend`:
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m unittest -v test_api.py test_chat_stream.py test_core_stream_integration.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
+python -m unittest -v test_api.py test_chat_stream.py test_attachments_api.py test_core_stream_integration.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
 ```
 
 O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
@@ -94,3 +94,21 @@ Os testes de streaming estão em `backend/test_chat_stream.py` e também são ex
 ## Proteções
 
 A implementação está em branch e diretório separados. Não altera a branch `main`, núcleo, Terminal original, arquivos de memória ou backups. Drive Connect permanece fora do escopo.
+
+
+## Anexos por conversa
+
+A primeira etapa de anexos está implementada em `backend/attachment_service.py`. Os arquivos ficam em `DATA_DIR/attachments`, fora da pasta pública da interface. O SQLite registra ID, conversa, nome de apresentação, extensão, MIME detectado, tamanho, SHA-256, nome físico UUID e texto extraído.
+
+Formatos aceitos: PDF, DOCX, TXT UTF-8, JPEG e PNG. A validação considera assinatura e parser, não confia no MIME informado pelo navegador. Limites: 10 MiB por arquivo, 5 arquivos por conversa e 25 MiB por conversa. PDF criptografado é rejeitado e limitado a 100 páginas. DOCX verifica a estrutura ZIP, caminhos internos, macros e relacionamentos externos. Imagens têm limite de 20 milhões de pixels e não recebem OCR.
+
+A interface permite selecionar arquivos, remover da fila, enviar, listar, baixar e excluir. Downloads são enviados como `application/octet-stream` com disposição de anexo. Os endpoints verificam a associação do ID à conversa. A extração de texto fica disponível para PDF, DOCX e TXT.
+
+Rotas:
+- `POST /api/conversations/{conversation_id}/attachments`
+- `GET /api/conversations/{conversation_id}/attachments`
+- `GET /api/conversations/{conversation_id}/attachments/{attachment_id}`
+- `GET /api/conversations/{conversation_id}/attachments/{attachment_id}/content`
+- `DELETE /api/conversations/{conversation_id}/attachments/{attachment_id}`
+
+Os conteúdos dos anexos ainda não são enviados ao prompt do núcleo. Essa integração será feita em etapa separada, com limites de contexto e tratamento do texto como dado não confiável. Nenhum arquivo é incorporado à memória pessoal. A homologação real e a revisão de segurança continuam condicionadas à conclusão dos testes CI e à revisão do código.
