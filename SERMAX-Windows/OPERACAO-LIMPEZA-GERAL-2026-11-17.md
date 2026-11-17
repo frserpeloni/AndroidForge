@@ -89,3 +89,38 @@ Artefato:
 - O atualizador Windows transacional não foi concluído nem homologado.
 - Nenhum pacote ZIP instalável foi produzido.
 - A PR #6 permanece aberta, em rascunho e sem merge. A branch `main` não foi alterada.
+
+
+## Encerramento da operação de limpeza, 17/11/2026
+
+### Disposição final dos candidatos
+
+A revisão final dos candidatos listados acima não encontrou evidência suficiente para excluir ou mover outros componentes. A decisão para cada item é:
+
+| Item | Disposição | Fundamentação |
+|---|---|---|
+| `SERMAX-Windows/sermax.py` | PRESERVADO | É uma CLI funcional independente, com entrada interativa, streaming de resposta e diagnóstico. Não há prova de que nenhum usuário ou script externo dependa dela. |
+| `SERMAX-Windows/SERMAX_terminal/sermax_terminal.py` | PRESERVADO | É o Terminal original. Contém a interface verde, rosto ASCII, painel, conversa, histórico, comandos, voz e reinício. É componente ativo e protegido pelo escopo da operação. |
+| `SERMAX-Windows/SERMAX_terminal/sermax_voz.py` | PRESERVADO, com otimização já aplicada | A descoberta de Whisper e modelo é funcional e integrada ao Terminal. A alteração aprovada limita-se ao cache positivo com revalidação e testes. Não há base para remover a busca de compatibilidade. |
+| Módulos Windows de handle, ACL, Authz e área privada | PRESERVADOS | O relatório registra dependências cruzadas e testes nativos. A inspeção disponível não sustenta remoção ou consolidação segura. |
+| Protótipo Android | PRESERVADO | Está isolado em sua árvore e não há evidência de obsolescência ou substituição formal. |
+| SERMAX-Platform | PRESERVADA | A Plataforma permanece em diretório isolado. Seus componentes são protótipo em desenvolvimento, não arquivos obsoletos. |
+| Instalador e atualizador | PRESERVADOS, BLOQUEADOS PARA DISTRIBUIÇÃO | A revisão estática confirma riscos TOCTOU, ausência de broker/raiz protegida, assinatura de pacote, transação global e rollback garantido. Não corrigir esses riscos por exclusão ou improviso. |
+
+### Resultado da limpeza
+
+- Correções localizadas aprovadas e registradas: concluídas.
+- Componente legado de enumeração sem consumidor de produção identificado: movido para `garbage/`, com blobs preservados e índice de recuperação.
+- Demais candidatos: classificados como preservados, pois há uso ativo, dependência, proteção explícita ou falta de evidência para remoção.
+- Nenhuma exclusão definitiva foi realizada.
+- Nenhum arquivo de `C:\\SERMAX`, memória, histórico local ou backup foi alterado.
+- `main` permanece fora da operação.
+- A PR #6 permanece em rascunho, sem merge.
+
+### Limites que não fazem parte da limpeza de código
+
+A limpeza de código fica encerrada com a disposição acima. Isso não equivale à homologação do instalador ou à liberação de atualização. Permanecem bloqueados: implementação do broker e raiz protegida, prova de ACLs/identidade, assinatura e autenticidade dos pacotes, journal/transação, recuperação/rollback, testes adversariais em Windows real e validação física em `C:\\SERMAX`. Esses itens exigem projeto e validação próprios; não serão marcados como concluídos por esta operação.
+
+### Critério de encerramento
+
+Não há, na evidência revisada desta operação, outro arquivo cuja exclusão ou transferência para `garbage/` seja tecnicamente justificada. A limpeza está encerrada sem remoções especulativas. A PR #6 continua aguardando revisão e decisão de merge do responsável pelo projeto.
