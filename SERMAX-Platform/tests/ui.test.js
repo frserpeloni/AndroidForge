@@ -20,6 +20,7 @@ function setup() {
   let nextConversation = 1;
   let nextTask = 1;
 
+  win.TextDecoder = TextDecoder;
   win.setInterval = () => 1;
   win.clearInterval = () => {};
   win.prompt = message => state.prompts.shift() ?? null;
@@ -81,12 +82,26 @@ function setup() {
       const items = state.memories.filter(item => item.content.toLocaleLowerCase().includes(query)).slice(-(Number(params.get("limit")) || 100)).reverse();
       return response({status:"available",read_only:true,total:items.length,returned:items.length,items,message:"Somente leitura."});
     }
-    if (url === "/api/chat" && method === "POST") {
+    if (url === "/api/chat/stream" && method === "POST") {
       state.chatCalls.push(body);
       const id = body.conversation_id || String(nextConversation++);
       const conversation = { id, title: body.message, project_id: body.project_id || null, updated_at: new Date().toISOString() };
       state.conversations = [conversation, ...state.conversations.filter(c => c.id !== id)];
-      return response({ conversation_id: id, answer: "Resposta simulada do MAX." });
+      const frames =
+        "event: snapshot\\ndata: " + JSON.stringify({text:"Resposta "}) + "\\n\\n" +
+        "event: complete\\ndata: " + JSON.stringify({conversation_id:id,answer:"Resposta simulada do MAX."}) + "\\n\\n";
+      const bytes = new TextEncoder().encode(frames);
+      let sent = false;
+      return {
+        ok:true,
+        status:200,
+        json:async()=>({conversation_id:id,answer:"Resposta simulada do MAX."}),
+        body:{getReader:()=>({read:async()=>{
+          if (sent) return {done:true};
+          sent = true;
+          return {done:false,value:bytes};
+        }})}
+      };
     }
     const projectMatch = url.match(/^\/api\/projects\/([^/]+)(?:\/(conversations|archive))?$/);
     if (projectMatch) {
