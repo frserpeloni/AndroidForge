@@ -88,8 +88,8 @@ function setup() {
       const conversation = { id, title: body.message, project_id: body.project_id || null, updated_at: new Date().toISOString() };
       state.conversations = [conversation, ...state.conversations.filter(c => c.id !== id)];
       const frames =
-        "event: snapshot\\ndata: " + JSON.stringify({text:"Resposta "}) + "\\n\\n" +
-        "event: complete\\ndata: " + JSON.stringify({conversation_id:id,answer:"Resposta simulada do MAX."}) + "\\n\\n";
+        "event: snapshot\ndata: " + JSON.stringify({text:"Resposta "}) + "\n\n" +
+        "event: complete\ndata: " + JSON.stringify({conversation_id:id,answer:"Resposta simulada do MAX."}) + "\n\n";
       const bytes = new TextEncoder().encode(frames);
       let sent = false;
       return {
