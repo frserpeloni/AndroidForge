@@ -274,3 +274,15 @@ A execução CI `44197404930` concluiu com sucesso nos cinco jobs:
 A primeira execução `44197305925` falhou porque os testes não inicializavam o schema de anexos no banco isolado. O teste foi corrigido para criar o schema explicitamente. A execução `44197404930` passou depois dessa correção.
 
 Após essa execução, foi corrigida a renderização da interface para preservar a lista de anexos já salvos ao atualizar a fila de arquivos pendentes. Esse ajuste entrou no commit `6fd8b4a9162f658158d1b5eb5d1af72a19434063`, posterior à execução acima. Portanto, a execução `44197404930` não valida esse último ajuste de interface. Uma nova execução CI é necessária antes de declarar a revisão final aprovada.
+
+
+## 18. Revisão posterior ao primeiro CI de anexos, 2026-11-17
+
+Após a execução `44197404930`, a revisão técnica adicionou:
+- Preservação da lista de anexos persistidos ao renderizar a fila pendente na interface.
+- Limpeza do arquivo físico também quando a confirmação da transação SQLite falha.
+- Exclusão com tombstone, restaurando o arquivo se a transação do banco falhar e deixando eventual tombstone residual inerte se a remoção física final falhar.
+- Parsing multipart manual com `max_files=1` e `max_fields=0`, aceitando o tipo `UploadFile` do Starlette.
+- Testes adicionais para DOCX válido, PDF válido, DOCX corrompido e PDF criptografado.
+
+Esses ajustes estão no head atual da PR #13, commit `9ac29e4d13550888f0a69e3c31b635bf0bde76d5`. A execução `44197404930` não cobre esses commits posteriores. A PR #13 segue aberta, em rascunho e sem merge. A comparação da branch confirmou que a PR está empilhada sobre o head da PR #12 e o GitHub informa `mergeable=true`. A validação CI do head atual permanece pendente de confirmação por evidência de execução.
