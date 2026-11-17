@@ -10,7 +10,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Literal
 
 from fastapi import FastAPI, HTTPException, Request
 import ipaddress
@@ -54,6 +54,23 @@ class ProjectUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     description: str | None = Field(default=None, max_length=1000)
     instructions: str | None = Field(default=None, max_length=4000)
+
+class TaskInput(BaseModel):
+    title: str = Field(min_length=1, max_length=160)
+    description: str = Field(default="", max_length=2000)
+    priority: Literal["low", "normal", "high", "urgent"] = "normal"
+    due_at: str | None = Field(default=None, max_length=40)
+
+
+class TaskUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    description: str | None = Field(default=None, max_length=2000)
+    priority: Literal["low", "normal", "high", "urgent"] | None = None
+    due_at: str | None = Field(default=None, max_length=40)
+
+
+class TaskStatusInput(BaseModel):
+    status: Literal["pending", "in_progress", "completed", "cancelled"]
 
 
 def utc_now() -> str:
@@ -108,6 +125,21 @@ def initialize_database() -> None:
                 created_at TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'complete'
                     CHECK(status IN ('pending','complete','error'))
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS tasks (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','in_progress','completed','cancelled')),
+                priority TEXT NOT NULL DEFAULT 'normal'
+                    CHECK(priority IN ('low','normal','high','urgent')),
+                due_at TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                completed_at TEXT
             )
         """)
         conversation_columns = {row["name"] for row in conn.execute("PRAGMA table_info(conversations)")}
@@ -280,6 +312,106 @@ def list_project_conversations(project_id: str):
             (project_id,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def normalize_due_at(value: str | None) -> str | None:
+    if value is None or not value.strip():
+        return None
+    normalized = value.strip()
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="Data de vencimento inválida. Use formato ISO 8601.") from exc
+    return parsed.isoformat()
+
+
+@app.get("/api/tasks")
+def list_tasks(status: str | None = None):
+    allowed = {"pending", "in_progress", "completed", "cancelled"}
+    if status is not None and status not in allowed:
+        raise HTTPException(status_code=422, detail="Estado de tarefa inválido.")
+    with database() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM tasks WHERE status=? ORDER BY "
+                "CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, "
+                "CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at, updated_at DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM tasks ORDER BY "
+                "CASE status WHEN 'pending' THEN 0 WHEN 'in_progress' THEN 1 WHEN 'completed' THEN 2 ELSE 3 END, "
+                "CASE priority WHEN 'urgent' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END, "
+                "CASE WHEN due_at IS NULL THEN 1 ELSE 0 END, due_at, updated_at DESC"
+            ).fetchall()
+    return [dict(row) for row in rows]
+
+
+@app.post("/api/tasks", status_code=201)
+def create_task(payload: TaskInput):
+    title = payload.title.strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="O título da tarefa não pode ficar vazio.")
+    task_id, now = str(uuid.uuid4()), utc_now()
+    due_at = normalize_due_at(payload.due_at)
+    with database() as conn:
+        conn.execute(
+            "INSERT INTO tasks(id,title,description,status,priority,due_at,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?,?)",
+            (task_id, title, payload.description.strip(), "pending", payload.priority, due_at, now, now),
+        )
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    return dict(row)
+
+
+@app.get("/api/tasks/{task_id}")
+def get_task(task_id: str):
+    with database() as conn:
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+    return dict(row)
+
+
+@app.put("/api/tasks/{task_id}")
+def update_task(task_id: str, payload: TaskUpdate):
+    changes = payload.model_dump(exclude_unset=True)
+    if not changes:
+        raise HTTPException(status_code=400, detail="Nenhum campo enviado para atualização.")
+    if "title" in changes:
+        changes["title"] = changes["title"].strip()
+        if not changes["title"]:
+            raise HTTPException(status_code=422, detail="O título da tarefa não pode ficar vazio.")
+    if "description" in changes:
+        changes["description"] = changes["description"].strip()
+    if "due_at" in changes:
+        changes["due_at"] = normalize_due_at(changes["due_at"])
+    changes["updated_at"] = utc_now()
+    assignments = ", ".join(f"{field}=?" for field in changes)
+    with database() as conn:
+        exists = conn.execute("SELECT id FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+        conn.execute(f"UPDATE tasks SET {assignments} WHERE id=?", (*changes.values(), task_id))
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    return dict(row)
+
+
+@app.patch("/api/tasks/{task_id}/status")
+def update_task_status(task_id: str, payload: TaskStatusInput):
+    now = utc_now()
+    completed_at = now if payload.status == "completed" else None
+    with database() as conn:
+        exists = conn.execute("SELECT id FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="Tarefa não encontrada.")
+        conn.execute(
+            "UPDATE tasks SET status=?,completed_at=?,updated_at=? WHERE id=?",
+            (payload.status, completed_at, now, task_id),
+        )
+        row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    return dict(row)
 
 
 @app.get("/api/conversations")
