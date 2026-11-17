@@ -73,6 +73,7 @@
     if (status === "error") item.title = "Mensagem registrada, mas o núcleo não concluiu a solicitação.";
     area.appendChild(item);
     area.scrollTop = area.scrollHeight;
+    return item;
   }
 
   async function refreshRecent() {
@@ -134,6 +135,53 @@
     }
   }
 
+  async function consumeChatStream(response, onSnapshot) {
+    if (!response.body || typeof response.body.getReader !== "function") {
+      throw new Error("O navegador não disponibilizou leitura do streaming.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = null;
+
+    function dispatch(frame) {
+      if (!frame.trim()) return;
+      let eventName = "message";
+      const dataLines = [];
+      frame.split(/\r?\n/).forEach(line => {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+      });
+      if (!dataLines.length) return;
+      let data;
+      try { data = JSON.parse(dataLines.join("\n")); }
+      catch { throw new Error("O servidor enviou um evento de streaming inválido."); }
+      if (eventName === "snapshot") onSnapshot(data.text || "");
+      else if (eventName === "complete") {
+        completed = data;
+        onSnapshot(data.answer || "");
+      } else if (eventName === "error") {
+        throw new Error(data.detail || "O núcleo não concluiu a resposta.");
+      }
+    }
+
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, {stream:true});
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        dispatch(frame);
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) dispatch(buffer);
+    if (!completed) throw new Error("A conexão terminou antes da confirmação da resposta.");
+    return completed;
+  }
+
   async function submitMessage(value) {
     const message = value.trim();
     if (!message || sending) return;
@@ -144,15 +192,21 @@
     $("sendButton").disabled = true;
     $("sendButton").textContent = "…";
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
+        headers: {"Content-Type":"application/json", "Accept":"text/event-stream"},
         body: JSON.stringify({message, conversation_id:conversationId, project_id:activeProjectId})
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Falha na solicitação.");
-      conversationId = data.conversation_id;
-      appendMessage("assistant", data.answer);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Falha na solicitação.");
+      }
+      const assistantBubble = appendMessage("assistant", "");
+      const result = await consumeChatStream(response, text => {
+        assistantBubble.textContent = text;
+        $("conversation").scrollTop = $("conversation").scrollHeight;
+      });
+      conversationId = result.conversation_id;
     } catch (error) {
       appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message, "error");
     } finally {
