@@ -621,7 +621,7 @@
         card.className = "memory-card";
         const number = document.createElement("span");
         number.className = "memory-index";
-        number.textContent = String(data.total - index).padStart(2, "0");
+        number.textContent = String(Number.isInteger(memory.id) ? memory.id + 1 : index + 1).padStart(2, "0");
         const text = document.createElement("p");
         text.textContent = memory.content;
         card.append(number, text);
