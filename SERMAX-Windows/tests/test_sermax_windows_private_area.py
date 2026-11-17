@@ -360,7 +360,11 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
                 parent_handle, expected_owner_sid="S-1-5-21-100"
             )
 
-        self.assertTrue(result["valid"])\n        self.assertTrue(result["effective_access_evaluated"])\n        self.assertEqual(result["owner_sid"], "S-1-5-21-100")\n        self.assertEqual(result["effective_access"]["api"], "AuthzAccessCheck")\n        self.assertFalse(result["mutated"])
+        self.assertTrue(result["valid"])
+        self.assertTrue(result["effective_access_evaluated"])
+        self.assertEqual(result["owner_sid"], "S-1-5-21-100")
+        self.assertEqual(result["effective_access"]["api"], "AuthzAccessCheck")
+        self.assertFalse(result["mutated"])
         opener.assert_called_once_with(
             parent_handle, entry, desired_access=private_area.READ_CONTROL
         )
