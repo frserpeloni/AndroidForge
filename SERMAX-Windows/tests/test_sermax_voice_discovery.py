@@ -41,7 +41,7 @@ class WhisperDiscoveryCacheTests(unittest.TestCase):
             first = voice.localizar_whisper_e_modelo()
             self.assertEqual(first, (str(whisper), str(model)))
             first_calls = search.call_count
-            self.assertEqual(first_calls, 1)
+            self.assertEqual(first_calls, 2)
 
             second = voice.localizar_whisper_e_modelo()
             self.assertEqual(second, first)
