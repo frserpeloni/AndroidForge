@@ -597,7 +597,7 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
             continue
         ranked = []
         for index, paragraph in enumerate(paragraphs):
-            tokens = set(re.findall(r"[\\wÀ-ÿ]{3,}", paragraph.casefold()))
+            tokens = set(re.findall(r"[\wÀ-ÿ]{3,}", paragraph.casefold()))
             score = len(query_terms.intersection(tokens))
             ranked.append((score, index, paragraph))
         matching = [item for item in ranked if item[0] > 0]
