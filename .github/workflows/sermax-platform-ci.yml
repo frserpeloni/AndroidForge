@@ -69,6 +69,9 @@ jobs:
       - name: Run streaming chat API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_chat_stream.py
+      - name: Run real SERMAX core streaming integration test
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_core_stream_integration.py
       - name: Run persistent task API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
@@ -122,6 +125,9 @@ jobs:
       - name: Run streaming chat API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_chat_stream.py
+      - name: Run real SERMAX core streaming integration test on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_core_stream_integration.py
       - name: Run persistent task API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
