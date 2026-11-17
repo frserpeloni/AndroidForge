@@ -342,3 +342,17 @@ A revisão de segurança separou a instrução de proteção do conteúdo docume
 - Mensagem `user`: contém o JSON com os trechos extraídos e metadados dos anexos.
 
 O texto enviado pelo usuário dentro de arquivos deixa de ocupar o papel `system`. O teste de API verifica a separação dos papéis e a ausência de anexos de outra conversa. A nova execução CI do head atualizado ainda precisa confirmar os ajustes.
+
+
+## 23. CI da separação de autoridade dos anexos, 2026-11-17
+
+A execução GitHub Actions `44199605658`, no commit de código/testes `546844df5e4741e989f7775ed79465d5e8badd9d`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A revisão confirmou que as instruções de segurança permanecem em uma mensagem `system` separada e o JSON com o conteúdo dos anexos entra como mensagem `user`. Os testes verificam essa separação, o isolamento entre conversas e a não persistência do conteúdo documental na tabela de mensagens. O teste de integração do núcleo também verifica que a rotina de memória recebe somente a pergunta original.
+
+A atualização posterior deste relatório é documental. Nenhuma inferência real, instalação local ou gravação de memória pessoal foi executada. PR #14 permanece aberta, em rascunho e sem merge.
