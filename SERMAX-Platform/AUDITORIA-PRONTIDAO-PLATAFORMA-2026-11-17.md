@@ -188,3 +188,18 @@ O núcleo atual chama o callback com snapshots acumulados durante a geração do
 Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes, e a execução CI da versão corrigida ainda está pendente. Não declarar esta etapa validada até a nova execução concluir.
 
 Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
+
+
+## 12. Evidência CI do streaming, 2026-11-17
+
+A execução GitHub Actions `44191365375`, no commit `0804396d2a28c2b4709c149fd388cf8efb3ceb5b`, concluiu com sucesso nos cinco jobs:
+
+- `backend-tests (3.12)`: sucesso, incluindo os testes de streaming.
+- `backend-tests (3.14)`: sucesso, incluindo os testes de streaming.
+- `windows-validation`: sucesso, incluindo API, streaming, interface, instalador, pacote e launcher.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A primeira execução da revisão, `44191163899`, falhou nos novos testes porque a serialização inicial usava separadores SSE escapados em excesso. A correção foi aplicada, a revisão foi aberta em PR #12 e a execução `44191365375` validou o commit corrigido. PR #11 foi fechado como supersedido, sem merge e sem apagar código.
+
+A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
