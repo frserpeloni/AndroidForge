@@ -16,6 +16,8 @@ class AttachmentApiTests(unittest.TestCase):
         server.CORE_MODULE = None
         server.CORE_ERROR = None
         server.initialize_database()
+        from attachment_service import initialize_attachment_schema
+        initialize_attachment_schema()
         self.client = TestClient(server.app, client=("127.0.0.1", 50211))
         self.headers = {"host": "127.0.0.1:8765"}
         with server.database() as conn:
