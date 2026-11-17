@@ -111,8 +111,18 @@
         <div class="task-list" id="taskList" aria-live="polite"><p class="task-empty">Carregando tarefas...</p></div>
       </section>
       <section class="view placeholder-view" id="memoryView">
-        <div class="page-heading"><div><p class="eyebrow">CONTEXTO DO MAX</p><h1>Memória</h1><p>Memória geral e memória específica de cada projeto.</p></div></div>
-        <div class="empty-panel"><div class="empty-icon">◇</div><h2>Memória protegida</h2><p>A interface não acessa nem altera os arquivos de memória existentes.</p></div>
+        <div class="page-heading">
+          <div><p class="eyebrow">CONTEXTO DO MAX</p><h1>Memória</h1><p>Consulta das informações pessoais já carregadas pelo núcleo.</p></div>
+          <button class="secondary-button" id="refreshMemory" type="button">↻ Atualizar</button>
+        </div>
+        <div class="memory-protection-note"><b>Modo somente leitura</b><span>Este painel não cadastra, edita ou apaga memórias. Não abre arquivos diretamente e não inicia o núcleo.</span></div>
+        <div class="memory-toolbar">
+          <label class="memory-search" for="memorySearch">Buscar na memória
+            <input id="memorySearch" type="search" maxlength="200" placeholder="Digite um termo, por exemplo: carro">
+          </label>
+          <div class="memory-count" id="memoryCount" aria-live="polite">Aguardando consulta</div>
+        </div>
+        <div class="memory-list" id="memoryList" aria-live="polite"><p class="memory-empty">Abra uma conversa para carregar o núcleo e depois atualize este painel.</p></div>
       </section>
       <div class="toast" id="toast" role="status"></div>
     </main>
