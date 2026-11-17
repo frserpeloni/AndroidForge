@@ -5,7 +5,7 @@ on:
     branches:
       - sermax-platform-prototype-20261115
       - sermax-cleanup-20261117
-      - sermax-platform-readiness-20261117-r3
+      - sermax-platform-readiness-20261117-r4
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
