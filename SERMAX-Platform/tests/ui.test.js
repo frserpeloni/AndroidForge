@@ -15,7 +15,7 @@ function response(data, status = 200) {
 function setup() {
   const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], prompts: [], confirm: true, chatCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
   let nextTask = 1;
@@ -59,6 +59,17 @@ function setup() {
       task.status = body.status;
       task.completed_at = body.status === "completed" ? new Date().toISOString() : null;
       return response(task);
+    }
+    if (url === "/api/engines/status" && method === "GET") {
+      state.engineCalls += 1;
+      return response({
+        core_loaded: true,
+        ollama: {reachable: true, models: ["sermax:latest"], detail: "API local respondeu."},
+        openjarvis: {environment_files_present: true, detail: "Arquivos encontrados; execução ainda não testada."},
+        last_route: {backend: "ollama", fallback: ""},
+        read_only: true,
+        inference_started: false
+      });
     }
     if (url.startsWith("/api/memory") && method === "GET") {
       state.memoryCalls.push({url, cache: options.cache || ""});
@@ -123,6 +134,19 @@ test("cria tarefa e atualiza seu estado pela interface", async () => {
   status.dispatchEvent(new win.Event("change", { bubbles: true }));
   await tick();
   assert.equal(state.tasks[0].status, "completed");
+});
+
+test("painel de motores verifica serviços sem iniciar inferência", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="engines"]').click();
+  await tick();
+
+  assert.equal(state.engineCalls, 1);
+  assert.match(win.document.getElementById("engineStatus").textContent, /Ollama local/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /sermax:latest/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /OpenJarvis/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /Último backend registrado: ollama/);
+  assert.match(win.document.querySelector(".engine-safety-note").textContent, /não envia prompts/i);
 });
 
 test("painel de memória consulta somente leitura e permite busca", async () => {
