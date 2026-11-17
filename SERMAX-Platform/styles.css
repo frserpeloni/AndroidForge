@@ -62,3 +62,19 @@
 .memory-card p{margin:0;color:var(--text);font-size:12px;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}
 .memory-empty{padding:22px 4px;color:var(--muted);font-size:12px;line-height:1.6}
 @media(max-width:650px){.memory-toolbar{align-items:stretch;flex-direction:column;gap:6px}.memory-search{max-width:none}.memory-count{padding:0 0 8px}}
+
+
+.engine-safety-note{display:flex;flex-direction:column;gap:5px;margin:24px 0 18px;padding:14px 16px;border:1px solid #526c3d;border-left:3px solid #8dbb61;border-radius:8px;background:#18231b;color:#c8d5c0;font-size:11px;line-height:1.5}
+.engine-safety-note b{color:#a9d47f;font-size:12px}
+.engine-safety-note span{color:#aab7a4}
+.engine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:980px}
+.engine-card{padding:17px 18px;border:1px solid var(--line);border-radius:10px;background:#171f27;min-width:0}
+.engine-card-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.engine-card h2{font:600 13px var(--display);margin:0}
+.engine-card p{font-size:11px;line-height:1.55;color:var(--muted);margin:12px 0 0;overflow-wrap:anywhere}
+.engine-state{font-size:9px;font-weight:700;padding:5px 8px;border-radius:20px;white-space:nowrap}
+.engine-ok{color:#b7dc98;background:#24351f}
+.engine-warn{color:#e3c58a;background:#3a3020}
+.engine-offline{color:#d59a9a;background:#3b2527}
+.engine-diagnostic-footnote,.engine-empty{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.5;padding:8px 0}
+@media(max-width:650px){.engine-grid{grid-template-columns:1fr}.engine-card-heading{align-items:flex-start;flex-direction:column}}
