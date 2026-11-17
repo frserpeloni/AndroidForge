@@ -356,6 +356,7 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
             ) as validator,
             mock.patch.object(private_area, "close_handle") as closer,
         ):
+            closer.return_value = None
             result = private_area.validate_existing_private_area(
                 parent_handle, expected_owner_sid="S-1-5-21-100"
             )
