@@ -26,6 +26,7 @@ Não foram alterados `main`, `C:\\SERMAX`, memórias pessoais, histórico local 
 
 1. `SERMAX-Windows/sermax_tarefas.py` importava `re` sem qualquer referência no restante do módulo. O import foi retirado em alteração localizada. Nenhuma função ou contrato foi alterado.
 2. `SERMAX-Windows/SERMAX_terminal/sermax_voz.py` repetia buscas recursivas por `whisper-cli.exe` e `ggml-tiny.bin` em chamadas sucessivas. Foi adicionado cache positivo por caminho, com revalidação `is_file()`, prioridade mantida para os caminhos padrão e nova busca quando o arquivo em cache desaparece. Foram adicionados três testes para reutilização, prioridade de instalação nova e invalidação do cache.
+3. O módulo `SERMAX-Windows/sermax_windows_handle_enum.py` e seu teste foram transferidos para `garbage/SERMAX-Windows/`. A implementação antiga usa enumeração `FILE_ID_BOTH_DIR_INFO` e FileId de 64 bits. A implementação ativa `sermax_windows_directory_enum.py` usa `FILE_ID_EXTD_DIR_INFO` e FileId de 128 bits, integrada a `sermax_windows_directory_handle.py`. A busca dos imports dos módulos de produção não identificou consumidor do módulo antigo; o único import encontrado estava no teste correspondente, que também foi preservado em garbage. Registro completo em `garbage/INDEX.md`.
 
 ## Candidatos que exigem investigação adicional
 
@@ -38,7 +39,7 @@ Não foram alterados `main`, `C:\\SERMAX`, memórias pessoais, histórico local 
 
 ## Garbage
 
-Nenhum arquivo foi movido nesta etapa. A pasta `garbage/` foi criada com regras de preservação. Candidatos só serão movidos após análise de imports, referências dinâmicas, entrypoints, PyInstaller, workflows e testes.
+Dois arquivos foram movidos para preservação em `garbage/`: o módulo antigo de enumeração e seu teste correspondente. Os blobs originais foram preservados e registrados em `garbage/INDEX.md`. Nenhum arquivo foi excluído definitivamente. A pasta não é incluída no empacotamento SERMAX.
 
 ## Validação
 
