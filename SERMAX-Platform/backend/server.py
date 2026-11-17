@@ -665,7 +665,7 @@ def chat_stream(payload: ChatInput):
     if not STREAM_SLOT.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="Já existe uma resposta em streaming. Aguarde a conclusão.")
 
-    updates: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue(maxsize=1)
+    updates: queue.Queue[tuple[str, dict[str, Any]]] = queue.Queue(maxsize=16)
     finished = threading.Event()
 
     def publish(event_name: str, data: dict[str, Any]) -> None:
