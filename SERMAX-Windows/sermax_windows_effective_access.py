@@ -14,6 +14,20 @@ class EffectiveAccessError(RuntimeError):
     """Falha fechada ao avaliar acesso efetivo no Windows."""
 
 
+def _cleanup_resource(label: str, release, resource) -> None:
+    """Libera recurso nativo sem ocultar a exceção que iniciou a limpeza."""
+    active_error = __import__("sys").exc_info()[1]
+    try:
+        if not release(resource):
+            raise RuntimeError("a API de liberação retornou falha")
+    except Exception as cleanup_error:
+        message = f"{label}: {cleanup_error}"
+        if active_error is not None:
+            active_error.add_note(message)
+            return
+        raise EffectiveAccessError(message) from cleanup_error
+
+
 ERROR_SUCCESS = 0
 GENERIC_ACCESS_BITS = 0xF0000000
 SE_FILE_OBJECT = 1
@@ -132,10 +146,11 @@ def read_security_descriptor_binary(directory_handle) -> bytes:
                 raise EffectiveAccessError("Cópia do descritor incompleta.")
             return binary
         finally:
-            if local_free(descriptor):
-                raise EffectiveAccessError(
-                    "LocalFree falhou ao liberar o descritor de segurança."
-                )
+            _cleanup_resource(
+                "LocalFree falhou ao liberar o descritor de segurança",
+                lambda pointer: not bool(local_free(pointer)),
+                descriptor,
+            )
     except EffectiveAccessError:
         raise
     except Exception as exc:
@@ -259,8 +274,16 @@ def evaluate_access_for_token(
                 "performed_io": False,
             }
         finally:
-            if client_context and not free_context(client_context):
-                raise EffectiveAccessError("AuthzFreeContext falhou.")
+            if client_context:
+                _cleanup_resource(
+                    "AuthzFreeContext falhou",
+                    free_context,
+                    client_context,
+                )
     finally:
-        if resource_manager and not free_rm(resource_manager):
-            raise EffectiveAccessError("AuthzFreeResourceManager falhou.")
+        if resource_manager:
+            _cleanup_resource(
+                "AuthzFreeResourceManager falhou",
+                free_rm,
+                resource_manager,
+            )
