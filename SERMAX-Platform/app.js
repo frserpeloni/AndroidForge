@@ -56,7 +56,8 @@
     if (sending) return;
     $("conversation").replaceChildren();
     $("conversation").classList.remove("has-messages");
-    $("welcome").style.display = "";
+    $("attachmentList").replaceChildren();
+    pendingFiles = [];
     $("messageInput").value = "";
     conversationId = null;
     updateProjectContext();
@@ -238,7 +239,7 @@
 
   function renderPendingFiles() {
     const list = $("attachmentList");
-    list.replaceChildren();
+    list.querySelectorAll(".attachment-chip").forEach(item => item.remove());
     pendingFiles.forEach((file, index) => {
       const item = document.createElement("div");
       item.className = "attachment-chip";
@@ -365,6 +366,8 @@
       activeProjectId = project.id;
       activeProjectName = project.name;
       conversationId = null;
+      $("attachmentList").replaceChildren();
+      pendingFiles = [];
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
       $("welcome").style.display = "";
