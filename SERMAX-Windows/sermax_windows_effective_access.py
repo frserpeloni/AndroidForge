@@ -16,6 +16,11 @@ class EffectiveAccessError(RuntimeError):
 
 ERROR_SUCCESS = 0
 GENERIC_ACCESS_BITS = 0xF0000000
+SE_FILE_OBJECT = 1
+OWNER_SECURITY_INFORMATION = 0x00000001
+GROUP_SECURITY_INFORMATION = 0x00000002
+DACL_SECURITY_INFORMATION = 0x00000004
+MAX_SECURITY_DESCRIPTOR_SIZE = 1024 * 1024
 
 
 class LUID(ctypes.Structure):
@@ -46,16 +51,27 @@ def _require_windows_x64() -> None:
         raise EffectiveAccessError("A avaliação exige Windows x64.")
 
 
+def _native_handle_value(handle) -> int:
+    value = handle.value if isinstance(handle, ctypes.c_void_p) else handle
+    if value is None:
+        raise EffectiveAccessError("Handle nulo.")
+    try:
+        value = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise EffectiveAccessError("Handle inválido.") from exc
+    if value == 0 or value == ctypes.c_void_p(-1).value:
+        raise EffectiveAccessError("Handle inválido.")
+    return value
+
+
 def read_security_descriptor_binary(directory_handle) -> bytes:
-    """Lê OWNER, GROUP e DACL pelo handle já aberto com READ_CONTROL."""
+    """Lê OWNER, GROUP e DACL pelo handle já aberto com READ_CONTROL.
+
+    Usa GetSecurityInfo com SE_FILE_OBJECT e copia o SECURITY_DESCRIPTOR
+    self-relative retornado pelo Windows antes de liberar sua memória.
+    """
     _require_windows_x64()
-    value = (
-        directory_handle.value
-        if isinstance(directory_handle, ctypes.c_void_p)
-        else directory_handle
-    )
-    if value is None or value == 0 or value == ctypes.c_void_p(-1).value:
-        raise EffectiveAccessError("Handle de diretório inválido.")
+    value = _native_handle_value(directory_handle)
 
     try:
         from sermax_windows_handle_io import query_handle_metadata
@@ -69,29 +85,57 @@ def read_security_descriptor_binary(directory_handle) -> bytes:
                 "O descritor exige diretório regular, sem reparse point ou DeletePending."
             )
 
-        import win32security
-        descriptor = win32security.GetSecurityInfo(
-            value,
-            win32security.SE_FILE_OBJECT,
-            (
-                win32security.OWNER_SECURITY_INFORMATION
-                | win32security.GROUP_SECURITY_INFORMATION
-                | win32security.DACL_SECURITY_INFORMATION
-            ),
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_security_info = advapi32.GetSecurityInfo
+        get_security_info.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, wintypes.DWORD,
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p), ctypes.POINTER(ctypes.c_void_p),
+            ctypes.POINTER(ctypes.c_void_p),
+        ]
+        get_security_info.restype = wintypes.DWORD
+
+        get_length = advapi32.GetSecurityDescriptorLength
+        get_length.argtypes = [ctypes.c_void_p]
+        get_length.restype = wintypes.DWORD
+
+        local_free = kernel32.LocalFree
+        local_free.argtypes = [ctypes.c_void_p]
+        local_free.restype = ctypes.c_void_p
+
+        descriptor = ctypes.c_void_p()
+        security_info = (
+            OWNER_SECURITY_INFORMATION
+            | GROUP_SECURITY_INFORMATION
+            | DACL_SECURITY_INFORMATION
         )
-        # PySECURITY_DESCRIPTOR expõe o descritor self-relative pelo buffer
-        # protocol. GetSecurityDescriptorBinaryForm() pertence ao .NET, não ao
-        # pywin32, e não existe nesse objeto.
-        try:
-            binary = memoryview(descriptor).tobytes()
-            expected_length = int(descriptor.GetLength())
-        except (TypeError, ValueError, AttributeError) as exc:
+        status = get_security_info(
+            wintypes.HANDLE(value), SE_FILE_OBJECT, security_info,
+            None, None, None, None, ctypes.byref(descriptor),
+        )
+        if status != ERROR_SUCCESS:
             raise EffectiveAccessError(
-                f"Não foi possível serializar o descritor pywin32: {exc}"
-            ) from exc
-        if len(binary) != expected_length or len(binary) < 20:
-            raise EffectiveAccessError("Descritor binário inválido ou incompleto.")
-        return binary
+                f"GetSecurityInfo falhou, WinError={int(status)}."
+            )
+        if not descriptor:
+            raise EffectiveAccessError("GetSecurityInfo retornou descritor nulo.")
+
+        try:
+            length = int(get_length(descriptor))
+            if length < 20 or length > MAX_SECURITY_DESCRIPTOR_SIZE:
+                raise EffectiveAccessError(
+                    f"Comprimento do descritor fora dos limites: {length}."
+                )
+            binary = ctypes.string_at(descriptor, length)
+            if len(binary) != length:
+                raise EffectiveAccessError("Cópia do descritor incompleta.")
+            return binary
+        finally:
+            if local_free(descriptor):
+                raise EffectiveAccessError(
+                    "LocalFree falhou ao liberar o descritor de segurança."
+                )
     except EffectiveAccessError:
         raise
     except Exception as exc:
@@ -121,16 +165,7 @@ def evaluate_access_for_token(
             "Máscaras GENERIC_* devem ser mapeadas antes da avaliação."
         )
 
-    try:
-        token = (
-            token_handle.value
-            if isinstance(token_handle, ctypes.c_void_p)
-            else int(token_handle)
-        )
-    except (TypeError, ValueError, OverflowError) as exc:
-        raise EffectiveAccessError("Handle de token inválido.") from exc
-    if token is None or token == 0 or token == ctypes.c_void_p(-1).value:
-        raise EffectiveAccessError("Handle de token inválido.")
+    token = _native_handle_value(token_handle)
 
     authz = ctypes.WinDLL("authz", use_last_error=True)
     initialize_rm = authz.AuthzInitializeResourceManager
@@ -179,7 +214,7 @@ def evaluate_access_for_token(
 
     try:
         if not initialize_context(
-            0, token, resource_manager, None, LUID(0, 0), None,
+            0, wintypes.HANDLE(token), resource_manager, None, LUID(0, 0), None,
             ctypes.byref(client_context),
         ):
             error = ctypes.get_last_error()
@@ -190,13 +225,9 @@ def evaluate_access_for_token(
             granted = wintypes.DWORD(0)
             sacl_result = wintypes.DWORD(0)
             status = wintypes.DWORD(0)
-            request = AUTHZ_ACCESS_REQUEST(
-                desired_access, None, None, 0, None
-            )
+            request = AUTHZ_ACCESS_REQUEST(desired_access, None, None, 0, None)
             reply = AUTHZ_ACCESS_REPLY(
-                1,
-                ctypes.pointer(granted),
-                ctypes.pointer(sacl_result),
+                1, ctypes.pointer(granted), ctypes.pointer(sacl_result),
                 ctypes.pointer(status),
             )
             descriptor_buffer = ctypes.create_string_buffer(security_descriptor)
@@ -223,13 +254,13 @@ def evaluate_access_for_token(
                     and (granted_mask & desired_access) == desired_access
                 ),
                 "token_source": "real_kernel_token",
-                "security_descriptor_source": "caller_supplied_binary",
+                "security_descriptor_source": "GetSecurityInfo_same_handle",
                 "mutated": False,
                 "performed_io": False,
             }
         finally:
-            if client_context:
-                free_context(client_context)
+            if client_context and not free_context(client_context):
+                raise EffectiveAccessError("AuthzFreeContext falhou.")
     finally:
-        if resource_manager:
-            free_rm(resource_manager)
+        if resource_manager and not free_rm(resource_manager):
+            raise EffectiveAccessError("AuthzFreeResourceManager falhou.")
