@@ -36,7 +36,7 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - A primeira versão é local e de usuário único.
 - Não há autenticação nem acesso remoto.
 - Não há streaming de tokens.
-- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. Anexos e tarefas em segundo plano seguem pendentes.
+- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. O gerenciador de tarefas persistentes permite criar, consultar, editar, definir prioridade e prazo, filtrar e atualizar o estado. Execução automática/em segundo plano e anexos seguem pendentes.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
 - Compatibilidade real com o ambiente Python do computador precisa ser testada.
 - A interface ainda não passou por teste automatizado de interação em navegador.
@@ -54,13 +54,19 @@ Endpoints locais: `GET/POST /api/projects`, `GET/PUT /api/projects/{id}`, `POST 
 
 As instruções do projeto entram como contexto de sistema em cada solicitação vinculada. A API reconstrói temporariamente a sessão do núcleo com o histórico daquela conversa e restaura a sessão global anterior ao final da chamada. O bloqueio global impede chamadas simultâneas durante essa troca. A memória persistente geral do núcleo continua compartilhada, conforme o comportamento original do SERMAX. Conversas de projetos arquivados preservam o vínculo e as instruções ao serem retomadas. Na interface, a conversa retomada identifica o vínculo como “Projeto arquivado”, mantendo o contexto associado mesmo sem permitir novas conversas nesse projeto.
 
+## Tarefas
+
+As tarefas são armazenadas na tabela `tasks` do mesmo banco SQLite da Plataforma. Cada registro contém título, descrição, estado, prioridade, prazo e datas de criação/atualização/conclusão. Os estados disponíveis são pendente, em andamento, concluída e cancelada. Não existe exclusão física nem execução automática de tarefas nesta versão.
+
+Endpoints locais: `GET/POST /api/tasks`, `GET/PUT /api/tasks/{id}` e `PATCH /api/tasks/{id}/status`. A tela Tarefas permite registrar, filtrar e atualizar tarefas. O armazenamento persiste após reinício do serviço.
+
 ## Testes
 
 No diretório `backend`:
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m unittest -v test_api.py
+python -m unittest -v test_api.py test_tasks_api.py test_core_session_contract.py test_real_core_import.py
 ```
 
 O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
