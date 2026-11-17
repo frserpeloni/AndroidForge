@@ -1,8 +1,8 @@
 (() => {
   const $ = id => document.getElementById(id);
   const nav = [...document.querySelectorAll(".nav-item")];
-  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",memory:"memoryView"};
-  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",memory:"Memória"};
+  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",engines:"enginesView",memory:"memoryView"};
+  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",engines:"Motores",memory:"Memória"};
   let conversationId = null;
   let activeProjectId = null;
   let sending = false;
@@ -21,6 +21,7 @@
     $("sidebar").classList.remove("open");
     if (name === "projects") refreshProjects();
     if (name === "tasks") refreshTasks();
+    if (name === "engines") refreshEngines();
     if (name === "memory") refreshMemory();
   }
   async function refreshHealth() {
@@ -515,6 +516,72 @@
     }
   });
   $("taskStatusFilter").addEventListener("change", refreshTasks);
+
+  function addEngineCard(container, title, state, detail) {
+    const card = document.createElement("article");
+    card.className = "engine-card";
+    const heading = document.createElement("div");
+    heading.className = "engine-card-heading";
+    const name = document.createElement("h2");
+    name.textContent = title;
+    const badge = document.createElement("span");
+    badge.className = "engine-state " + (state === "ok" ? "engine-ok" : state === "warn" ? "engine-warn" : "engine-offline");
+    badge.textContent = state === "ok" ? "Respondendo" : state === "warn" ? "Não confirmado" : "Indisponível";
+    const description = document.createElement("p");
+    description.textContent = detail;
+    heading.append(name, badge);
+    card.append(heading, description);
+    container.appendChild(card);
+  }
+
+  async function refreshEngines() {
+    const panel = $("engineStatus");
+    if (!panel) return;
+    panel.textContent = "Consultando serviços locais...";
+    try {
+      const response = await fetch("/api/engines/status", {method:"GET", cache:"no-store"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao verificar os motores.");
+      panel.replaceChildren();
+
+      addEngineCard(
+        panel,
+        "Núcleo SERMAX",
+        data.core_loaded ? "ok" : "warn",
+        data.core_loaded
+          ? "Núcleo carregado nesta sessão da API."
+          : "Ainda não carregado. A primeira conversa inicia o núcleo."
+      );
+
+      const ollamaDetail = data.ollama.models.length
+        ? "API local respondeu. Modelos encontrados: " + data.ollama.models.join(", ")
+        : data.ollama.detail + (data.ollama.reachable ? " Nenhum modelo foi listado." : "");
+      addEngineCard(panel, "Ollama local", data.ollama.reachable ? "ok" : "offline", ollamaDetail);
+
+      addEngineCard(
+        panel,
+        "OpenJarvis",
+        data.openjarvis.environment_files_present ? "warn" : "offline",
+        data.openjarvis.detail
+      );
+
+      const route = data.last_route.backend === "nao_executado"
+        ? "Nenhuma rota foi registrada nesta sessão."
+        : "Último backend registrado: " + data.last_route.backend
+          + (data.last_route.fallback ? ". Fallback: " + data.last_route.fallback : "");
+      addEngineCard(panel, "Último roteamento", data.last_route.backend === "nao_executado" ? "warn" : "ok", route);
+
+      const note = document.createElement("p");
+      note.className = "engine-diagnostic-footnote";
+      note.textContent = "Verificação somente leitura. Nenhuma inferência foi iniciada.";
+      panel.appendChild(note);
+    } catch (error) {
+      panel.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  $("refreshEngines").addEventListener("click", refreshEngines);
 
   async function refreshMemory() {
     const list = $("memoryList");
