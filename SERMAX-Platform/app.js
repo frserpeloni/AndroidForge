@@ -20,6 +20,7 @@
     $("sectionName").textContent = names[name];
     $("sidebar").classList.remove("open");
     if (name === "projects") refreshProjects();
+    if (name === "tasks") refreshTasks();
   }
   async function refreshHealth() {
     try {
@@ -391,6 +392,129 @@
     } catch (error) { toast(error.message); }
   }
   $("newProject").addEventListener("click", createProject);
+  const taskStatusLabels = {
+    pending: "Pendente",
+    in_progress: "Em andamento",
+    completed: "Concluída",
+    cancelled: "Cancelada"
+  };
+  const taskPriorityLabels = {
+    low: "Baixa",
+    normal: "Normal",
+    high: "Alta",
+    urgent: "Urgente"
+  };
+
+  async function refreshTasks() {
+    const list = $("taskList");
+    if (!list) return;
+    list.textContent = "Carregando tarefas...";
+    try {
+      const filter = $("taskStatusFilter").value;
+      const url = filter ? "/api/tasks?status=" + encodeURIComponent(filter) : "/api/tasks";
+      const response = await fetch(url);
+      const tasks = await response.json();
+      if (!response.ok) throw new Error(tasks.detail || "Falha ao consultar tarefas.");
+      list.replaceChildren();
+      if (!tasks.length) {
+        const empty = document.createElement("p");
+        empty.className = "task-empty";
+        empty.textContent = "Nenhuma tarefa neste filtro.";
+        list.appendChild(empty);
+        return;
+      }
+      tasks.forEach(task => {
+        const card = document.createElement("article");
+        card.className = "task-card";
+        const main = document.createElement("div");
+        main.className = "task-main";
+        const title = document.createElement("h2");
+        title.textContent = task.title;
+        const description = document.createElement("p");
+        description.textContent = task.description || "Sem descrição.";
+        const meta = document.createElement("div");
+        meta.className = "task-meta";
+        const priority = document.createElement("span");
+        priority.className = "task-priority priority-" + task.priority;
+        priority.textContent = "Prioridade: " + taskPriorityLabels[task.priority];
+        const due = document.createElement("span");
+        if (task.due_at) {
+          const parsed = new Date(task.due_at);
+          due.textContent = "Prazo: " + (Number.isNaN(parsed.getTime()) ? task.due_at : parsed.toLocaleString("pt-BR"));
+        } else {
+          due.textContent = "Sem prazo";
+        }
+        meta.append(priority, due);
+        main.append(title, description, meta);
+        const controls = document.createElement("div");
+        controls.className = "task-controls";
+        const status = document.createElement("select");
+        status.className = "task-status";
+        status.setAttribute("aria-label", "Estado da tarefa " + task.title);
+        Object.entries(taskStatusLabels).forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          status.appendChild(option);
+        });
+        status.value = task.status;
+        status.addEventListener("change", () => updateTaskStatus(task.id, status.value));
+        controls.appendChild(status);
+        card.append(main, controls);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      list.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  async function updateTaskStatus(taskId, status) {
+    try {
+      const response = await fetch("/api/tasks/" + encodeURIComponent(taskId) + "/status", {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao atualizar tarefa.");
+      toast("Estado da tarefa atualizado.");
+      await refreshTasks();
+    } catch (error) {
+      toast(error.message);
+      await refreshTasks();
+    }
+  }
+
+  $("taskForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const title = $("taskTitle").value.trim();
+    if (!title) return toast("Informe o título da tarefa.");
+    const dueValue = $("taskDueAt").value;
+    const payload = {
+      title,
+      description: $("taskDescription").value.trim(),
+      priority: $("taskPriority").value,
+      due_at: dueValue ? new Date(dueValue).toISOString() : null
+    };
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao salvar tarefa.");
+      $("taskForm").reset();
+      $("taskStatusFilter").value = "";
+      toast("Tarefa registrada.");
+      await refreshTasks();
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("taskStatusFilter").addEventListener("change", refreshTasks);
+
   refreshHealth();
   refreshRecent();
   setInterval(refreshHealth, 15000);
