@@ -243,6 +243,13 @@ def models():
 @app.get("/api/engines/status")
 def engines_status():
     """Diagnóstico local. Não inicia motores nem envia prompts."""
+    with CHAT_LOCK:
+        core = CORE_MODULE
+        route_info = getattr(core, "ultimo_diagnostico_roteamento", {}) if core is not None else {}
+        if not isinstance(route_info, dict):
+            route_info = {}
+        route_info = dict(route_info)
+
     ollama = {"reachable": False, "models": [], "detail": "Não foi possível consultar o Ollama local."}
     request = urllib.request.Request(
         "http://127.0.0.1:11434/api/tags",
@@ -272,10 +279,6 @@ def engines_status():
     jarvis_worker = adapter_root / "sermax_jarvis_worker.py"
     jarvis_configured = jarvis_python.is_file() and jarvis_worker.is_file()
 
-    core = CORE_MODULE
-    route_info = getattr(core, "ultimo_diagnostico_roteamento", {}) if core is not None else {}
-    if not isinstance(route_info, dict):
-        route_info = {}
     last_backend = route_info.get("backend")
     if last_backend not in {"openjarvis", "ollama", "nao_executado"}:
         last_backend = "nao_executado"
@@ -308,24 +311,26 @@ def read_memory(limit: int = 50, q: str = ""):
     if len(q) > 200:
         raise HTTPException(status_code=422, detail="A busca aceita até 200 caracteres.")
 
-    core = CORE_MODULE
-    if core is None:
-        return {
-            "status": "core_not_loaded",
-            "read_only": True,
-            "total": 0,
-            "returned": 0,
-            "items": [],
-            "message": "O núcleo ainda não foi carregado nesta sessão. Abra uma conversa e atualize o painel.",
-        }
+    with CHAT_LOCK:
+        core = CORE_MODULE
+        if core is None:
+            return {
+                "status": "core_not_loaded",
+                "read_only": True,
+                "total": 0,
+                "returned": 0,
+                "items": [],
+                "message": "O núcleo ainda não foi carregado nesta sessão. Abra uma conversa e atualize o painel.",
+            }
 
-    memories = getattr(core, "historico", None)
-    if not isinstance(memories, list):
-        raise HTTPException(status_code=503, detail="O núcleo carregado não disponibiliza a memória para consulta.")
+        memories = getattr(core, "historico", None)
+        if not isinstance(memories, list):
+            raise HTTPException(status_code=503, detail="O núcleo carregado não disponibiliza a memória para consulta.")
+        memory_snapshot = list(memories)
 
     normalized_query = q.strip().casefold()
     valid_items = []
-    for index, item in enumerate(memories):
+    for index, item in enumerate(memory_snapshot):
         if not isinstance(item, dict) or item.get("role") != "user":
             continue
         text = item.get("content")
