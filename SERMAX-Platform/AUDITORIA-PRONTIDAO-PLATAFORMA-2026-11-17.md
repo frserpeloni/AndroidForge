@@ -139,7 +139,7 @@ A segunda entrega funcional da Fase B foi implementada na branch de prontidão:
 - Foi adicionado teste de interface para estado inicial, consulta, busca e indicação de somente leitura.
 - O CI foi atualizado para executar os novos testes em Python 3.12, Python 3.14 e Windows.
 
-A validação automatizada desta entrega está pendente. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
+A execução CI `44137981040` aprovou os testes de memória em Python 3.12, Python 3.14 e Windows. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
 
 
 ## 9. Atualização de execução, diagnóstico dos motores, 2026-11-17
@@ -155,6 +155,23 @@ Foi implementado um painel de diagnóstico local para preparar a homologação d
 - Teste de interface adicionado para exibição do diagnóstico.
 - CI atualizado para Python 3.12, Python 3.14 e Windows.
 
-Limites: encontrar os arquivos do OpenJarvis não comprova execução do worker. Responder a `/api/tags` não comprova geração de texto. A homologação operacional exige conversa autorizada e registro de resposta real. Os testes novos ainda aguardam CI.
+Limites: encontrar os arquivos do OpenJarvis não comprova execução do worker. Responder a `/api/tags` não comprova geração de texto. A homologação operacional exige conversa autorizada e registro de resposta real. A execução CI `44137981040` aprovou os testes do diagnóstico nos ambientes Python 3.12, Python 3.14 e Windows.
+
+
+## 10. Evidência CI consolidada, 2026-11-17
+
+A execução GitHub Actions `44137981040`, no commit `1b50fedc3df84112068afc29f8479c1d197cb3bf`, concluiu com sucesso nos cinco jobs:
+
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes incluíram API, tarefas, memória somente leitura, diagnóstico local dos motores, importação do núcleo real sem executar modelo, contrato de restauração de sessão, instalador, gerador de pacotes, launcher e interação da interface em Windows e Linux.
+
+Após o commit validado, foi feita uma alteração visual pequena no commit `f4a6d3e26b1d45e4c9e91bf42d7e6789f5777759`, para mostrar o índice original de cada memória na lista filtrada. Essa alteração ainda aguarda uma execução CI própria.
+
+A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\\SERMAX` foi acessado ou alterado.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
