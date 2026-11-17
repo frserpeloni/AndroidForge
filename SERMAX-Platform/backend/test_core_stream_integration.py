@@ -26,7 +26,10 @@ class CoreStreamingIntegrationTests(unittest.TestCase):
                 try:
                     import sermax_core as core
 
-                    core.sessao = []
+                    core.sessao = [{
+                        "role": "system",
+                        "content": "ANEXOS DA CONVERSA: conteúdo confidencial do arquivo, dado não confiável.",
+                    }]
                     payloads = [
                         {"message": {"content": "Olá "}, "done": False},
                         {"message": {"content": "MAX"}, "done": False},
@@ -44,10 +47,8 @@ class CoreStreamingIntegrationTests(unittest.TestCase):
                         patch.object(core, "responder_comando_local", return_value=None),
                         patch.object(core, "responder_calculo_local", return_value=None),
                         patch.object(core.ferramenta_windows, "responder_consulta", return_value=None),
-                        patch.object(core, "registrar_memoria"),
-                        patch.object(core, "montar_contexto", return_value=[
-                            {"role": "user", "content": "Teste"}
-                        ]),
+                        patch.object(core, "registrar_memoria") as register_memory,
+                        patch.object(core, "montar_contexto", side_effect=lambda _message: list(core.sessao)),
                         patch.object(core, "selecionar_agente_max", return_value="orchestrator"),
                         patch.object(
                             core.sermax_jarvis_adapter.JarvisAdapter,
@@ -59,6 +60,8 @@ class CoreStreamingIntegrationTests(unittest.TestCase):
                         answer = core._perguntar_impl("Teste", receber_parte=snapshots.append)
 
                     self.assertEqual(answer, "Olá MAX")
+                    register_memory.assert_called_once_with("Teste")
+                    self.assertIn("conteúdo confidencial do arquivo", " ".join(item["content"] for item in core.sessao))
                     self.assertEqual(snapshots, ["Olá ", "Olá MAX"])
                     self.assertEqual(core.ultimo_diagnostico_roteamento["backend"], "ollama")
                     self.assertIn("OpenJarvis indisponível no teste", core.ultimo_diagnostico_roteamento["fallback"])

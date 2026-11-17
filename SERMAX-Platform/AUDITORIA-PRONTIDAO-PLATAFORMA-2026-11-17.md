@@ -302,3 +302,57 @@ A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixtur
 A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
 
 PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
+
+
+## 20. Contexto temporário dos anexos, 2026-11-17
+
+A PR #14 adiciona integração controlada dos anexos textuais com o contexto temporário do MAX:
+- Consulta somente anexos vinculados à conversa atual, até cinco registros.
+- Seleciona trechos com base na sobreposição lexical entre a pergunta e os parágrafos extraídos.
+- Limite agregado de 2.600 caracteres, com limite de 650 caracteres por arquivo.
+- Insere o material em uma mensagem de sistema temporária, identificada como dado não confiável. O texto instrui o modelo a ignorar comandos embutidos nos arquivos, citar o nome do arquivo e informar quando os trechos forem insuficientes.
+- Anexos de imagem entram somente como metadados e informam que OCR/análise visual não estão disponíveis.
+- O contexto não é gravado nas mensagens SQLite. O núcleo recebe a pergunta original e o conteúdo de anexo fica somente na sessão temporária reconstruída pela Plataforma.
+- A sessão global original do núcleo é restaurada ao final da chamada.
+- O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
+
+Testes adicionados em `backend/test_chat_stream.py` verificam isolamento entre conversas, presença do aviso de conteúdo não confiável, ausência de persistência do conteúdo extraído e limites do contexto. O teste de integração do núcleo foi ampliado para verificar que `registrar_memoria` recebe somente a mensagem original do usuário, mesmo com conteúdo de anexo presente na sessão.
+
+A execução CI `44198960420` passou nos cinco jobs antes da inclusão da asserção adicional sobre a chamada de memória. O commit `beb17c4b521a7bf21ba5250260c9c6b2c505532e` e os ajustes documentais/workflow posteriores aguardam uma nova execução CI. Nenhuma inferência real ou gravação de memória pessoal foi executada.
+
+
+## 21. Validação do contexto temporário de anexos, 2026-11-17
+
+A execução GitHub Actions `44199209648`, no commit de código/testes `beb17c4b521a7bf21ba5250260c9c6b2c505532e`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso, incluindo teste de streaming com anexos e integração do núcleo.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes de contexto verificam que somente anexos da conversa atual entram no contexto, que o material é marcado como dado não confiável, que o texto extraído não é persistido nas mensagens e que imagens informam a ausência de OCR/análise visual. O teste de integração do núcleo verifica que `registrar_memoria` recebe somente a pergunta original do usuário, mesmo quando a sessão temporária contém texto de anexo.
+
+A execução não inicia inferência real. O conteúdo de anexo permanece em contexto temporário, limitado a 2.600 caracteres agregados e 650 por arquivo. O núcleo original não foi alterado. PR #14 permanece aberta, em rascunho e sem merge.
+
+
+## 22. Separação de autoridade do conteúdo dos anexos, 2026-11-17
+
+A revisão de segurança separou a instrução de proteção do conteúdo documental em mensagens distintas do contexto:
+- Mensagem `system`: contém as regras para tratar anexos como dados não confiáveis, ignorar comandos embutidos e citar o nome do arquivo.
+- Mensagem `user`: contém o JSON com os trechos extraídos e metadados dos anexos.
+
+O texto enviado pelo usuário dentro de arquivos deixa de ocupar o papel `system`. O teste de API verifica a separação dos papéis e a ausência de anexos de outra conversa. A nova execução CI do head atualizado ainda precisa confirmar os ajustes.
+
+
+## 23. CI da separação de autoridade dos anexos, 2026-11-17
+
+A execução GitHub Actions `44199605658`, no commit de código/testes `546844df5e4741e989f7775ed79465d5e8badd9d`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A revisão confirmou que as instruções de segurança permanecem em uma mensagem `system` separada e o JSON com o conteúdo dos anexos entra como mensagem `user`. Os testes verificam essa separação, o isolamento entre conversas e a não persistência do conteúdo documental na tabela de mensagens. O teste de integração do núcleo também verifica que a rotina de memória recebe somente a pergunta original.
+
+A atualização posterior deste relatório é documental. Nenhuma inferência real, instalação local ou gravação de memória pessoal foi executada. PR #14 permanece aberta, em rascunho e sem merge.
