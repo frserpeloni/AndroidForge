@@ -161,7 +161,7 @@ class AttachmentApiTests(unittest.TestCase):
         self.assertTrue(pdf_response.json()["has_extracted_text"])
 
     def test_corrupt_docx_and_encrypted_pdf_are_rejected(self):
-        corrupt = self.upload("quebrado.docx", b"PK\\x03\\x04nao-e-zip")
+        corrupt = self.upload("quebrado.docx", bytes([0x50, 0x4B, 0x03, 0x04]) + b"nao-e-zip")
         self.assertEqual(corrupt.status_code, 422)
 
         pdf_buffer = io.BytesIO()
