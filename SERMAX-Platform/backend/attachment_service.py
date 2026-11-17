@@ -228,18 +228,18 @@ async def upload_attachment(conversation_id: str, file: UploadFile = File(...)):
     temporary = _stored_path(storage_name + ".tmp")
 
     with UPLOAD_LOCK:
-        with server.database() as conn:
-            if conn.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
-                raise HTTPException(status_code=404, detail="Conversa não encontrada.")
-            totals = conn.execute(
-                "SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes),0) AS total FROM attachments WHERE conversation_id=?",
-                (conversation_id,),
-            ).fetchone()
-            if totals["count"] >= MAX_FILES_PER_CONVERSATION:
-                raise HTTPException(status_code=413, detail="A conversa já atingiu o limite de 5 anexos.")
-            if totals["total"] + len(data) > MAX_TOTAL_BYTES_PER_CONVERSATION:
-                raise HTTPException(status_code=413, detail="A conversa excederia o limite total de 25 MiB.")
-            try:
+        try:
+            with server.database() as conn:
+                if conn.execute("SELECT 1 FROM conversations WHERE id=?", (conversation_id,)).fetchone() is None:
+                    raise HTTPException(status_code=404, detail="Conversa não encontrada.")
+                totals = conn.execute(
+                    "SELECT COUNT(*) AS count, COALESCE(SUM(size_bytes),0) AS total FROM attachments WHERE conversation_id=?",
+                    (conversation_id,),
+                ).fetchone()
+                if totals["count"] >= MAX_FILES_PER_CONVERSATION:
+                    raise HTTPException(status_code=413, detail="A conversa já atingiu o limite de 5 anexos.")
+                if totals["total"] + len(data) > MAX_TOTAL_BYTES_PER_CONVERSATION:
+                    raise HTTPException(status_code=413, detail="A conversa excederia o limite total de 25 MiB.")
                 with temporary.open("xb") as handle:
                     handle.write(data)
                     handle.flush()
@@ -251,10 +251,10 @@ async def upload_attachment(conversation_id: str, file: UploadFile = File(...)):
                      hashlib.sha256(data).hexdigest(), storage_name, extracted, server.utc_now()),
                 )
                 row = conn.execute("SELECT * FROM attachments WHERE id=?", (attachment_id,)).fetchone()
-            except Exception:
-                temporary.unlink(missing_ok=True)
-                target.unlink(missing_ok=True)
-                raise
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            target.unlink(missing_ok=True)
+            raise
     return _metadata(row)
 
 
@@ -303,8 +303,12 @@ def delete_attachment(conversation_id: str, attachment_id: str):
         os.replace(path, tombstone)
         with server.database() as conn:
             conn.execute("DELETE FROM attachments WHERE id=? AND conversation_id=?", (attachment_id, conversation_id))
-        tombstone.unlink(missing_ok=True)
     except Exception as exc:
         if tombstone.exists() and not path.exists():
             os.replace(tombstone, path)
         raise HTTPException(status_code=503, detail="Falha ao excluir o anexo com segurança.") from exc
+    try:
+        tombstone.unlink(missing_ok=True)
+    except OSError:
+        # O registro já foi removido. Um tombstone residual é inerte e pode ser limpo na manutenção.
+        pass
