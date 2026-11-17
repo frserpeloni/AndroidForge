@@ -34,7 +34,7 @@ No commit de codigo `cadcd1fc3fc6e7c7798f2f851759a2dc576e2e7f`:
 | Contexto de conversa | Sessao temporaria reconstruida e sessao global restaurada | Validacao ainda usa FakeCore |
 | API FastAPI | Implementada, loopback, verificacao de Host, Origin e IP | Sem autenticacao local por token; nao expor em rede |
 | Tela Tarefas | Placeholder | Sem fila persistente ou execucao |
-| Tela Memoria | Placeholder protegido | Sem consulta controlada da memoria |
+| Tela Memória | Painel somente leitura implementado na branch de prontidão | Aguarda validação CI e homologação local do caminho real de memória |
 | Seletor de modelo | Opcoes visiveis na interface | Alteracao nao altera o roteamento; mostra somente aviso |
 | Anexos | Botao informativo | Nenhum upload ou leitura implementado |
 | Launcher | Script Python de desenvolvimento | Nao integrado ao SERMAX.exe |
@@ -53,7 +53,7 @@ A memoria persistente geral do SERMAX continua compartilhada e segue as regras d
 ### 4.2 Interface
 O seletor apresenta “Automatico”, “Ollama local” e “OpenJarvis”, mas o evento de mudanca informa que o roteamento permanece automatico. Nenhum valor e enviado a API. A interface sugere uma selecao manual que ainda nao existe.
 
-As telas Tarefas e Memoria exibem estados de espera. Nao ha operacoes funcionais ligadas a elas.
+A tela Tarefas possui cadastro e acompanhamento persistente. A tela Memória consulta somente a lista já carregada no núcleo, sem importar o núcleo, abrir arquivos ou gravar dados ao entrar no painel.
 
 ### 4.3 Inicializacao e dependencias
 `backend/run_local.bat` executa `pip install -r requirements.txt` em toda inicializacao. As dependencias estao declaradas por faixas de versao, sem lockfile. Isso permite alteracao de versoes resolvidas entre inicializacoes e exige acesso ao indice de pacotes.
@@ -75,7 +75,7 @@ Os documentos de auditoria existentes registram risco TOCTOU, ausencia de assina
 ### Fase B, funcionalidades de trabalho
 1. Implementar tarefas persistentes com estados, datas, prioridade e historico.
 2. Ligar a tela Tarefas a API e SQLite.
-3. Projetar consulta de memoria com leitura controlada, sem editar ou apagar arquivos de memoria.
+3. Implementar consulta de memória com leitura controlada, sem editar ou apagar arquivos de memória. Implementação concluída na branch de prontidão, aguardando CI.
 4. Tornar o estado do nucleo e dos motores explicito na interface.
 
 ### Fase C, conversa
@@ -122,5 +122,22 @@ Após a auditoria inicial, a branch recebeu a primeira entrega funcional da Fase
 - Teste de interface adicionado para criação e atualização do estado.
 
 A execução CI `44131386495` concluiu com sucesso. Foram aprovados os jobs `backend-tests (3.12)`, `backend-tests (3.14)`, `frontend-check`, `frontend-interaction` e `windows-validation`. Nos ambientes Python 3.12, Python 3.14 e Windows passaram os testes da API de tarefas, importação do núcleo real sem executar modelo, restauração da sessão original inclusive quando nula, testes da API, instalador, gerador de pacotes e launcher. Os testes de interação da interface passaram em Linux e Windows.\n\nA execução `44131614436`, disparada após atualização documental, está em andamento para validar o HEAD documental mais recente. A execução `44131386495` valida o código funcional da entrega de tarefas. Nenhuma dessas execuções comprova conversa com Ollama/OpenJarvis real, navegador real, instalação no computador do usuário ou atualização segura.
+
+
+## 8. Atualização de execução, painel Memória, 2026-11-17
+
+A segunda entrega funcional da Fase B foi implementada na branch de prontidão:
+
+- Endpoint `GET /api/memory` consulta somente a lista `historico` já carregada em `CORE_MODULE`.
+- O endpoint não chama `load_core()`, não abre `memoria_sermax.json`, não chama `salvar_memoria()` e não altera a lista.
+- Se o núcleo ainda não estiver carregado na sessão da API, a rota retorna `core_not_loaded` e não tenta carregar arquivo algum.
+- A consulta aceita filtro textual e limite entre 1 e 100 registros. Retorna somente itens de usuário.
+- A interface exibe aviso de somente leitura, busca, quantidade e registros. O conteúdo é inserido por `textContent`, sem interpretação como HTML.
+- Não existem controles de inclusão, edição ou exclusão.
+- Foram adicionados testes da API para estado sem núcleo carregado, leitura de registros, filtro, limite e validação.
+- Foi adicionado teste de interface para estado inicial, consulta, busca e indicação de somente leitura.
+- O CI foi atualizado para executar os novos testes em Python 3.12, Python 3.14 e Windows.
+
+A validação automatizada desta entrega está pendente. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
