@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - sermax-windows-integration-20261029
     paths:
       - "SERMAX-Windows/**"
       - ".github/workflows/sermax-windows-ci.yml"
