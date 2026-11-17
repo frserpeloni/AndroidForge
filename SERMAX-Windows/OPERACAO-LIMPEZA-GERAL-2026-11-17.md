@@ -52,3 +52,40 @@ Dois arquivos foram movidos para preservação em `garbage/`: o módulo antigo d
 ## Entrega
 
 Esta documentação é registro parcial da operação. Não representa conclusão da auditoria geral, pacote instalável ou release.
+
+## Atualização final de validação, 17/11/2026
+
+### Correção do comando de planejamento
+- `sermax_core.py` agora extrai o objetivo do texto original, em vez da versão normalizada usada para reconhecer o comando.
+- Preserva capitalização, acentos e espaços internos do objetivo.
+- Testes adicionados em `tests/test_sermax_core.py` para `/PLANO` com espaços iniciais e para o alias `/planejar`.
+
+### Validação Windows, commit de código `1a4bee6ffb8aeb5ed415783297e4040350b4bc83`
+- GitHub Actions run `44107822948`: conclusão `success`.
+- Compilação de fontes: sucesso.
+- Suíte SERMAX/Pestinha/OpenJarvis: sucesso.
+- Build `SERMAX.exe` com Python 3.14: sucesso.
+- Smoke test do executável congelado e Terminal original: sucesso.
+- Publicação do artefato técnico: sucesso.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/44107822948
+
+Artefato:
+- Nome: `SERMAX-Windows-executable`.
+- ID: `14338958338`.
+- Tamanho: 22.836.007 bytes.
+- SHA-256: `7c2e7ca694660b96261553e0e9dfb88f2fc8e0c4a66964908347daba43ccc9a3`.
+- Expira em 01/12/2026.
+- É executável experimental de CI. Não é ZIP instalável, instalador ou release. Não instalar sobre `C:\\SERMAX`.
+
+### Validação da Plataforma
+- Run `44107837810`: sucesso em frontend, testes de interação, backend Python 3.12/3.14 e validação Windows.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/44107837810
+
+### Resultado e limites
+- O cache de voz foi validado pela suíte automatizada; não foi executado benchmark de tempo no computador do usuário. O ganho verificado é a eliminação de buscas recursivas repetidas enquanto os caminhos encontrados continuam válidos.
+- O teste de planejamento confirma preservação do texto original.
+- Nenhum teste físico foi executado em `C:\\SERMAX`.
+- O instalador da Plataforma não foi liberado. Os testes TOCTOU conhecidos continuam marcados como expectedFailure.
+- O atualizador Windows transacional não foi concluído nem homologado.
+- Nenhum pacote ZIP instalável foi produzido.
+- A PR #6 permanece aberta, em rascunho e sem merge. A branch `main` não foi alterada.
