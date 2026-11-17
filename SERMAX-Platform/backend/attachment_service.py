@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from docx import Document
@@ -209,9 +209,13 @@ def _metadata(row: Any) -> dict[str, Any]:
 
 
 @router.post("/api/conversations/{conversation_id}/attachments", status_code=201)
-async def upload_attachment(conversation_id: str, file: UploadFile = File(...)):
+async def upload_attachment(conversation_id: str, request: Request):
     server = _server()
-    display_name = _safe_display_name(file.filename)
+    async with request.form(max_files=1, max_fields=0) as form:
+        file = form.get("file")
+        if not isinstance(file, UploadFile):
+            raise HTTPException(status_code=422, detail="Envie um único arquivo no campo file.")
+        display_name = _safe_display_name(file.filename)
     if Path(display_name).suffix.casefold() not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=415, detail="Extensão não permitida.")
     data = await file.read(MAX_FILE_BYTES + 1)
