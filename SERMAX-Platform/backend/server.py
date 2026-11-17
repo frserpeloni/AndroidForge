@@ -157,6 +157,9 @@ def initialize_database() -> None:
         if "status" not in message_columns:
             conn.execute("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'")
 
+    from attachment_service import initialize_attachment_schema
+    initialize_attachment_schema()
+
 
 def load_core():
     global CORE_MODULE, CORE_ERROR
@@ -188,8 +191,6 @@ def project_or_404(conn: sqlite3.Connection, project_id: str, include_archived: 
 @app.on_event("startup")
 def startup() -> None:
     initialize_database()
-    from attachment_service import initialize_attachment_schema
-    initialize_attachment_schema()
 
 
 @app.middleware("http")
