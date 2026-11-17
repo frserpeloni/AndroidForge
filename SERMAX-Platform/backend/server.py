@@ -22,6 +22,8 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from attachment_service import router as attachments_router
+
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
 DATA_DIR = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser().resolve()
@@ -717,6 +719,9 @@ def chat_stream(payload: ChatInput):
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+app.include_router(attachments_router)
 
 
 if __name__ == "__main__":
