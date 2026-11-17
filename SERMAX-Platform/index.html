@@ -75,8 +75,40 @@
         <div class="project-grid" id="projectList"><div class="empty-panel"><p>Carregando projetos...</p></div></div>
       </section>
       <section class="view placeholder-view" id="tasksView">
-        <div class="page-heading"><div><p class="eyebrow">CENTRAL DE EXECUÇÃO</p><h1>Tarefas</h1><p>Acompanhe atividades em fila, execução e conclusão.</p></div></div>
-        <div class="empty-panel"><div class="empty-icon">◷</div><h2>Gerenciador ainda não conectado</h2><p>A fila persistente será integrada ao serviço MAX.</p></div>
+        <div class="page-heading"><div><p class="eyebrow">CENTRAL DE EXECUÇÃO</p><h1>Tarefas</h1><p>Registre atividades, defina prioridade e acompanhe o estado.</p></div></div>
+        <form class="task-form" id="taskForm">
+          <label class="task-field">Tarefa
+            <input id="taskTitle" name="title" maxlength="160" required placeholder="Ex.: Validar integração do núcleo">
+          </label>
+          <label class="task-field">Descrição
+            <textarea id="taskDescription" name="description" rows="2" maxlength="2000" placeholder="Detalhes e critérios de conclusão"></textarea>
+          </label>
+          <div class="task-form-row">
+            <label class="task-field">Prioridade
+              <select id="taskPriority" name="priority">
+                <option value="normal">Normal</option>
+                <option value="low">Baixa</option>
+                <option value="high">Alta</option>
+                <option value="urgent">Urgente</option>
+              </select>
+            </label>
+            <label class="task-field">Prazo
+              <input id="taskDueAt" name="due_at" type="datetime-local">
+            </label>
+            <button class="primary-button" type="submit">＋ Adicionar tarefa</button>
+          </div>
+        </form>
+        <div class="task-toolbar">
+          <label for="taskStatusFilter">Exibir</label>
+          <select id="taskStatusFilter">
+            <option value="">Todas</option>
+            <option value="pending">Pendentes</option>
+            <option value="in_progress">Em andamento</option>
+            <option value="completed">Concluídas</option>
+            <option value="cancelled">Canceladas</option>
+          </select>
+        </div>
+        <div class="task-list" id="taskList" aria-live="polite"><p class="task-empty">Carregando tarefas...</p></div>
       </section>
       <section class="view placeholder-view" id="memoryView">
         <div class="page-heading"><div><p class="eyebrow">CONTEXTO DO MAX</p><h1>Memória</h1><p>Memória geral e memória específica de cada projeto.</p></div></div>
