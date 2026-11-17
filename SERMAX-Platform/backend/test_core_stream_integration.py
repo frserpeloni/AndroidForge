@@ -43,6 +43,7 @@ class CoreStreamingIntegrationTests(unittest.TestCase):
                     with (
                         patch.object(core, "responder_comando_local", return_value=None),
                         patch.object(core, "responder_calculo_local", return_value=None),
+                        patch.object(core.ferramenta_windows, "responder_consulta", return_value=None),
                         patch.object(core, "registrar_memoria"),
                         patch.object(core, "montar_contexto", return_value=[
                             {"role": "user", "content": "Teste"}
