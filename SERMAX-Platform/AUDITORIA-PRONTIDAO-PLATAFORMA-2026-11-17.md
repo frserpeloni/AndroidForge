@@ -319,3 +319,17 @@ A PR #14 adiciona integração controlada dos anexos textuais com o contexto tem
 Testes adicionados em `backend/test_chat_stream.py` verificam isolamento entre conversas, presença do aviso de conteúdo não confiável, ausência de persistência do conteúdo extraído e limites do contexto. O teste de integração do núcleo foi ampliado para verificar que `registrar_memoria` recebe somente a mensagem original do usuário, mesmo com conteúdo de anexo presente na sessão.
 
 A execução CI `44198960420` passou nos cinco jobs antes da inclusão da asserção adicional sobre a chamada de memória. O commit `beb17c4b521a7bf21ba5250260c9c6b2c505532e` e os ajustes documentais/workflow posteriores aguardam uma nova execução CI. Nenhuma inferência real ou gravação de memória pessoal foi executada.
+
+
+## 21. Validação do contexto temporário de anexos, 2026-11-17
+
+A execução GitHub Actions `44199209648`, no commit de código/testes `beb17c4b521a7bf21ba5250260c9c6b2c505532e`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso, incluindo teste de streaming com anexos e integração do núcleo.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes de contexto verificam que somente anexos da conversa atual entram no contexto, que o material é marcado como dado não confiável, que o texto extraído não é persistido nas mensagens e que imagens informam a ausência de OCR/análise visual. O teste de integração do núcleo verifica que `registrar_memoria` recebe somente a pergunta original do usuário, mesmo quando a sessão temporária contém texto de anexo.
+
+A execução não inicia inferência real. O conteúdo de anexo permanece em contexto temporário, limitado a 2.600 caracteres agregados e 650 por arquivo. O núcleo original não foi alterado. PR #14 permanece aberta, em rascunho e sem merge.
