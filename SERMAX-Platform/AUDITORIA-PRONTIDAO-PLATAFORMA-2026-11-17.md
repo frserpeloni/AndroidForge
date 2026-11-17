@@ -175,3 +175,16 @@ Após o commit validado, foi feita uma alteração visual pequena no commit `f4a
 A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\\SERMAX` foi acessado ou alterado.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
+
+
+## 11. Streaming de conversa, 2026-11-17
+
+Foi adicionada a rota `POST /api/chat/stream`, baseada em Server-Sent Events. A rota reutiliza o ciclo existente de conversa, o isolamento temporário da sessão, o bloqueio global `CHAT_LOCK` e a persistência SQLite. A rota síncrona `POST /api/chat` permanece disponível para compatibilidade.
+
+A fila de eventos é limitada a 16 snapshots. Quando há acúmulo, eventos intermediários antigos são substituídos por snapshots mais recentes, que contêm o texto acumulado. Isso limita o consumo de memória sem perder o estado final da resposta. Uma reserva impede duas solicitações de streaming simultâneas. Se o navegador desconectar, o processamento continua no servidor e a reserva é liberada ao término. Não há cancelamento de inferência.
+
+O núcleo atual chama o callback com snapshots acumulados durante a geração do Ollama. O adaptador OpenJarvis chama o callback uma única vez, ao entregar a resposta completa. Portanto, o streaming gradual está disponível para a rota Ollama; OpenJarvis ainda responde em bloco.
+
+Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes, e a execução CI da versão corrigida ainda está pendente. Não declarar esta etapa validada até a nova execução concluir.
+
+Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
