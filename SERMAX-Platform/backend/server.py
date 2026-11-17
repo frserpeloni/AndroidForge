@@ -338,6 +338,7 @@ def chat(payload: ChatInput):
             user_message_id = cursor.lastrowid
         core = None
         original_session = None
+        session_captured = False
         try:
             core = load_core()
             # A sessão global do núcleo é substituída temporariamente por um
@@ -346,6 +347,7 @@ def chat(payload: ChatInput):
             if not hasattr(core, "sessao"):
                 raise RuntimeError("O núcleo não oferece a sessão esperada para isolamento.")
             original_session = core.sessao
+            session_captured = True
             with database() as conn:
                 prior = conn.execute(
                     "SELECT role,content FROM messages WHERE conversation_id=? AND id<? "
@@ -378,7 +380,7 @@ def chat(payload: ChatInput):
                 detail=f"Núcleo indisponível ou falha na execução: {type(exc).__name__}: {str(exc)[:300]}",
             ) from exc
         finally:
-            if core is not None and original_session is not None:
+            if core is not None and session_captured:
                 core.sessao = original_session
         finished = utc_now()
         with database() as conn:
