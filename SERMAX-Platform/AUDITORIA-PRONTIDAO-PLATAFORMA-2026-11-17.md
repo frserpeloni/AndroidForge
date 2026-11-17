@@ -260,3 +260,17 @@ Limitações deliberadas:
 - Não houve alteração em memória pessoal, núcleo original, Terminal ou backups.
 
 A primeira execução CI `44197305925` encontrou falha nos testes porque o setup isolado não criava a tabela `attachments`. A falha foi reproduzida pelo log e corrigida no teste para inicializar explicitamente o schema. A execução de correção `44197404930` está em andamento; a etapa de testes de anexos já passou nos jobs Linux Python 3.12 e 3.14, conforme os jobs avançaram para as verificações finais. A validação Windows ainda precisa concluir antes de registrar aprovação geral.
+
+
+## 17. Resultado da primeira validação dos anexos, 2026-11-17
+
+A execução CI `44197404930` concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso, incluindo `test_attachments_api.py`.
+- `backend-tests (3.14)`: sucesso, incluindo `test_attachments_api.py`.
+- `windows-validation`: sucesso, incluindo testes da API de anexos em Windows e interação da interface.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A primeira execução `44197305925` falhou porque os testes não inicializavam o schema de anexos no banco isolado. O teste foi corrigido para criar o schema explicitamente. A execução `44197404930` passou depois dessa correção.
+
+Após essa execução, foi corrigida a renderização da interface para preservar a lista de anexos já salvos ao atualizar a fila de arquivos pendentes. Esse ajuste entrou no commit `6fd8b4a9162f658158d1b5eb5d1af72a19434063`, posterior à execução acima. Portanto, a execução `44197404930` não valida esse último ajuste de interface. Uma nova execução CI é necessária antes de declarar a revisão final aprovada.
