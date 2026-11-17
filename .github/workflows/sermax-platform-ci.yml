@@ -16,6 +16,7 @@ on:
       - sermax-windows-integration-20261029
       - sermax-cleanup-20261117
       - sermax-platform-streaming-20261117-r2
+      - sermax-platform-attachments-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
