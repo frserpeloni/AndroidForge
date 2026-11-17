@@ -6,6 +6,7 @@
   let conversationId = null;
   let activeProjectId = null;
   let sending = false;
+  let pendingFiles = [];
 
   const toast = message => {
     $("toast").textContent = message;
@@ -55,7 +56,8 @@
     if (sending) return;
     $("conversation").replaceChildren();
     $("conversation").classList.remove("has-messages");
-    $("welcome").style.display = "";
+    $("attachmentList").replaceChildren();
+    pendingFiles = [];
     $("messageInput").value = "";
     conversationId = null;
     updateProjectContext();
@@ -130,6 +132,7 @@
       updateProjectContext();
       switchView("chat");
       await refreshRecent();
+      await refreshAttachments();
     } catch (error) {
       toast("Não foi possível abrir a conversa. " + error.message);
     }
@@ -207,6 +210,7 @@
         $("conversation").scrollTop = $("conversation").scrollHeight;
       });
       conversationId = result.conversation_id;
+      await uploadPendingFiles();
     } catch (error) {
       appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message, "error");
     } finally {
@@ -214,6 +218,7 @@
       $("sendButton").disabled = false;
       $("sendButton").textContent = "↑";
       await refreshRecent();
+      if (conversationId) await refreshAttachments();
     }
   }
   $("sendButton").addEventListener("click", () => submitMessage($("messageInput").value));
@@ -231,7 +236,98 @@
     switchView("chat");
     submitMessage(button.dataset.prompt);
   }));
-  $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
+
+  function renderPendingFiles() {
+    const list = $("attachmentList");
+    list.querySelectorAll(".attachment-chip").forEach(item => item.remove());
+    pendingFiles.forEach((file, index) => {
+      const item = document.createElement("div");
+      item.className = "attachment-chip";
+      const label = document.createElement("span");
+      label.textContent = file.name + " (" + Math.ceil(file.size / 1024) + " KB)";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remover";
+      remove.addEventListener("click", () => {
+        pendingFiles.splice(index, 1);
+        renderPendingFiles();
+      });
+      item.append(label, remove);
+      list.appendChild(item);
+    });
+  }
+
+  async function refreshAttachments() {
+    const list = $("attachmentList");
+    if (!conversationId) return;
+    try {
+      const response = await fetch("/api/conversations/" + encodeURIComponent(conversationId) + "/attachments");
+      const items = await response.json();
+      if (!response.ok) throw new Error(items.detail || "Falha ao listar anexos.");
+      list.replaceChildren();
+      items.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "attachment-row";
+        const name = document.createElement("span");
+        name.textContent = item.name + " (" + Math.ceil(item.size_bytes / 1024) + " KB)";
+        const download = document.createElement("a");
+        download.href = "/api/conversations/" + encodeURIComponent(conversationId) + "/attachments/" + encodeURIComponent(item.id);
+        download.textContent = "Baixar";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Excluir";
+        remove.addEventListener("click", async () => {
+          if (!window.confirm("Excluir o anexo " + item.name + "?")) return;
+          const result = await fetch(download.href, {method:"DELETE"});
+          if (!result.ok) return toast("Não foi possível excluir o anexo.");
+          await refreshAttachments();
+        });
+        row.append(name, download, remove);
+        list.appendChild(row);
+      });
+      renderPendingFiles();
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  async function uploadPendingFiles() {
+    if (!conversationId || !pendingFiles.length) return;
+    const remaining = [];
+    for (const file of pendingFiles) {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      try {
+        const response = await fetch("/api/conversations/" + encodeURIComponent(conversationId) + "/attachments", {
+          method:"POST", body:form
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao enviar " + file.name);
+        toast("Anexo salvo: " + data.name);
+      } catch (error) {
+        remaining.push(file);
+        toast(error.message);
+      }
+    }
+    pendingFiles = remaining;
+    await refreshAttachments();
+  }
+
+  $("attachButton").addEventListener("click", () => $("attachmentInput").click());
+  $("attachmentInput").addEventListener("change", event => {
+    const selected = [...event.currentTarget.files];
+    const allowed = /\.(pdf|docx|txt|jpe?g|png)$/i;
+    selected.forEach(file => {
+      if (!allowed.test(file.name)) toast("Formato não permitido: " + file.name);
+      else if (file.size > 10 * 1024 * 1024) toast("Arquivo acima de 10 MiB: " + file.name);
+      else if (pendingFiles.length < 5) pendingFiles.push(file);
+      else toast("Limite de 5 anexos por conversa.");
+    });
+    event.currentTarget.value = "";
+    renderPendingFiles();
+    if (conversationId) uploadPendingFiles();
+  });
+
   $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático."));
 
   async function showProjectDetails(project) {
@@ -270,6 +366,8 @@
       activeProjectId = project.id;
       activeProjectName = project.name;
       conversationId = null;
+      $("attachmentList").replaceChildren();
+      pendingFiles = [];
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
       $("welcome").style.display = "";
