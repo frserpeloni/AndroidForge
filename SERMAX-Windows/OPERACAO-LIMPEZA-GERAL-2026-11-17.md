@@ -25,6 +25,7 @@ Não foram alterados `main`, `C:\\SERMAX`, memórias pessoais, histórico local 
 ## Achado confirmado
 
 1. `SERMAX-Windows/sermax_tarefas.py` importava `re` sem qualquer referência no restante do módulo. O import foi retirado em alteração localizada. Nenhuma função ou contrato foi alterado.
+2. `SERMAX-Windows/SERMAX_terminal/sermax_voz.py` repetia buscas recursivas por `whisper-cli.exe` e `ggml-tiny.bin` em chamadas sucessivas. Foi adicionado cache positivo por caminho, com revalidação `is_file()`, prioridade mantida para os caminhos padrão e nova busca quando o arquivo em cache desaparece. Foram adicionados três testes para reutilização, prioridade de instalação nova e invalidação do cache.
 
 ## Candidatos que exigem investigação adicional
 
@@ -41,7 +42,11 @@ Nenhum arquivo foi movido nesta etapa. A pasta `garbage/` foi criada com regras 
 
 ## Validação
 
-Nenhum teste é declarado aprovado por esta auditoria inicial. Resultados de CI serão registrados com commit, run ID, job, contagem e artefatos quando disponíveis.
+- PR #6, execução inicial de Plataforma run `44106817817`: sucesso nos cinco jobs, incluindo backend Python 3.12/3.14, frontend, testes de interação e validação Windows. Esse run antecede as otimizações recentes.
+- PR #6, Plataforma run `44107016190`: jobs Linux de frontend, backend Python 3.12 e 3.14 concluídos com sucesso; validação Windows ainda em execução no último registro.
+- Windows run `44107030850`: validação do commit com cache e novo teste ainda em execução no último registro.
+- Nenhum resultado de teste local ou físico em `C:\\SERMAX` é alegado.
+- A quantidade final de testes e o resultado dos novos testes de voz serão registrados após conclusão do Windows CI.
 
 ## Entrega
 
