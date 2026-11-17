@@ -11,7 +11,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, UploadFile
+from fastapi import APIRouter, HTTPException, Request
+from starlette.datastructures import UploadFile
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from docx import Document
