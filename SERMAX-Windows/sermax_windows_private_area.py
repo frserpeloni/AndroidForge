@@ -151,12 +151,14 @@ def create_private_directory_component(parent_handle, component: str):
 
 
 
-def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) -> dict:
-    """Inspeciona _update preexistente e aborta sem reparar qualquer divergência.
+def validate_existing_private_area(
+    parent_handle, *, expected_owner_sid: str | None = None
+) -> dict:
+    """Valida _update preexistente por handle e Authz, sem reparar divergências.
 
-    A identidade do filho é obtida em enumeração estável do handle pai e
-    confirmada novamente na abertura relativa. O mesmo handle filho permanece
-    aberto durante inspeção ACL, metadados e enumeração do conteúdo.
+    O SID esperado é derivado do token real do processo. Se o chamador ainda
+    informar expected_owner_sid por compatibilidade, ele precisa coincidir.
+    O mesmo handle do diretório permanece aberto durante inspeção e Authz.
     """
     if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
         raise PrivateAreaError("A validação exige Windows x64.")
@@ -168,9 +170,18 @@ def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) ->
     from sermax_windows_acl_inspection import inspect_directory_acl
     from sermax_windows_private_area_acl_policy import (
         validate_private_area_acl,
+        FILE_ALL_ACCESS,
     )
+    from sermax_windows_effective_access import (
+        _cleanup_resource,
+        evaluate_access_for_token,
+        read_security_descriptor_binary,
+    )
+    import win32api
+    import win32security
 
     child_handle = None
+    token = None
     try:
         parent = query_handle_metadata(parent_handle)
         if (
@@ -201,15 +212,27 @@ def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) ->
         ):
             raise PrivateAreaError("_update não é diretório regular.")
 
+        token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+        )
+        token_user = win32security.GetTokenInformation(
+            token, win32security.TokenUser
+        )[0]
+        actual_owner_sid = win32security.ConvertSidToStringSid(token_user)
+        if expected_owner_sid is not None and expected_owner_sid != actual_owner_sid:
+            raise PrivateAreaError(
+                "SID informado pelo chamador diverge do SID do token real."
+            )
+
         inspection = inspect_directory_acl(child_handle)
         contents = [
             item
             for item in enumerate_stable_directory_handle(child_handle)
             if item.name not in {".", ".."}
         ]
-        return validate_private_area_acl(
+        policy = validate_private_area_acl(
             inspection,
-            expected_owner_sid=expected_owner_sid,
+            expected_owner_sid=actual_owner_sid,
             expected_volume_serial=parent["volume_serial_number"],
             expected_file_id_128=entry.file_id,
             directory_identity={
@@ -218,6 +241,31 @@ def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) ->
             },
             directory_entries=contents,
         )
+
+        descriptor = read_security_descriptor_binary(child_handle)
+        access = evaluate_access_for_token(token, descriptor, FILE_ALL_ACCESS)
+        if (
+            access.get("api") != "AuthzAccessCheck"
+            or access.get("api_success") is not True
+            or access.get("granted") is not True
+            or access.get("desired_access") != FILE_ALL_ACCESS
+            or access.get("token_source") != "real_kernel_token"
+            or access.get("security_descriptor_source") != "GetSecurityInfo_same_handle"
+            or access.get("mutated") is not False
+            or access.get("performed_io") is not False
+        ):
+            raise PrivateAreaError(
+                "Authz não concedeu integralmente FILE_ALL_ACCESS ao token real."
+            )
+
+        report = dict(policy)
+        report.update({
+            "effective_access_evaluated": True,
+            "effective_access": access,
+            "owner_sid": actual_owner_sid,
+            "mutated": False,
+        })
+        return report
     except PrivateAreaError:
         raise
     except Exception as exc:
@@ -225,5 +273,11 @@ def validate_existing_private_area(parent_handle, *, expected_owner_sid: str) ->
             f"_update preexistente não passou na validação somente leitura: {exc}"
         ) from exc
     finally:
+        if token is not None:
+            _cleanup_resource(
+                "CloseHandle falhou ao liberar token de validação",
+                lambda handle: (win32api.CloseHandle(handle) is None),
+                token,
+            )
         if child_handle is not None:
             close_handle(child_handle)
