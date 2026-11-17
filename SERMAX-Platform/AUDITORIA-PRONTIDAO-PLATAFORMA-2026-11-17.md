@@ -216,3 +216,10 @@ Referências consultadas:
 - https://github.com/open-jarvis/OpenJarvis/blob/main/docs/user-guide/python-sdk.md
 
 A documentação pública consultada não comprova qual versão do pacote está instalada no ambiente local do usuário. Nenhuma inferência ou instalação foi executada.
+
+
+## 14. Teste de integração do callback do núcleo, 2026-11-17
+
+Foi adicionado `backend/test_core_stream_integration.py`. O teste importa o `sermax_core.py` real em diretório temporário, bloqueia a gravação da memória pessoal, simula falha do OpenJarvis e injeta eventos NDJSON de Ollama. Verifica que o núcleo emite snapshots acumulados (`"Olá "`, depois `"Olá MAX"`), retorna a resposta final, registra o fallback para Ollama e não cria `memoria_sermax.json` no diretório isolado.
+
+O teste não inicia inferência real nem depende de Ollama ou OpenJarvis instalados. Foi incluído nos jobs Python 3.12, Python 3.14 e Windows. A nova execução CI desta inclusão está pendente; não confundir com a aprovação anterior da execução `44191365375`, que antecede este teste adicional.
