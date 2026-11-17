@@ -285,6 +285,42 @@ class PrivateAreaWindowsIntegrationTests(unittest.TestCase):
 
 
 class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
+    def setUp(self):
+        super().setUp()
+        self.win32api = mock.MagicMock()
+        self.win32api.CloseHandle.return_value = None
+        self.win32api.GetCurrentProcess.return_value = 999
+        self.win32security = mock.MagicMock()
+        self.win32security.TOKEN_QUERY = 0x0008
+        self.win32security.TokenUser = 1
+        self.win32security.OpenProcessToken.return_value = 777
+        self.win32security.GetTokenInformation.return_value = ("token-user",)
+        self.win32security.ConvertSidToStringSid.return_value = "S-1-5-21-100"
+        modules = mock.patch.dict("sys.modules", {
+            "win32api": self.win32api,
+            "win32security": self.win32security,
+        })
+        modules.start()
+        self.addCleanup(modules.stop)
+        import sermax_windows_effective_access as effective
+        self.descriptor_patch = mock.patch.object(
+            effective, "read_security_descriptor_binary", return_value=b"x" * 20
+        )
+        self.descriptor_patch.start()
+        self.addCleanup(self.descriptor_patch.stop)
+        self.authz_patch = mock.patch.object(
+            effective, "evaluate_access_for_token",
+            return_value={
+                "api": "AuthzAccessCheck", "api_success": True,
+                "desired_access": 0x001F01FF, "granted": True,
+                "token_source": "real_kernel_token",
+                "security_descriptor_source": "GetSecurityInfo_same_handle",
+                "mutated": False, "performed_io": False,
+            },
+        )
+        self.authz_patch.start()
+        self.addCleanup(self.authz_patch.stop)
+
     def test_validates_existing_area_by_verified_handle_and_closes_it(self):
         from types import SimpleNamespace
 
@@ -324,12 +360,12 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
                 parent_handle, expected_owner_sid="S-1-5-21-100"
             )
 
-        self.assertEqual(result, expected)
+        self.assertTrue(result["valid"])\n        self.assertTrue(result["effective_access_evaluated"])\n        self.assertEqual(result["owner_sid"], "S-1-5-21-100")\n        self.assertEqual(result["effective_access"]["api"], "AuthzAccessCheck")\n        self.assertFalse(result["mutated"])
         opener.assert_called_once_with(
             parent_handle, entry, desired_access=private_area.READ_CONTROL
         )
         inspector.assert_called_once_with(child_handle)
-        validator.assert_called_once()
+        validator.assert_called_once()\n        self.win32security.OpenProcessToken.assert_called_once()
         closer.assert_called_once_with(child_handle)
 
     def test_acl_divergence_aborts_and_closes_without_repair(self):
