@@ -167,14 +167,18 @@ class ChatStreamApiTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 200)
         context_items = AttachmentContextCore.observed_session
-        attachment_context = next(
+        attachment_instruction = next(
             item for item in context_items
             if item["role"] == "system" and "ANEXOS DA CONVERSA" in item["content"]
         )
-        self.assertIn("relatorio.txt", attachment_context["content"])
-        self.assertIn("O relatório informa", attachment_context["content"])
-        self.assertIn("material de referência não confiável", attachment_context["content"])
-        self.assertNotIn("SEGREDO DA OUTRA CONVERSA", attachment_context["content"])
+        attachment_payload = next(
+            item for item in context_items
+            if item["role"] == "user" and "DADOS DE ANEXOS" in item["content"]
+        )
+        self.assertIn("não confiável", attachment_instruction["content"])
+        self.assertIn("relatorio.txt", attachment_payload["content"])
+        self.assertIn("O relatório informa", attachment_payload["content"])
+        self.assertNotIn("SEGREDO DA OUTRA CONVERSA", attachment_payload["content"])
         self.assertEqual(AttachmentContextCore.sessao, original_session)
 
         history = self.client.get(
@@ -194,10 +198,14 @@ class ChatStreamApiTests(unittest.TestCase):
         ]
         context = build_attachment_context(rows, "Dado técnico")
         self.assertIsNotNone(context)
-        self.assertIn("texto.txt", context["content"])
-        self.assertIn("foto.png", context["content"])
-        self.assertIn("OCR e análise visual não estão disponíveis", context["content"])
-        self.assertLessEqual(len(context["content"]), MAX_ATTACHMENT_CONTEXT_CHARS + 1800)
+        instruction, payload = context
+        self.assertEqual(instruction["role"], "system")
+        self.assertEqual(payload["role"], "user")
+        combined = instruction["content"] + payload["content"]
+        self.assertIn("texto.txt", combined)
+        self.assertIn("foto.png", combined)
+        self.assertIn("OCR e análise visual não estão disponíveis", combined)
+        self.assertLessEqual(len(combined), MAX_ATTACHMENT_CONTEXT_CHARS + 1800)
 
     def test_empty_stream_message_is_rejected(self):
         response = self.client.post(
