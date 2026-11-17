@@ -21,6 +21,7 @@
         <button class="nav-item active" data-view="chat"><span>◫</span> Conversa</button>
         <button class="nav-item" data-view="projects"><span>▦</span> Projetos</button>
         <button class="nav-item" data-view="tasks"><span>◷</span> Tarefas</button>
+        <button class="nav-item" data-view="engines"><span>⌁</span> Motores</button>
         <button class="nav-item" data-view="memory"><span>◇</span> Memória</button>
       </nav>
       <div class="side-section">
@@ -109,6 +110,14 @@
           </select>
         </div>
         <div class="task-list" id="taskList" aria-live="polite"><p class="task-empty">Carregando tarefas...</p></div>
+      </section>
+      <section class="view placeholder-view" id="enginesView">
+        <div class="page-heading">
+          <div><p class="eyebrow">DIAGNÓSTICO LOCAL</p><h1>Motores</h1><p>Estado dos serviços locais usados pelo roteamento do MAX.</p></div>
+          <button class="secondary-button" id="refreshEngines" type="button">↻ Verificar agora</button>
+        </div>
+        <div class="engine-safety-note"><b>Verificação sem inferência</b><span>O diagnóstico consulta a API local do Ollama e verifica os arquivos do ambiente OpenJarvis. Não envia prompts, não inicia modelos e não altera configurações.</span></div>
+        <div class="engine-grid" id="engineStatus" aria-live="polite"><p class="engine-empty">Aguardando verificação...</p></div>
       </section>
       <section class="view placeholder-view" id="memoryView">
         <div class="page-heading">
