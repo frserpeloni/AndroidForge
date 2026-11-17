@@ -216,10 +216,9 @@ async def upload_attachment(conversation_id: str, request: Request):
         if not isinstance(file, UploadFile):
             raise HTTPException(status_code=422, detail="Envie um único arquivo no campo file.")
         display_name = _safe_display_name(file.filename)
-    if Path(display_name).suffix.casefold() not in ALLOWED_SUFFIXES:
-        raise HTTPException(status_code=415, detail="Extensão não permitida.")
-    data = await file.read(MAX_FILE_BYTES + 1)
-    await file.close()
+        if Path(display_name).suffix.casefold() not in ALLOWED_SUFFIXES:
+            raise HTTPException(status_code=415, detail="Extensão não permitida.")
+        data = await file.read(MAX_FILE_BYTES + 1)
     if not data:
         raise HTTPException(status_code=422, detail="Arquivo vazio.")
     if len(data) > MAX_FILE_BYTES:
