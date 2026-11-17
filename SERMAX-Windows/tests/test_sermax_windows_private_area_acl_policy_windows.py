@@ -10,6 +10,10 @@ from sermax_windows_acl_inspection import inspect_directory_acl
 from sermax_windows_directory_handle import enumerate_stable_directory_handle
 from sermax_windows_handle_io import close_handle, query_handle_metadata
 from sermax_windows_private_area_acl_policy import validate_private_area_acl
+from sermax_windows_effective_access import (
+    evaluate_access_for_token,
+    read_security_descriptor_binary,
+)
 
 @unittest.skipUnless(os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
                      "Exige Windows x64 nativo.")
@@ -149,6 +153,36 @@ class PrivateAreaAclPolicyWindowsIntegrationTests(unittest.TestCase):
                 self.assertFalse(result["effective_access_evaluated"])
                 self.assertFalse(result["mutated"])
                 self.assertEqual(len(result["trustee_sids"]), 3)
+
+                # A política aprovada deve corresponder aos direitos efetivos
+                # do token proprietário, avaliados sobre o mesmo handle.
+                descriptor_binary = read_security_descriptor_binary(handle)
+                token = win32security.OpenProcessToken(
+                    win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+                )
+                try:
+                    for name, mask in {
+                        "list_directory": 0x0001,
+                        "add_file": 0x0002,
+                        "add_subdirectory": 0x0004,
+                        "delete_child": 0x0040,
+                        "read_control": 0x00020000,
+                        "write_dac": 0x00040000,
+                        "write_owner": 0x00080000,
+                    }.items():
+                        access_result = evaluate_access_for_token(
+                            token, descriptor_binary, mask
+                        )
+                        self.assertTrue(access_result["api_success"], name)
+                        self.assertTrue(access_result["granted"], name)
+                        self.assertEqual(
+                            access_result["token_source"],
+                            "real_kernel_token",
+                        )
+                        self.assertFalse(access_result["mutated"])
+                        self.assertFalse(access_result["performed_io"])
+                finally:
+                    win32api.CloseHandle(token)
             finally:
                 self.assertTrue(close(handle))
 
