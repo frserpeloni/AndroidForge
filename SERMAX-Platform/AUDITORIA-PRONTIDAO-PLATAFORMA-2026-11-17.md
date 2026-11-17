@@ -1,6 +1,6 @@
 # Auditoria de prontidao da Plataforma SERMAX
 Data: 2026-11-17
-Branch de trabalho: `sermax-platform-readiness-20261117-r3`
+Branch de trabalho: `sermax-platform-readiness-20261117-r4`
 Base: `sermax-cleanup-20261117`
 Estado: auditoria inicial; desenvolvimento funcional autorizado por Fabiano em 2026-11-17.
 
