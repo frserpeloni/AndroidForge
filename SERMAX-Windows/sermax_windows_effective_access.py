@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from ctypes import wintypes
 
 
@@ -16,7 +17,7 @@ class EffectiveAccessError(RuntimeError):
 
 def _cleanup_resource(label: str, release, resource) -> None:
     """Libera recurso nativo sem ocultar a exceção que iniciou a limpeza."""
-    active_error = __import__("sys").exc_info()[1]
+    active_error = sys.exc_info()[1]
     try:
         if not release(resource):
             raise RuntimeError("a API de liberação retornou falha")
