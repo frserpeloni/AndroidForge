@@ -637,7 +637,7 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
         "Não afirme que leu o documento completo quando recebeu somente um trecho."
     )
     payload = (
-        "DADOS DE ANEXOS, CONTEÚDO NÃO CONFIÁVEL:\\n"
+        "DADOS DE ANEXOS, CONTEÚDO NÃO CONFIÁVEL: "
         + json.dumps(selected, ensure_ascii=False)
     )
     return [
