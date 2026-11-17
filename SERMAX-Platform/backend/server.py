@@ -380,11 +380,17 @@ def update_task(task_id: str, payload: TaskUpdate):
     if not changes:
         raise HTTPException(status_code=400, detail="Nenhum campo enviado para atualização.")
     if "title" in changes:
+        if not isinstance(changes["title"], str):
+            raise HTTPException(status_code=422, detail="O título da tarefa deve ser texto.")
         changes["title"] = changes["title"].strip()
         if not changes["title"]:
             raise HTTPException(status_code=422, detail="O título da tarefa não pode ficar vazio.")
     if "description" in changes:
+        if not isinstance(changes["description"], str):
+            raise HTTPException(status_code=422, detail="A descrição da tarefa deve ser texto.")
         changes["description"] = changes["description"].strip()
+    if "priority" in changes and changes["priority"] is None:
+        raise HTTPException(status_code=422, detail="Informe uma prioridade válida.")
     if "due_at" in changes:
         changes["due_at"] = normalize_due_at(changes["due_at"])
     changes["updated_at"] = utc_now()
