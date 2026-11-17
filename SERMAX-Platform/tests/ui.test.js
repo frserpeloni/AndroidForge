@@ -15,9 +15,10 @@ function response(data, status = 200) {
 function setup() {
   const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], prompts: [], confirm: true, chatCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], prompts: [], confirm: true, chatCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
+  let nextTask = 1;
 
   win.setInterval = () => 1;
   win.clearInterval = () => {};
@@ -33,6 +34,31 @@ function setup() {
       const project = { id: String(nextProject++), ...body, archived: false };
       state.projects.push(project);
       return response(project, 201);
+    }
+    if (url === "/api/tasks" && method === "GET" || url.startsWith("/api/tasks?") && method === "GET") {
+      const filter = new URL(url, win.location.href).searchParams.get("status");
+      return response(state.tasks.filter(task => !filter || task.status === filter));
+    }
+    if (url === "/api/tasks" && method === "POST") {
+      const task = {
+        id: String(nextTask++),
+        ...body,
+        status: "pending",
+        due_at: body.due_at || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null
+      };
+      state.tasks.push(task);
+      return response(task, 201);
+    }
+    const taskStatusMatch = url.match(/^\\/api\\/tasks\\/([^/]+)\\/status$/);
+    if (taskStatusMatch && method === "PATCH") {
+      const task = state.tasks.find(item => item.id === decodeURIComponent(taskStatusMatch[1]));
+      if (!task) return response({ detail: "Tarefa não encontrada" }, 404);
+      task.status = body.status;
+      task.completed_at = body.status === "completed" ? new Date().toISOString() : null;
+      return response(task);
     }
     if (url === "/api/chat" && method === "POST") {
       state.chatCalls.push(body);
@@ -63,6 +89,31 @@ function setup() {
   const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => win.setTimeout(resolve, 0)); };
   return { dom, win, state, tick };
 }
+
+test("cria tarefa e atualiza seu estado pela interface", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="tasks"]').click();
+  await tick();
+
+  win.document.getElementById("taskTitle").value = "Validar integração do núcleo";
+  win.document.getElementById("taskDescription").value = "Executar testes de contrato";
+  win.document.getElementById("taskPriority").value = "high";
+  win.document.getElementById("taskForm").dispatchEvent(
+    new win.Event("submit", { bubbles: true, cancelable: true })
+  );
+  await tick();
+
+  assert.equal(state.tasks.length, 1);
+  assert.equal(state.tasks[0].title, "Validar integração do núcleo");
+  assert.equal(state.tasks[0].priority, "high");
+  assert.match(win.document.getElementById("taskList").textContent, /Validar integração do núcleo/);
+
+  const status = win.document.querySelector(".task-status");
+  status.value = "completed";
+  status.dispatchEvent(new win.Event("change", { bubbles: true }));
+  await tick();
+  assert.equal(state.tasks[0].status, "completed");
+});
 
 test("navegação entre telas mantém a tela selecionada", async () => {
   const { win, tick } = setup();
