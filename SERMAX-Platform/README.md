@@ -78,7 +78,7 @@ No diretório `backend`:
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m unittest -v test_api.py test_chat_stream.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
+python -m unittest -v test_api.py test_chat_stream.py test_core_stream_integration.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
 ```
 
 O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
