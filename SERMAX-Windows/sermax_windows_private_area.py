@@ -273,11 +273,17 @@ def validate_existing_private_area(
             f"_update preexistente não passou na validação somente leitura: {exc}"
         ) from exc
     finally:
-        if token is not None:
-            _cleanup_resource(
-                "CloseHandle falhou ao liberar token de validação",
-                lambda handle: (win32api.CloseHandle(handle) is None),
-                token,
-            )
-        if child_handle is not None:
-            close_handle(child_handle)
+        try:
+            if token is not None:
+                _cleanup_resource(
+                    "CloseHandle falhou ao liberar token de validação",
+                    lambda handle: (win32api.CloseHandle(handle) is None),
+                    token,
+                )
+        finally:
+            if child_handle is not None:
+                _cleanup_resource(
+                    "CloseHandle falhou ao liberar handle de _update",
+                    lambda handle: (close_handle(handle) is None),
+                    child_handle,
+                )
