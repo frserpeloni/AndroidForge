@@ -6,6 +6,7 @@ on:
       - sermax-platform-prototype-20261115
       - sermax-cleanup-20261117
       - sermax-platform-readiness-20261117-r4
+      - sermax-platform-streaming-20261117-r2
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
