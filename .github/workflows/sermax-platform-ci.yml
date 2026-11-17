@@ -75,6 +75,9 @@ jobs:
       - name: Run local engine diagnostics API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_engines_status.py
+      - name: Run local engine diagnostics API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Verify real SERMAX core import without model execution
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_real_core_import.py
@@ -122,6 +125,9 @@ jobs:
       - name: Run read-only memory API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_memory_api.py
+      - name: Run local engine diagnostics API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Run local engine diagnostics API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_engines_status.py
