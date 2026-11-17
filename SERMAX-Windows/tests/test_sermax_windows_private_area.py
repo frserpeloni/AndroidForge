@@ -369,7 +369,8 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
             parent_handle, entry, desired_access=private_area.READ_CONTROL
         )
         inspector.assert_called_once_with(child_handle)
-        validator.assert_called_once()\n        self.win32security.OpenProcessToken.assert_called_once()
+        validator.assert_called_once()
+        self.win32security.OpenProcessToken.assert_called_once()
         closer.assert_called_once_with(child_handle)
 
     def test_acl_divergence_aborts_and_closes_without_repair(self):
