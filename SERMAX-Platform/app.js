@@ -21,6 +21,7 @@
     $("sidebar").classList.remove("open");
     if (name === "projects") refreshProjects();
     if (name === "tasks") refreshTasks();
+    if (name === "memory") refreshMemory();
   }
   async function refreshHealth() {
     try {
@@ -514,6 +515,65 @@
     }
   });
   $("taskStatusFilter").addEventListener("change", refreshTasks);
+
+  async function refreshMemory() {
+    const list = $("memoryList");
+    const count = $("memoryCount");
+    if (!list || !count) return;
+    list.textContent = "Consultando memória carregada pelo núcleo...";
+    count.textContent = "Consultando...";
+    try {
+      const query = $("memorySearch").value.trim();
+      const params = new URLSearchParams({limit: "100"});
+      if (query) params.set("q", query);
+      const response = await fetch("/api/memory?" + params.toString(), {
+        method: "GET",
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao consultar a memória.");
+      list.replaceChildren();
+      if (data.status === "core_not_loaded") {
+        count.textContent = "Núcleo ainda não carregado";
+        const empty = document.createElement("p");
+        empty.className = "memory-empty";
+        empty.textContent = data.message;
+        list.appendChild(empty);
+        return;
+      }
+      count.textContent = data.returned + " de " + data.total + " registros encontrados";
+      if (!data.items.length) {
+        const empty = document.createElement("p");
+        empty.className = "memory-empty";
+        empty.textContent = query ? "Nenhuma memória corresponde à busca." : "Não há registros pessoais disponíveis.";
+        list.appendChild(empty);
+        return;
+      }
+      data.items.forEach((memory, index) => {
+        const card = document.createElement("article");
+        card.className = "memory-card";
+        const number = document.createElement("span");
+        number.className = "memory-index";
+        number.textContent = String(data.total - index).padStart(2, "0");
+        const text = document.createElement("p");
+        text.textContent = memory.content;
+        card.append(number, text);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      count.textContent = "Consulta indisponível";
+      list.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  $("refreshMemory").addEventListener("click", refreshMemory);
+  $("memorySearch").addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      refreshMemory();
+    }
+  });
 
   refreshHealth();
   refreshRecent();
