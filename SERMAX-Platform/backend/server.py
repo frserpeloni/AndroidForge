@@ -577,7 +577,7 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
     if not rows:
         return None
     query_terms = {
-        token for token in re.findall(r"[\\wÀ-ÿ]{3,}", user_message.casefold())
+        token for token in re.findall(r"[\wÀ-ÿ]{3,}", user_message.casefold())
     }
     selected = []
     remaining = MAX_ATTACHMENT_CONTEXT_CHARS
@@ -589,7 +589,7 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
                              "observacao": "Imagem armazenada. OCR e análise visual não estão disponíveis."})
             continue
         paragraphs = [
-            part.strip() for part in re.split(r"(?<=[.!?])\\s+|[\\r\\n]+", str(extracted))
+            part.strip() for part in re.split(r"(?<=[.!?])\s+|[\r\n]+", str(extracted))
             if part.strip()
         ]
         if not paragraphs:
