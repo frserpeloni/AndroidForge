@@ -78,10 +78,18 @@ No diretório `backend`:
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m unittest -v test_api.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
+python -m unittest -v test_api.py test_chat_stream.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
 ```
 
 O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
+
+## Streaming de conversa
+
+A interface usa `POST /api/chat/stream` com Server-Sent Events. O backend transmite snapshots acumulados do texto retornado pelo núcleo, mantém a fila de eventos limitada e preserva o bloqueio global da sessão. O endpoint legado `POST /api/chat` permanece disponível.
+
+O Ollama já fornece atualizações acumuladas durante a geração. O adaptador OpenJarvis atual retorna uma resposta única ao final, portanto ainda não oferece streaming gradual. Se o navegador desconectar, a inferência continua no servidor até terminar. A interface não apresenta um botão de cancelamento enquanto os motores não oferecerem interrupção segura.
+
+Os testes de streaming estão em `backend/test_chat_stream.py` e também são executados no CI para Python 3.12, Python 3.14 e Windows.
 
 ## Proteções
 
