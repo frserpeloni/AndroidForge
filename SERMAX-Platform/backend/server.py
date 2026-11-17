@@ -710,7 +710,7 @@ def chat_stream(payload: ChatInput):
                 event_name, data = updates.get(timeout=0.25)
             except queue.Empty:
                 continue
-            yield f"event: {event_name}\\ndata: {json.dumps(data, ensure_ascii=False)}\\n\\n"
+            yield f"event: {event_name}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
