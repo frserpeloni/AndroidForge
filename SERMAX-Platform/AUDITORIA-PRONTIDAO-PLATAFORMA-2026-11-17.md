@@ -35,6 +35,7 @@ No commit de codigo `cadcd1fc3fc6e7c7798f2f851759a2dc576e2e7f`:
 | API FastAPI | Implementada, loopback, verificacao de Host, Origin e IP | Sem autenticacao local por token; nao expor em rede |
 | Tela Tarefas | Placeholder | Sem fila persistente ou execucao |
 | Tela Memória | Painel somente leitura implementado na branch de prontidão | Aguarda validação CI e homologação local do caminho real de memória |
+| Diagnóstico de motores | Endpoint e painel local implementados na branch de prontidão | Aguarda CI e conversa real de homologação |
 | Seletor de modelo | Opcoes visiveis na interface | Alteracao nao altera o roteamento; mostra somente aviso |
 | Anexos | Botao informativo | Nenhum upload ou leitura implementado |
 | Launcher | Script Python de desenvolvimento | Nao integrado ao SERMAX.exe |
@@ -139,5 +140,21 @@ A segunda entrega funcional da Fase B foi implementada na branch de prontidão:
 - O CI foi atualizado para executar os novos testes em Python 3.12, Python 3.14 e Windows.
 
 A validação automatizada desta entrega está pendente. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
+
+
+## 9. Atualização de execução, diagnóstico dos motores, 2026-11-17
+
+Foi implementado um painel de diagnóstico local para preparar a homologação dos motores:
+
+- A rota `GET /api/engines/status` consulta `http://127.0.0.1:11434/api/tags`, com timeout de 1,5 segundo.
+- Verifica a presença do executável Python configurado e do worker OpenJarvis esperado, sem iniciar subprocessos.
+- Informa se o núcleo está carregado e qual foi o último backend registrado, sem expor o conteúdo da sessão.
+- Não envia prompts, não inicia inferência e não altera configurações.
+- A interface mostra o estado do núcleo, Ollama, OpenJarvis e último roteamento.
+- Testes automatizados foram adicionados para resposta positiva/negativa do endpoint Ollama, restrição ao loopback, ausência de inferência e proteção do conteúdo da sessão.
+- Teste de interface adicionado para exibição do diagnóstico.
+- CI atualizado para Python 3.12, Python 3.14 e Windows.
+
+Limites: encontrar os arquivos do OpenJarvis não comprova execução do worker. Responder a `/api/tags` não comprova geração de texto. A homologação operacional exige conversa autorizada e registro de resposta real. Os testes novos ainda aguardam CI.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
