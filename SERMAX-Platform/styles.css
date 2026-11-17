@@ -78,3 +78,10 @@
 .engine-offline{color:#d59a9a;background:#3b2527}
 .engine-diagnostic-footnote,.engine-empty{grid-column:1/-1;color:var(--muted);font-size:10px;line-height:1.5;padding:8px 0}
 @media(max-width:650px){.engine-grid{grid-template-columns:1fr}.engine-card-heading{align-items:flex-start;flex-direction:column}}
+
+
+.attachment-list{display:grid;gap:6px;margin:8px 2px 0}
+.attachment-chip,.attachment-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 9px;border:1px solid #34414c;border-radius:7px;background:#151d25;color:#b9c6cf;font-size:10px}
+.attachment-chip span,.attachment-row span{flex:1;min-width:0;overflow-wrap:anywhere}
+.attachment-chip button,.attachment-row button,.attachment-row a{border:0;background:transparent;color:#a9d47f;font:600 10px var(--font);cursor:pointer;text-decoration:none}
+.attachment-row{margin-top:5px}

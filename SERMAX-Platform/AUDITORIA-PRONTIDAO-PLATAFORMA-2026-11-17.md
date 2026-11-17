@@ -236,3 +236,69 @@ A execução GitHub Actions `44193324857`, associada ao commit `32064162c96d29dc
 - `frontend-interaction`: sucesso.
 
 O teste adicional também foi executado em Windows e confirmou o callback progressivo do núcleo sem iniciar inferência real ou gravar a memória pessoal. O commit posterior `ea5936c7b1052abde278273cc52d431ef3b154ea` ajustou somente os gatilhos de CI para permitir execução também em pushes na branch de streaming.
+
+
+## 16. Primeira implementação de anexos locais, 2026-11-17
+
+A branch `sermax-platform-attachments-20261117` foi aberta sobre o head da PR #12 para manter o trabalho de anexos isolado e empilhado sobre o streaming. A PR #13 está em rascunho, sem merge.
+
+Implementado:
+- Serviço `backend/attachment_service.py`, router separado do fluxo principal de chat.
+- Migração SQLite para metadados e associação obrigatória a uma conversa.
+- Upload multipart, listagem, download como attachment, consulta de texto extraído e exclusão explícita.
+- Diretório privado `DATA_DIR/attachments`, nomes físicos UUID, arquivo temporário, flush/fsync e substituição atômica.
+- Allowlist PDF, DOCX, TXT UTF-8, JPEG e PNG, com validação de assinatura e parser.
+- Limites de 10 MiB por arquivo, 5 anexos e 25 MiB por conversa; PDF até 100 páginas, extração até 100.000 caracteres e imagens até 20 milhões de pixels.
+- Interface para seleção, fila, envio, listagem, download e exclusão.
+- Testes de upload TXT, PNG, extensão divergente, tipo bloqueado, arquivo vazio/grande, conversa inexistente, isolamento entre conversas, exclusão e limite de quantidade.
+- CI atualizado para executar testes de anexos em Python 3.12, Python 3.14 e Windows.
+
+Limitações deliberadas:
+- O conteúdo dos anexos ainda não é passado ao núcleo SERMAX.
+- OCR de imagens não implementado.
+- Não houve inferência real, instalação local ou teste em `C:\\SERMAX`.
+- Não houve alteração em memória pessoal, núcleo original, Terminal ou backups.
+
+A primeira execução CI `44197305925` encontrou falha nos testes porque o setup isolado não criava a tabela `attachments`. A falha foi reproduzida pelo log e corrigida no teste para inicializar explicitamente o schema. A execução de correção `44197404930` está em andamento; a etapa de testes de anexos já passou nos jobs Linux Python 3.12 e 3.14, conforme os jobs avançaram para as verificações finais. A validação Windows ainda precisa concluir antes de registrar aprovação geral.
+
+
+## 17. Resultado da primeira validação dos anexos, 2026-11-17
+
+A execução CI `44197404930` concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso, incluindo `test_attachments_api.py`.
+- `backend-tests (3.14)`: sucesso, incluindo `test_attachments_api.py`.
+- `windows-validation`: sucesso, incluindo testes da API de anexos em Windows e interação da interface.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A primeira execução `44197305925` falhou porque os testes não inicializavam o schema de anexos no banco isolado. O teste foi corrigido para criar o schema explicitamente. A execução `44197404930` passou depois dessa correção.
+
+Após essa execução, foi corrigida a renderização da interface para preservar a lista de anexos já salvos ao atualizar a fila de arquivos pendentes. Esse ajuste entrou no commit `6fd8b4a9162f658158d1b5eb5d1af72a19434063`, posterior à execução acima. Portanto, a execução `44197404930` não valida esse último ajuste de interface. Uma nova execução CI é necessária antes de declarar a revisão final aprovada.
+
+
+## 18. Revisão posterior ao primeiro CI de anexos, 2026-11-17
+
+Após a execução `44197404930`, a revisão técnica adicionou:
+- Preservação da lista de anexos persistidos ao renderizar a fila pendente na interface.
+- Limpeza do arquivo físico também quando a confirmação da transação SQLite falha.
+- Exclusão com tombstone, restaurando o arquivo se a transação do banco falhar e deixando eventual tombstone residual inerte se a remoção física final falhar.
+- Parsing multipart manual com `max_files=1` e `max_fields=0`, aceitando o tipo `UploadFile` do Starlette.
+- Testes adicionais para DOCX válido, PDF válido, DOCX corrompido e PDF criptografado.
+
+Esses ajustes estão no head atual da PR #13, commit `9ac29e4d13550888f0a69e3c31b635bf0bde76d5`. A execução `44197404930` não cobre esses commits posteriores. A PR #13 segue aberta, em rascunho e sem merge. A comparação da branch confirmou que a PR está empilhada sobre o head da PR #12 e o GitHub informa `mergeable=true`. A validação CI do head atual permanece pendente de confirmação por evidência de execução.
+
+
+## 19. Validação final da implementação de anexos, 2026-11-17
+
+A execução GitHub Actions `44198316805`, no commit de código/testes `074d9f85b45748ee7114fe6221ed1083d5b2a63f`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso, incluindo os 10 testes de anexos.
+- `backend-tests (3.14)`: sucesso, incluindo os 10 testes de anexos.
+- `windows-validation`: sucesso, incluindo os testes de anexos em Windows, integração simulada do núcleo e testes de interface.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixture de DOCX corrompido não representava a assinatura ZIP binária esperada. O fixture foi corrigido para iniciar com os bytes reais `50 4B 03 04`. A execução posterior `44198316805` passou integralmente.
+
+A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
+
+PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
