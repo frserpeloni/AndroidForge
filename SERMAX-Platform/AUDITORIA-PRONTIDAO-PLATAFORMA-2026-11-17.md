@@ -302,3 +302,20 @@ A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixtur
 A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
 
 PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
+
+
+## 20. Contexto temporário dos anexos, 2026-11-17
+
+A PR #14 adiciona integração controlada dos anexos textuais com o contexto temporário do MAX:
+- Consulta somente anexos vinculados à conversa atual, até cinco registros.
+- Seleciona trechos com base na sobreposição lexical entre a pergunta e os parágrafos extraídos.
+- Limite agregado de 2.600 caracteres, com limite de 650 caracteres por arquivo.
+- Insere o material em uma mensagem de sistema temporária, identificada como dado não confiável. O texto instrui o modelo a ignorar comandos embutidos nos arquivos, citar o nome do arquivo e informar quando os trechos forem insuficientes.
+- Anexos de imagem entram somente como metadados e informam que OCR/análise visual não estão disponíveis.
+- O contexto não é gravado nas mensagens SQLite. O núcleo recebe a pergunta original e o conteúdo de anexo fica somente na sessão temporária reconstruída pela Plataforma.
+- A sessão global original do núcleo é restaurada ao final da chamada.
+- O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
+
+Testes adicionados em `backend/test_chat_stream.py` verificam isolamento entre conversas, presença do aviso de conteúdo não confiável, ausência de persistência do conteúdo extraído e limites do contexto. O teste de integração do núcleo foi ampliado para verificar que `registrar_memoria` recebe somente a mensagem original do usuário, mesmo com conteúdo de anexo presente na sessão.
+
+A execução CI `44198960420` passou nos cinco jobs antes da inclusão da asserção adicional sobre a chamada de memória. O commit `beb17c4b521a7bf21ba5250260c9c6b2c505532e` e os ajustes documentais/workflow posteriores aguardam uma nova execução CI. Nenhuma inferência real ou gravação de memória pessoal foi executada.
