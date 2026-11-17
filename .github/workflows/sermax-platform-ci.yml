@@ -7,6 +7,7 @@ on:
       - sermax-cleanup-20261117
       - sermax-platform-readiness-20261117-r4
       - sermax-platform-streaming-20261117-r2
+      - sermax-platform-attachments-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -71,6 +72,9 @@ jobs:
       - name: Run streaming chat API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_chat_stream.py
+      - name: Run conversation attachment API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_attachments_api.py
       - name: Run real SERMAX core streaming integration test
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_core_stream_integration.py
@@ -127,6 +131,9 @@ jobs:
       - name: Run streaming chat API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_chat_stream.py
+      - name: Run conversation attachment API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_attachments_api.py
       - name: Run real SERMAX core streaming integration test on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_core_stream_integration.py
