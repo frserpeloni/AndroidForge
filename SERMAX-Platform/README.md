@@ -121,3 +121,6 @@ A integração de contexto consulta até cinco anexos vinculados à conversa atu
 O contexto não é gravado na tabela de mensagens nem na memória pessoal. A Plataforma reconstrói a sessão para a conversa, executa a solicitação e restaura a sessão global original. O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
 
 Anexos de imagem são informados ao modelo somente por metadados. OCR e análise visual não estão disponíveis nesta etapa. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
+
+
+A proteção de instruções usa duas mensagens separadas: a instrução de segurança permanece no papel `system`; o JSON com os trechos extraídos entra no papel `user`. Assim, o texto dos arquivos não recebe o mesmo nível de autoridade da instrução de proteção.
