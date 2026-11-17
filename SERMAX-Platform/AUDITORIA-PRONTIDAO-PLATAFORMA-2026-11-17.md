@@ -185,7 +185,7 @@ A fila de eventos é limitada a 16 snapshots. Quando há acúmulo, eventos inter
 
 O núcleo atual chama o callback com snapshots acumulados durante a geração do Ollama. O adaptador OpenJarvis chama o callback uma única vez, ao entregar a resposta completa. Portanto, o streaming gradual está disponível para a rota Ollama; OpenJarvis ainda responde em bloco.
 
-Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes, e a execução CI da versão corrigida ainda está pendente. Não declarar esta etapa validada até a nova execução concluir.
+Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes. A execução CI `44191365375` aprovou a revisão corrigida nos cinco jobs, conforme seção 12.
 
 Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
 
@@ -203,3 +203,16 @@ A execução GitHub Actions `44191365375`, no commit `0804396d2a28c2b4709c149fd3
 A primeira execução da revisão, `44191163899`, falhou nos novos testes porque a serialização inicial usava separadores SSE escapados em excesso. A correção foi aplicada, a revisão foi aberta em PR #12 e a execução `44191365375` validou o commit corrigido. PR #11 foi fechado como supersedido, sem merge e sem apagar código.
 
 A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
+
+
+## 13. Compatibilidade de streaming OpenJarvis, 2026-11-17
+
+Foi feita revisão da API pública do SDK OpenJarvis para determinar como habilitar streaming sem alterar a semântica dos agentes SERMAX. A documentação oficial descreve `Jarvis.ask_stream(query, model, temperature, max_tokens, context)` como gerador assíncrono de tokens. Essa assinatura não recebe `agent` nem `tools`. A integração SERMAX atual chama `sdk.ask(..., agent=..., tools=...)`, inclusive com o agente `orchestrator` e ferramentas restritas a `calculator` e `think`.
+
+Decisão técnica: não substituir a chamada atual por `ask_stream`, pois isso removeria o fluxo de agente e suas ferramentas. O streaming OpenJarvis exige uma solução compatível com o modo de agente, ou alteração explícita e testada da arquitetura de roteamento. Até essa solução existir, OpenJarvis mantém resposta em bloco e o fallback Ollama segue transmitindo snapshots.
+
+Referências consultadas:
+- https://open-jarvis.github.io/OpenJarvis/api-reference/openjarvis/sdk/
+- https://github.com/open-jarvis/OpenJarvis/blob/main/docs/user-guide/python-sdk.md
+
+A documentação pública consultada não comprova qual versão do pacote está instalada no ambiente local do usuário. Nenhuma inferência ou instalação foi executada.
