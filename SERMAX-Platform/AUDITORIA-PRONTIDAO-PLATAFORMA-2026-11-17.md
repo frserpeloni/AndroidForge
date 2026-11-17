@@ -33,7 +33,7 @@ No commit de codigo `cadcd1fc3fc6e7c7798f2f851759a2dc576e2e7f`:
 | Projetos | CRUD basico, arquivamento e associacao implementados | Sem permissao por projeto; memoria geral continua compartilhada |
 | Contexto de conversa | Sessao temporaria reconstruida e sessao global restaurada | Validacao ainda usa FakeCore |
 | API FastAPI | Implementada, loopback, verificacao de Host, Origin e IP | Sem autenticacao local por token; nao expor em rede |
-| Tela Tarefas | Placeholder | Sem fila persistente ou execucao |
+| Tela Tarefas | Gerenciador persistente implementado na branch de prontidao | Sem execucao automatica ou em segundo plano |
 | Tela Memória | Painel somente leitura implementado na branch de prontidão | Aguarda validação CI e homologação local do caminho real de memória |
 | Diagnóstico de motores | Endpoint e painel local implementados na branch de prontidão | Aguarda CI e conversa real de homologação |
 | Seletor de modelo | Opcoes visiveis na interface | Alteracao nao altera o roteamento; mostra somente aviso |
@@ -47,7 +47,7 @@ No commit de codigo `cadcd1fc3fc6e7c7798f2f851759a2dc576e2e7f`:
 ### 4.1 Integracao do nucleo
 O backend importa `sermax_core.py` sob demanda. Durante a chamada, substitui `core.sessao` pelo contexto reconstruido da conversa e restaura a sessao anterior no bloco `finally`. O bloqueio global serializa as chamadas.
 
-Os testes atuais usam FakeCore. Portanto, ainda nao existe evidencia automatizada de que o nucleo real importe no ambiente de execucao da Plataforma e responda por OpenJarvis/Ollama.
+A API de conversa ainda e testada principalmente com FakeCore. O smoke test separado comprova a importacao do nucleo real sem executar modelo e sem tocar na memoria pessoal. Ainda nao existe evidencia de uma conversa real da Plataforma respondida por OpenJarvis ou Ollama.
 
 A memoria persistente geral do SERMAX continua compartilhada e segue as regras do nucleo. Esse comportamento esta documentado e nao sera alterado sem decisao expressa.
 
