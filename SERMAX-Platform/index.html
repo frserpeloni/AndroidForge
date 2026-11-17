@@ -57,6 +57,8 @@
         <div class="composer-wrap">
           <div class="composer">
             <textarea id="messageInput" rows="1" placeholder="Envie uma mensagem ao MAX..." aria-label="Mensagem"></textarea>
+            <input id="attachmentInput" type="file" accept=".pdf,.docx,.txt,.jpg,.jpeg,.png" multiple hidden>
+            <div id="attachmentList" class="attachment-list" aria-live="polite"></div>
             <div class="project-context" id="activeProjectLabel" hidden></div>
           <div class="composer-tools">
               <div class="tool-left">
