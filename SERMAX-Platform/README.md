@@ -112,3 +112,12 @@ Rotas:
 - `DELETE /api/conversations/{conversation_id}/attachments/{attachment_id}`
 
 Os conteúdos dos anexos ainda não são enviados ao prompt do núcleo. Essa integração será feita em etapa separada, com limites de contexto e tratamento do texto como dado não confiável. Nenhum arquivo é incorporado à memória pessoal. A homologação real e a revisão de segurança continuam condicionadas à conclusão dos testes CI e à revisão do código.
+
+
+## Contexto dos anexos no MAX
+
+A integração de contexto consulta até cinco anexos vinculados à conversa atual. O serviço seleciona trechos por relevância lexical à pergunta, com orçamento agregado de 2.600 caracteres e limite de 650 caracteres por arquivo. Os trechos entram em uma mensagem temporária do contexto do núcleo, identificados como dados não confiáveis. O prompt orienta o MAX a ignorar instruções presentes nos arquivos, identificar o nome do documento usado e informar quando os trechos forem insuficientes.
+
+O contexto não é gravado na tabela de mensagens nem na memória pessoal. A Plataforma reconstrói a sessão para a conversa, executa a solicitação e restaura a sessão global original. O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
+
+Anexos de imagem são informados ao modelo somente por metadados. OCR e análise visual não estão disponíveis nesta etapa. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
