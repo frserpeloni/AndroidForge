@@ -222,4 +222,17 @@ A documentação pública consultada não comprova qual versão do pacote está 
 
 Foi adicionado `backend/test_core_stream_integration.py`. O teste importa o `sermax_core.py` real em diretório temporário, bloqueia a gravação da memória pessoal, simula falha do OpenJarvis e injeta eventos NDJSON de Ollama. Verifica que o núcleo emite snapshots acumulados (`"Olá "`, depois `"Olá MAX"`), retorna a resposta final, registra o fallback para Ollama e não cria `memoria_sermax.json` no diretório isolado.
 
-O teste não inicia inferência real nem depende de Ollama ou OpenJarvis instalados. Foi incluído nos jobs Python 3.12, Python 3.14 e Windows. A nova execução CI desta inclusão está pendente; não confundir com a aprovação anterior da execução `44191365375`, que antecede este teste adicional.
+O teste não inicia inferência real nem depende de Ollama ou OpenJarvis instalados. Foi incluído nos jobs Python 3.12, Python 3.14 e Windows. A nova execução CI `44193324857` aprovou o teste adicional em Python 3.12, Python 3.14 e Windows.
+
+
+## 15. CI após integração do teste do núcleo, 2026-11-17
+
+A execução GitHub Actions `44193324857`, associada ao commit `32064162c96d29dc1a74609161632bcde0946708`, concluiu com sucesso nos cinco jobs:
+
+- `backend-tests (3.12)`: sucesso, incluindo o teste do núcleo real com Ollama simulado.
+- `backend-tests (3.14)`: sucesso, incluindo o teste do núcleo real com Ollama simulado.
+- `windows-validation`: sucesso, incluindo o teste do núcleo real com Ollama simulado.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+O teste adicional também foi executado em Windows e confirmou o callback progressivo do núcleo sem iniciar inferência real ou gravar a memória pessoal. O commit posterior `ea5936c7b1052abde278273cc52d431ef3b154ea` ajustou somente os gatilhos de CI para permitir execução também em pushes na branch de streaming.
