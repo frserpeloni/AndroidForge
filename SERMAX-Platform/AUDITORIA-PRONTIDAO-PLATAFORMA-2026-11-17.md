@@ -333,3 +333,12 @@ A execução GitHub Actions `44199209648`, no commit de código/testes `beb17c4b
 Os testes de contexto verificam que somente anexos da conversa atual entram no contexto, que o material é marcado como dado não confiável, que o texto extraído não é persistido nas mensagens e que imagens informam a ausência de OCR/análise visual. O teste de integração do núcleo verifica que `registrar_memoria` recebe somente a pergunta original do usuário, mesmo quando a sessão temporária contém texto de anexo.
 
 A execução não inicia inferência real. O conteúdo de anexo permanece em contexto temporário, limitado a 2.600 caracteres agregados e 650 por arquivo. O núcleo original não foi alterado. PR #14 permanece aberta, em rascunho e sem merge.
+
+
+## 22. Separação de autoridade do conteúdo dos anexos, 2026-11-17
+
+A revisão de segurança separou a instrução de proteção do conteúdo documental em mensagens distintas do contexto:
+- Mensagem `system`: contém as regras para tratar anexos como dados não confiáveis, ignorar comandos embutidos e citar o nome do arquivo.
+- Mensagem `user`: contém o JSON com os trechos extraídos e metadados dos anexos.
+
+O texto enviado pelo usuário dentro de arquivos deixa de ocupar o papel `system`. O teste de API verifica a separação dos papéis e a ausência de anexos de outra conversa. A nova execução CI do head atualizado ainda precisa confirmar os ajustes.
