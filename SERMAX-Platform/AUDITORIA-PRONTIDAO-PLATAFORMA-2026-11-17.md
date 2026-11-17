@@ -286,3 +286,19 @@ Após a execução `44197404930`, a revisão técnica adicionou:
 - Testes adicionais para DOCX válido, PDF válido, DOCX corrompido e PDF criptografado.
 
 Esses ajustes estão no head atual da PR #13, commit `9ac29e4d13550888f0a69e3c31b635bf0bde76d5`. A execução `44197404930` não cobre esses commits posteriores. A PR #13 segue aberta, em rascunho e sem merge. A comparação da branch confirmou que a PR está empilhada sobre o head da PR #12 e o GitHub informa `mergeable=true`. A validação CI do head atual permanece pendente de confirmação por evidência de execução.
+
+
+## 19. Validação final da implementação de anexos, 2026-11-17
+
+A execução GitHub Actions `44198316805`, no commit de código/testes `074d9f85b45748ee7114fe6221ed1083d5b2a63f`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso, incluindo os 10 testes de anexos.
+- `backend-tests (3.14)`: sucesso, incluindo os 10 testes de anexos.
+- `windows-validation`: sucesso, incluindo os testes de anexos em Windows, integração simulada do núcleo e testes de interface.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixture de DOCX corrompido não representava a assinatura ZIP binária esperada. O fixture foi corrigido para iniciar com os bytes reais `50 4B 03 04`. A execução posterior `44198316805` passou integralmente.
+
+A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
+
+PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
