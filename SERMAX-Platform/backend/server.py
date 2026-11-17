@@ -237,6 +237,53 @@ def models():
             "note": "A disponibilidade dos motores será verificada pelo núcleo na primeira chamada."}
 
 
+@app.get("/api/memory")
+def read_memory(limit: int = 50, q: str = ""):
+    """Consulta somente a memória já carregada pelo núcleo; nunca importa nem grava arquivos."""
+    if limit < 1 or limit > 100:
+        raise HTTPException(status_code=422, detail="O limite deve ficar entre 1 e 100.")
+    if len(q) > 200:
+        raise HTTPException(status_code=422, detail="A busca aceita até 200 caracteres.")
+
+    core = CORE_MODULE
+    if core is None:
+        return {
+            "status": "core_not_loaded",
+            "read_only": True,
+            "total": 0,
+            "returned": 0,
+            "items": [],
+            "message": "O núcleo ainda não foi carregado nesta sessão. Abra uma conversa e atualize o painel.",
+        }
+
+    memories = getattr(core, "historico", None)
+    if not isinstance(memories, list):
+        raise HTTPException(status_code=503, detail="O núcleo carregado não disponibiliza a memória para consulta.")
+
+    normalized_query = q.strip().casefold()
+    valid_items = []
+    for index, item in enumerate(memories):
+        if not isinstance(item, dict) or item.get("role") != "user":
+            continue
+        text = item.get("content")
+        if not isinstance(text, str) or not text.strip():
+            continue
+        if normalized_query and normalized_query not in text.casefold():
+            continue
+        valid_items.append({"id": index, "content": text.strip()})
+
+    selected = valid_items[-limit:]
+    selected.reverse()
+    return {
+        "status": "available",
+        "read_only": True,
+        "total": len(valid_items),
+        "returned": len(selected),
+        "items": selected,
+        "message": "Consulta somente leitura. Nenhum arquivo ou registro foi alterado.",
+    }
+
+
 @app.get("/api/projects")
 def list_projects(include_archived: bool = False):
     with database() as conn:
