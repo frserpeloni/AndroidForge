@@ -15,7 +15,7 @@ function response(data, status = 200) {
 function setup() {
   const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], tasks: [], prompts: [], confirm: true, chatCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], prompts: [], confirm: true, chatCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
   let nextTask = 1;
@@ -59,6 +59,16 @@ function setup() {
       task.status = body.status;
       task.completed_at = body.status === "completed" ? new Date().toISOString() : null;
       return response(task);
+    }
+    if (url.startsWith("/api/memory") && method === "GET") {
+      state.memoryCalls.push({url, cache: options.cache || ""});
+      if (!state.coreLoaded) {
+        return response({status:"core_not_loaded",read_only:true,total:0,returned:0,items:[],message:"Núcleo ainda não carregado."});
+      }
+      const params = new URL(url, win.location.href).searchParams;
+      const query = (params.get("q") || "").toLocaleLowerCase();
+      const items = state.memories.filter(item => item.content.toLocaleLowerCase().includes(query)).slice(-(Number(params.get("limit")) || 100)).reverse();
+      return response({status:"available",read_only:true,total:items.length,returned:items.length,items,message:"Somente leitura."});
     }
     if (url === "/api/chat" && method === "POST") {
       state.chatCalls.push(body);
@@ -113,6 +123,31 @@ test("cria tarefa e atualiza seu estado pela interface", async () => {
   status.dispatchEvent(new win.Event("change", { bubbles: true }));
   await tick();
   assert.equal(state.tasks[0].status, "completed");
+});
+
+test("painel de memória consulta somente leitura e permite busca", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="memory"]').click();
+  await tick();
+
+  assert.match(win.document.getElementById("memoryList").textContent, /Núcleo ainda não carregado/);
+  assert.equal(state.memoryCalls.length, 1);
+  assert.equal(state.memoryCalls[0].cache, "no-store");
+
+  state.coreLoaded = true;
+  state.memories = [
+    {id: 0, content: "Meu carro é um Fiat Siena 2008."},
+    {id: 1, content: "Prefiro respostas em português."}
+  ];
+  win.document.getElementById("memorySearch").value = "Fiat";
+  win.document.getElementById("refreshMemory").click();
+  await tick();
+
+  assert.equal(state.memoryCalls.length, 2);
+  assert.match(state.memoryCalls[1].url, /q=Fiat/);
+  assert.match(win.document.getElementById("memoryList").textContent, /Fiat Siena 2008/);
+  assert.doesNotMatch(win.document.getElementById("memoryList").textContent, /português/);
+  assert.match(win.document.querySelector(".memory-protection-note").textContent, /somente leitura/i);
 });
 
 test("navegação entre telas mantém a tela selecionada", async () => {
