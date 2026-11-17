@@ -25,6 +25,7 @@ FILE_OPEN_REPARSE_POINT = 0x00200000
 FILE_SYNCHRONOUS_IO_NONALERT = 0x00000020
 FILE_ATTRIBUTE_DIRECTORY = 0x00000010
 FILE_LIST_DIRECTORY = 0x00000001
+FILE_ADD_SUBDIRECTORY = 0x00000004
 FILE_SHARE_READ = 0x00000001
 
 ALLOWED_PRIVATE_COMPONENTS = frozenset({
@@ -93,7 +94,12 @@ def create_private_directory_component(parent_handle, component: str):
 
     result_handle = wintypes.HANDLE()
     io_status = IO_STATUS_BLOCK()
-    desired_access = FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE
+    desired_access = (
+        FILE_LIST_DIRECTORY
+        | FILE_ADD_SUBDIRECTORY
+        | FILE_READ_ATTRIBUTES
+        | SYNCHRONIZE
+    )
     options = (
         FILE_DIRECTORY_FILE
         | FILE_OPEN_REPARSE_POINT
