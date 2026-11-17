@@ -98,5 +98,28 @@ class PersistentTaskApiTests(unittest.TestCase):
             restarted.close()
 
 
+    def test_null_update_fields_are_rejected_without_corrupting_task(self):
+        created = self.client.post(
+            "/api/tasks",
+            json={"title": "Tarefa íntegra"},
+            headers=self.headers,
+        ).json()
+        task_id = created["id"]
+
+        for payload in ({"title": None}, {"description": None}, {"priority": None}):
+            response = self.client.put(
+                f"/api/tasks/{task_id}",
+                json=payload,
+                headers=self.headers,
+            )
+            self.assertEqual(response.status_code, 422)
+
+        unchanged = self.client.get(f"/api/tasks/{task_id}", headers=self.headers)
+        self.assertEqual(unchanged.status_code, 200)
+        self.assertEqual(unchanged.json()["title"], "Tarefa íntegra")
+        self.assertEqual(unchanged.json()["priority"], "normal")
+
+
+
 if __name__ == "__main__":
     unittest.main()
