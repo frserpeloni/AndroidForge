@@ -282,3 +282,117 @@ class PrivateAreaWindowsIntegrationTests(unittest.TestCase):
                     private_area.close_handle(child)
                 self.assertTrue(close(parent))
                 shutil.rmtree(parent_path, ignore_errors=True)
+
+
+class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
+    def test_validates_existing_area_by_verified_handle_and_closes_it(self):
+        from types import SimpleNamespace
+
+        parent_handle = 100
+        child_handle = 200
+        entry = SimpleNamespace(
+            name="_update", is_directory=True, file_id="b" * 32
+        )
+        expected = {"valid": True, "mutated": False}
+        with (
+            mock.patch.object(
+                private_area, "query_handle_metadata",
+                side_effect=[
+                    self._metadata(),
+                    self._metadata(file_id_128="b" * 32),
+                ],
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                side_effect=[(entry,), ()],
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component",
+                return_value=child_handle,
+            ) as opener,
+            mock.patch(
+                "sermax_windows_acl_inspection.inspect_directory_acl",
+                return_value={"dacl_state": "present"},
+            ) as inspector,
+            mock.patch(
+                "sermax_windows_private_area_acl_policy.validate_private_area_acl",
+                return_value=expected,
+            ) as validator,
+            mock.patch.object(private_area, "close_handle") as closer,
+        ):
+            result = private_area.validate_existing_private_area(
+                parent_handle, expected_owner_sid="S-1-5-21-100"
+            )
+
+        self.assertEqual(result, expected)
+        opener.assert_called_once_with(
+            parent_handle, entry, desired_access=private_area.READ_CONTROL
+        )
+        inspector.assert_called_once_with(child_handle)
+        validator.assert_called_once()
+        closer.assert_called_once_with(child_handle)
+
+    def test_acl_divergence_aborts_and_closes_without_repair(self):
+        from types import SimpleNamespace
+
+        parent_handle = 100
+        child_handle = 200
+        entry = SimpleNamespace(
+            name="_update", is_directory=True, file_id="b" * 32
+        )
+        with (
+            mock.patch.object(
+                private_area, "query_handle_metadata",
+                side_effect=[
+                    self._metadata(),
+                    self._metadata(file_id_128="b" * 32),
+                ],
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                side_effect=[(entry,), ()],
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component",
+                return_value=child_handle,
+            ),
+            mock.patch(
+                "sermax_windows_acl_inspection.inspect_directory_acl",
+                return_value={"dacl_state": "present"},
+            ),
+            mock.patch(
+                "sermax_windows_private_area_acl_policy.validate_private_area_acl",
+                side_effect=RuntimeError("DACL divergente"),
+            ),
+            mock.patch.object(private_area, "close_handle") as closer,
+        ):
+            with self.assertRaisesRegex(
+                private_area.PrivateAreaError, "somente leitura"
+            ):
+                private_area.validate_existing_private_area(
+                    parent_handle, expected_owner_sid="S-1-5-21-100"
+                )
+
+        closer.assert_called_once_with(child_handle)
+
+    def test_missing_or_ambiguous_update_is_rejected_without_opening_child(self):
+        with (
+            mock.patch.object(
+                private_area, "query_handle_metadata",
+                return_value=self._metadata(),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component"
+            ) as opener,
+        ):
+            with self.assertRaisesRegex(
+                private_area.PrivateAreaError, "ausente ou ambíguo"
+            ):
+                private_area.validate_existing_private_area(
+                    100, expected_owner_sid="S-1-5-21-100"
+                )
+        opener.assert_not_called()
