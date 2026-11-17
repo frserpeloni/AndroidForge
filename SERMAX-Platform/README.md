@@ -36,7 +36,7 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 - A primeira versão é local e de usuário único.
 - Não há autenticação nem acesso remoto.
 - Não há streaming de tokens.
-- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. Anexos e tarefas em segundo plano seguem pendentes.
+- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. O gerenciador de tarefas persistentes permite criar, consultar, editar, definir prioridade e prazo, filtrar e atualizar o estado. O painel Memória consulta somente registros já carregados em memória pelo núcleo, sem abrir ou alterar arquivos. Execução automática/em segundo plano e anexos seguem pendentes.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
 - Compatibilidade real com o ambiente Python do computador precisa ser testada.
 - A interface ainda não passou por teste automatizado de interação em navegador.
@@ -54,16 +54,42 @@ Endpoints locais: `GET/POST /api/projects`, `GET/PUT /api/projects/{id}`, `POST 
 
 As instruções do projeto entram como contexto de sistema em cada solicitação vinculada. A API reconstrói temporariamente a sessão do núcleo com o histórico daquela conversa e restaura a sessão global anterior ao final da chamada. O bloqueio global impede chamadas simultâneas durante essa troca. A memória persistente geral do núcleo continua compartilhada, conforme o comportamento original do SERMAX. Conversas de projetos arquivados preservam o vínculo e as instruções ao serem retomadas. Na interface, a conversa retomada identifica o vínculo como “Projeto arquivado”, mantendo o contexto associado mesmo sem permitir novas conversas nesse projeto.
 
+## Motores
+
+A rota `GET /api/engines/status` apresenta o estado do núcleo na sessão atual, consulta a API de tags do Ollama em `127.0.0.1:11434` com timeout de 1,5 segundo, verifica a presença dos arquivos esperados do ambiente OpenJarvis e informa o último backend registrado pelo núcleo. O diagnóstico não envia prompts, não inicia inferência e não altera configurações.
+
+A presença do executável Python e do worker OpenJarvis não comprova que o worker inicia ou responde. A resposta da API `/api/tags` comprova que o endpoint local do Ollama respondeu, não que uma geração de texto funcione. A homologação real exige uma conversa de teste autorizada, com resposta e backend registrados.
+
+## Memória
+
+A rota `GET /api/memory` consulta exclusivamente a lista `historico` já carregada no módulo do núcleo. A rota não chama `load_core()`, não abre `memoria_sermax.json`, não executa `salvar_memoria()` e não altera registros. Se o núcleo ainda não estiver carregado na sessão da API, retorna `core_not_loaded` e orienta abrir uma conversa antes de atualizar o painel. A consulta aceita busca textual e limite de 1 a 100 registros, retornando somente entradas do usuário.
+
+A interface não oferece operações de criação, edição ou exclusão de memória. Os dados são apresentados com `textContent`, sem interpretar conteúdo armazenado como HTML. O painel é somente leitura e não substitui backup ou ferramenta de manutenção da memória.
+
+## Tarefas
+
+As tarefas são armazenadas na tabela `tasks` do mesmo banco SQLite da Plataforma. Cada registro contém título, descrição, estado, prioridade, prazo e datas de criação/atualização/conclusão. Os estados disponíveis são pendente, em andamento, concluída e cancelada. Não existe exclusão física nem execução automática de tarefas nesta versão.
+
+Endpoints locais: `GET/POST /api/tasks`, `GET/PUT /api/tasks/{id}` e `PATCH /api/tasks/{id}/status`. A tela Tarefas permite registrar, filtrar e atualizar tarefas. O armazenamento persiste após reinício do serviço.
+
 ## Testes
 
 No diretório `backend`:
 
 ```powershell
 python -m pip install -r requirements.txt
-python -m unittest -v test_api.py
+python -m unittest -v test_api.py test_chat_stream.py test_core_stream_integration.py test_tasks_api.py test_memory_api.py test_engines_status.py test_core_session_contract.py test_real_core_import.py
 ```
 
 O GitHub Actions executa testes da API em Python 3.12 e 3.14, verifica a sintaxe JavaScript, executa testes de interação com DOM simulado e roda uma bateria adicional em `windows-latest` com Python 3.12 e Node 22. O teste de persistência fecha e reabre o cliente da aplicação usando o mesmo arquivo SQLite temporário, verificando projetos, conversas e mensagens. Isso valida o comportamento do banco após reabertura no ambiente de CI. Não substitui teste visual em navegador real, execução no computador do usuário, integração com o núcleo real ou validação de instalação.
+
+## Streaming de conversa
+
+A interface usa `POST /api/chat/stream` com Server-Sent Events. O backend transmite snapshots acumulados do texto retornado pelo núcleo, mantém a fila de eventos limitada e preserva o bloqueio global da sessão. O endpoint legado `POST /api/chat` permanece disponível.
+
+O Ollama já fornece atualizações acumuladas durante a geração. O adaptador OpenJarvis atual retorna uma resposta única ao final, portanto ainda não oferece streaming gradual. Se o navegador desconectar, a inferência continua no servidor até terminar. A interface não apresenta um botão de cancelamento enquanto os motores não oferecerem interrupção segura.
+
+Os testes de streaming estão em `backend/test_chat_stream.py` e também são executados no CI para Python 3.12, Python 3.14 e Windows.
 
 ## Proteções
 
