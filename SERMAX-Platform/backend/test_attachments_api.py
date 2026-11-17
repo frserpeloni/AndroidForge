@@ -5,6 +5,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 from PIL import Image
+from docx import Document
+from pypdf import PdfWriter
 import server
 
 
@@ -134,6 +136,41 @@ class AttachmentApiTests(unittest.TestCase):
             ).json(),
             [],
         )
+
+
+    def test_docx_and_pdf_are_parsed_and_persisted(self):
+        docx_buffer = io.BytesIO()
+        document = Document()
+        document.add_paragraph("Conteúdo DOCX de teste.")
+        document.save(docx_buffer)
+        docx_response = self.upload("relatorio.docx", docx_buffer.getvalue())
+        self.assertEqual(docx_response.status_code, 201, docx_response.text)
+        docx_content = self.client.get(
+            f"/api/conversations/conversation-a/attachments/{docx_response.json()['id']}/content",
+            headers=self.headers,
+        )
+        self.assertEqual(docx_content.status_code, 200)
+        self.assertIn("Conteúdo DOCX de teste.", docx_content.json()["text"])
+
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.write(pdf_buffer)
+        pdf_response = self.upload("folha.pdf", pdf_buffer.getvalue())
+        self.assertEqual(pdf_response.status_code, 201, pdf_response.text)
+        self.assertTrue(pdf_response.json()["has_extracted_text"])
+
+    def test_corrupt_docx_and_encrypted_pdf_are_rejected(self):
+        corrupt = self.upload("quebrado.docx", b"PK\\x03\\x04nao-e-zip")
+        self.assertEqual(corrupt.status_code, 422)
+
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.encrypt("senha")
+        writer.write(pdf_buffer)
+        encrypted = self.upload("protegido.pdf", pdf_buffer.getvalue())
+        self.assertEqual(encrypted.status_code, 422)
 
     def test_sixth_attachment_is_rejected(self):
         for index in range(5):
