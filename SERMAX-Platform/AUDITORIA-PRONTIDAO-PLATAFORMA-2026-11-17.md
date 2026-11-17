@@ -108,4 +108,19 @@ A Plataforma so sera declarada pronta para uso quando:
 - instalador e atualizador passarem por testes de seguranca e recuperacao no Windows;
 - nenhuma alteracao comprometer o Terminal original, memoria pessoal, historico ou backups.
 
-Nenhum teste fisico no computador do usuario foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
+
+## 7. Atualização de execução, 2026-11-17
+
+Após a auditoria inicial, a branch recebeu a primeira entrega funcional da Fase B:
+
+- Criada tabela SQLite `tasks`, com migração aditiva e estados `pending`, `in_progress`, `completed` e `cancelled`.
+- API para criar, listar, consultar e editar tarefas, atualizar estado, filtrar por estado e ordenar por prioridade/prazo.
+- Validação de título, descrição, prioridade e data ISO 8601.
+- Tela Tarefas conectada à API, com formulário, prioridade, prazo, filtro e atualização de estado.
+- Não há exclusão física, execução de comandos ou execução em segundo plano.
+- Testes adicionados para criação, ordenação, edição, conclusão, filtros, data inválida, campos nulos e persistência após reabertura do SQLite.
+- Teste de interface adicionado para criação e atualização do estado.
+
+A execução CI `44131386495` foi iniciada para validar a versão com tarefas e os testes atualizados. Até a conclusão dos jobs, esta entrega permanece aguardando validação automatizada. A execução anterior `44130892314` aprovou os testes de importação do núcleo real e restauração de sessão na versão anterior à entrega de tarefas e ao caso de sessão originalmente nula.
+
+Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
