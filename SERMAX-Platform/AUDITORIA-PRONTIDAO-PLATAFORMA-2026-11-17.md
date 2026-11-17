@@ -236,3 +236,27 @@ A execução GitHub Actions `44193324857`, associada ao commit `32064162c96d29dc
 - `frontend-interaction`: sucesso.
 
 O teste adicional também foi executado em Windows e confirmou o callback progressivo do núcleo sem iniciar inferência real ou gravar a memória pessoal. O commit posterior `ea5936c7b1052abde278273cc52d431ef3b154ea` ajustou somente os gatilhos de CI para permitir execução também em pushes na branch de streaming.
+
+
+## 16. Primeira implementação de anexos locais, 2026-11-17
+
+A branch `sermax-platform-attachments-20261117` foi aberta sobre o head da PR #12 para manter o trabalho de anexos isolado e empilhado sobre o streaming. A PR #13 está em rascunho, sem merge.
+
+Implementado:
+- Serviço `backend/attachment_service.py`, router separado do fluxo principal de chat.
+- Migração SQLite para metadados e associação obrigatória a uma conversa.
+- Upload multipart, listagem, download como attachment, consulta de texto extraído e exclusão explícita.
+- Diretório privado `DATA_DIR/attachments`, nomes físicos UUID, arquivo temporário, flush/fsync e substituição atômica.
+- Allowlist PDF, DOCX, TXT UTF-8, JPEG e PNG, com validação de assinatura e parser.
+- Limites de 10 MiB por arquivo, 5 anexos e 25 MiB por conversa; PDF até 100 páginas, extração até 100.000 caracteres e imagens até 20 milhões de pixels.
+- Interface para seleção, fila, envio, listagem, download e exclusão.
+- Testes de upload TXT, PNG, extensão divergente, tipo bloqueado, arquivo vazio/grande, conversa inexistente, isolamento entre conversas, exclusão e limite de quantidade.
+- CI atualizado para executar testes de anexos em Python 3.12, Python 3.14 e Windows.
+
+Limitações deliberadas:
+- O conteúdo dos anexos ainda não é passado ao núcleo SERMAX.
+- OCR de imagens não implementado.
+- Não houve inferência real, instalação local ou teste em `C:\\SERMAX`.
+- Não houve alteração em memória pessoal, núcleo original, Terminal ou backups.
+
+A primeira execução CI `44197305925` encontrou falha nos testes porque o setup isolado não criava a tabela `attachments`. A falha foi reproduzida pelo log e corrigida no teste para inicializar explicitamente o schema. A execução de correção `44197404930` está em andamento; a etapa de testes de anexos já passou nos jobs Linux Python 3.12 e 3.14, conforme os jobs avançaram para as verificações finais. A validação Windows ainda precisa concluir antes de registrar aprovação geral.
