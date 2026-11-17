@@ -21,13 +21,13 @@
 
 ## Limites e riscos ainda abertos
 
-- O backend ainda não foi executado neste ambiente nem no computador do usuário.
+- O backend é executado no GitHub Actions em Python 3.12, 3.14 e Windows. Isso não equivale à execução no computador do usuário.
 - Dependências e compatibilidade com Python 3.14 precisam ser verificadas.
-- A importação real do núcleo depende dos módulos e dependências existentes no diretório `SERMAX-Windows`.
+- O smoke test passou a importar o núcleo real no CI, sem iniciar modelo e com a memória redirecionada para diretório temporário. A execução de uma conversa com OpenJarvis/Ollama real continua pendente.
 - O núcleo mantém sessão e histórico globais. A serialização evita concorrência, mas não separa contexto por conversa. Portanto, a primeira integração deve ser tratada como uso local de usuário único.
 - O núcleo existente também grava memória segundo suas regras atuais. A interface não oferece edição ou exclusão dessa memória.
 - A autenticação de usuário e acesso remoto estão fora desta etapa. A API não deve ser exposta à rede.
-- Não há streaming de tokens, anexos, sincronização Android, tarefas persistentes nem publicação pública.
+- O gerenciador de tarefas persistentes em SQLite foi implementado na branch de prontidão, com API, interface e testes. Não há execução automática/em segundo plano, streaming de tokens, anexos, sincronização Android nem publicação pública.
 
 ## Validação necessária
 

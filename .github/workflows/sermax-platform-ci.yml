@@ -5,6 +5,7 @@ on:
     branches:
       - sermax-platform-prototype-20261115
       - sermax-cleanup-20261117
+      - sermax-platform-readiness-20261117-r4
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -68,6 +69,12 @@ jobs:
       - name: Run persistent task API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
+      - name: Run read-only memory API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_memory_api.py
+      - name: Run local engine diagnostics API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Verify real SERMAX core import without model execution
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_real_core_import.py
@@ -112,6 +119,12 @@ jobs:
       - name: Run persistent task API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
+      - name: Run read-only memory API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_memory_api.py
+      - name: Run local engine diagnostics API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Verify real SERMAX core import on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_real_core_import.py
