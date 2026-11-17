@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - sermax-platform-prototype-20261115
+      - sermax-cleanup-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
