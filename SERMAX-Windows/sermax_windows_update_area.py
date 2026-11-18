@@ -162,6 +162,7 @@ def validate_update_area_acl_policy(
     inspection: UpdateAreaInspection,
     *,
     token_handle,
+    require_empty: bool = True,
 ) -> dict[str, object]:
     """Valida a política ACL existente e os direitos do token real do instalador.
 
@@ -184,6 +185,7 @@ def validate_update_area_acl_policy(
             expected_file_id_128=str(metadata["file_id_128"]),
             directory_identity=metadata,
             directory_entries=inspection.directory_entries,
+            require_empty=require_empty,
         )
 
         descriptor = read_security_descriptor_binary(inspection.handle)
