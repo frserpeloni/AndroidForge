@@ -29,7 +29,17 @@ on:
       - "SERMAX-Windows/sermax_update_package.py"
       - "SERMAX-Windows/sermax_update_manifest.py"
       - "SERMAX-Windows/sermax_update_inventory.py"
+      - "SERMAX-Windows/sermax_windows_security.py"
+      - "SERMAX-Windows/sermax_windows_update_area.py"
+      - "SERMAX-Windows/sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/sermax_windows_effective_access.py"
+      - "SERMAX-Windows/sermax_windows_private_area_acl_policy.py"
       - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_security.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
       - ".github/workflows/sermax-update-staging-ci.yml"
 
 permissions:
