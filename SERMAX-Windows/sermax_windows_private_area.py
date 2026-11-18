@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import re
 import sys
 from ctypes import wintypes
 
@@ -546,3 +547,257 @@ def validate_existing_private_area(
                     lambda handle: (close_handle(handle) is None),
                     child_handle,
                 )
+
+
+
+@dataclass
+class ExistingPrivateAreaLayout:
+    """Handles retidos de _update e das cinco áreas estruturais validadas."""
+
+    update_handle: object
+    directories: dict[str, object]
+    metadata: dict[str, object]
+    validation: dict[str, object]
+
+    def close(self) -> None:
+        errors = []
+        for name in reversed(tuple(self.directories)):
+            handle = self.directories[name]
+            try:
+                close_handle(handle)
+            except Exception as exc:
+                errors.append((name, exc))
+        self.directories.clear()
+        if self.update_handle is not None:
+            try:
+                close_handle(self.update_handle)
+            except Exception as exc:
+                errors.append(("_update", exc))
+            self.update_handle = None
+        if errors:
+            details = "; ".join(f"{name}: {error}" for name, error in errors)
+            raise PrivateAreaError(f"Falha ao fechar handles da área privada: {details}")
+
+    def __enter__(self):
+        if self.update_handle is None:
+            raise PrivateAreaError("Layout da área privada já foi encerrado.")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+
+_PRIVATE_LAYOUT_COMPONENTS = ("staging", "backups", "journal", "logs", "locks")
+_LAYOUT_ACCESS = (
+    FILE_LIST_DIRECTORY
+    | FILE_ADD_FILE
+    | FILE_ADD_SUBDIRECTORY
+    | FILE_READ_ATTRIBUTES
+    | READ_CONTROL
+    | SYNCHRONIZE
+)
+
+
+def open_existing_private_area_layout(
+    parent_handle, *, expected_owner_sid: str | None = None
+) -> ExistingPrivateAreaLayout:
+    """Abre e valida a estrutura persistente _update sem repará-la.
+
+    Exige exatamente os diretórios staging, backups, journal, logs e locks.
+    Cada handle é aberto relativamente ao pai enumerado, vinculado ao FileId
+    de 128 bits e validado por ACL/Authz no mesmo handle. Todos os handles
+    permanecem retidos no objeto retornado. Divergências fecham os handles
+    abertos e abortam sem criar, remover ou alterar objetos.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise PrivateAreaError("A abertura da área privada exige Windows x64.")
+
+    from sermax_windows_directory_handle import (
+        enumerate_stable_directory_handle,
+        open_verified_child_component,
+    )
+    import win32api
+    import win32security
+
+    parent_metadata = query_handle_metadata(parent_handle)
+    if (
+        not parent_metadata["is_directory"]
+        or parent_metadata["is_reparse_point"]
+        or parent_metadata["delete_pending"]
+    ):
+        raise PrivateAreaError("O handle pai não representa diretório regular.")
+
+    update_handle = None
+    child_handles: dict[str, object] = {}
+    token = None
+    result = None
+    active_error = None
+    try:
+        parent_entries = enumerate_stable_directory_handle(parent_handle)
+        matches = [
+            entry for entry in parent_entries
+            if entry.name.casefold() == "_update"
+        ]
+        if len(matches) != 1 or matches[0].name != "_update":
+            raise PrivateAreaError(
+                "_update ausente, ambíguo ou com grafia não canônica."
+            )
+        update_entry = matches[0]
+        if not update_entry.is_directory or update_entry.is_reparse_point:
+            raise PrivateAreaError("_update não é diretório comum.")
+
+        update_handle = open_verified_child_component(
+            parent_handle, update_entry, desired_access=_LAYOUT_ACCESS
+        )
+        update_metadata = query_handle_metadata(update_handle)
+        if (
+            not update_metadata["is_directory"]
+            or update_metadata["is_reparse_point"]
+            or update_metadata["delete_pending"]
+            or update_metadata["volume_serial_number"]
+            != parent_metadata["volume_serial_number"]
+        ):
+            raise PrivateAreaError("_update mudou de identidade ou volume.")
+
+        token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+        )
+        token_user = win32security.GetTokenInformation(
+            token, win32security.TokenUser
+        )[0]
+        actual_owner_sid = win32security.ConvertSidToStringSid(token_user)
+        if expected_owner_sid is not None and expected_owner_sid != actual_owner_sid:
+            raise PrivateAreaError(
+                "SID esperado diverge do SID do token real do processo."
+            )
+
+        update_validation = _validate_created_private_directory(
+            update_handle, update_metadata, token, require_empty=False
+        )
+        update_entries = enumerate_stable_directory_handle(update_handle)
+        observed_names = {entry.name for entry in update_entries}
+        if observed_names != set(_PRIVATE_LAYOUT_COMPONENTS):
+            raise PrivateAreaError(
+                "A estrutura _update não contém exatamente staging, backups, "
+                "journal, logs e locks."
+            )
+
+        entry_by_name = {entry.name: entry for entry in update_entries}
+        for component in _PRIVATE_LAYOUT_COMPONENTS:
+            entry = entry_by_name[component]
+            if not entry.is_directory or entry.is_reparse_point:
+                raise PrivateAreaError(
+                    f"A área estrutural {component} não é diretório regular."
+                )
+            child = open_verified_child_component(
+                update_handle, entry, desired_access=_LAYOUT_ACCESS
+            )
+            child_handles[component] = child
+            metadata = query_handle_metadata(child)
+            if (
+                not metadata["is_directory"]
+                or metadata["is_reparse_point"]
+                or metadata["delete_pending"]
+                or metadata["volume_serial_number"]
+                != update_metadata["volume_serial_number"]
+            ):
+                raise PrivateAreaError(
+                    f"A área estrutural {component} mudou de identidade ou volume."
+                )
+
+            child_validation = _validate_created_private_directory(
+                child, metadata, token, require_empty=False
+            )
+            child_entries = enumerate_stable_directory_handle(child)
+            for child_entry in child_entries:
+                try:
+                    _validate_component(child_entry.name)
+                except Exception as exc:
+                    raise PrivateAreaError(
+                        f"Nome inválido em {component}: {child_entry.name!r}"
+                    ) from exc
+                if child_entry.is_reparse_point:
+                    raise PrivateAreaError(
+                        f"Reparse point encontrado dentro de {component}."
+                    )
+                if component == "staging" and (
+                    not child_entry.is_directory
+                    or not re.fullmatch(r"stage-[0-9a-f]{24}", child_entry.name)
+                ):
+                    raise PrivateAreaError(
+                        "A área staging contém objeto que não corresponde a "
+                        "um diretório de staging exclusivo."
+                    )
+            if child_validation.get("valid") is not True:
+                raise PrivateAreaError(
+                    f"ACL/Authz da área {component} não foi confirmada."
+                )
+
+        if update_validation.get("valid") is not True:
+            raise PrivateAreaError("ACL/Authz de _update não foi confirmada.")
+
+        result = ExistingPrivateAreaLayout(
+            update_handle=update_handle,
+            directories=child_handles,
+            metadata=update_metadata,
+            validation={
+                "valid": True,
+                "owner_sid": actual_owner_sid,
+                "update": update_validation,
+                "directories": {
+                    name: {"valid": True} for name in _PRIVATE_LAYOUT_COMPONENTS
+                },
+                "mutated": False,
+            },
+        )
+        update_handle = None
+        child_handles = {}
+    except Exception as exc:
+        active_error = exc
+        for name in reversed(tuple(child_handles)):
+            try:
+                close_handle(child_handles[name])
+            except Exception as close_error:
+                if hasattr(exc, "add_note"):
+                    exc.add_note(
+                        f"Falha ao fechar handle {name} após erro: {close_error}"
+                    )
+        child_handles.clear()
+        if update_handle is not None:
+            try:
+                close_handle(update_handle)
+            except Exception as close_error:
+                if hasattr(exc, "add_note"):
+                    exc.add_note(
+                        f"Falha ao fechar handle _update após erro: {close_error}"
+                    )
+            update_handle = None
+        if isinstance(exc, PrivateAreaError):
+            raise
+        raise PrivateAreaError(
+            f"A estrutura persistente _update não passou na validação: {exc}"
+        ) from exc
+    finally:
+        if token is not None:
+            try:
+                win32api.CloseHandle(token)
+            except Exception as close_error:
+                if result is not None:
+                    try:
+                        result.close()
+                    finally:
+                        raise PrivateAreaError(
+                            f"Falha ao fechar token após validação: {close_error}"
+                        ) from close_error
+                if active_error is not None and hasattr(active_error, "add_note"):
+                    active_error.add_note(
+                        f"Falha ao fechar token após erro: {close_error}"
+                    )
+                elif active_error is None:
+                    raise PrivateAreaError(
+                        f"Falha ao fechar token após validação: {close_error}"
+                    ) from close_error
+
+    if result is None:
+        raise PrivateAreaError("A validação não produziu layout utilizável.")
+    return result
