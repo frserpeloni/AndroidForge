@@ -100,9 +100,9 @@ A implementação está em branch e diretório separados. Não altera a branch `
 
 A primeira etapa de anexos está implementada em `backend/attachment_service.py`. Os arquivos ficam em `DATA_DIR/attachments`, fora da pasta pública da interface. O SQLite registra ID, conversa, nome de apresentação, extensão, MIME detectado, tamanho, SHA-256, nome físico UUID e texto extraído.
 
-Formatos aceitos: PDF, DOCX, TXT UTF-8, JPEG e PNG. A validação considera assinatura e parser, não confia no MIME informado pelo navegador. Limites: 10 MiB por arquivo, 5 arquivos por conversa e 25 MiB por conversa. PDF criptografado é rejeitado e limitado a 100 páginas. DOCX verifica a estrutura ZIP, caminhos internos, macros e relacionamentos externos. Imagens têm limite de 20 milhões de pixels e não recebem OCR.
+Formatos aceitos: PDF, DOCX, TXT UTF-8, JPEG e PNG. A validação considera assinatura e parser, não confia no MIME informado pelo navegador. Limites: 10 MiB por arquivo, 5 arquivos por conversa e 25 MiB por conversa. PDF criptografado é rejeitado e limitado a 100 páginas. DOCX verifica a estrutura ZIP, caminhos internos, macros e relacionamentos externos. Imagens têm limite de 20 milhões de pixels. JPEG, PNG e páginas PDF sem texto nativo passam por OCR local opcional, com limites próprios e estado de extração registrado.
 
-A interface permite selecionar arquivos, remover da fila, enviar, listar, baixar e excluir. Downloads são enviados como `application/octet-stream` com disposição de anexo. Os endpoints verificam a associação do ID à conversa. A extração de texto fica disponível para PDF, DOCX e TXT.
+A interface permite selecionar arquivos, remover da fila, enviar, listar, baixar e excluir. Downloads são enviados como `application/octet-stream` com disposição de anexo. Os endpoints verificam a associação do ID à conversa. A extração de texto fica disponível para PDF, DOCX e TXT. OCR local atende JPEG, PNG e até cinco páginas digitalizadas por PDF.
 
 Rotas:
 - `POST /api/conversations/{conversation_id}/attachments`
@@ -120,7 +120,28 @@ A integração de contexto consulta até cinco anexos vinculados à conversa atu
 
 O contexto não é gravado na tabela de mensagens nem na memória pessoal. A Plataforma reconstrói a sessão para a conversa, executa a solicitação e restaura a sessão global original. O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
 
-Anexos de imagem são informados ao modelo somente por metadados. OCR e análise visual não estão disponíveis nesta etapa. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
+Anexos de imagem com OCR concluído entram no contexto como texto reconhecido, identificado como OCR e sujeito a erros. Quando o motor ou os idiomas não estão disponíveis, o MAX recebe essa limitação por metadados. O sistema não faz análise visual. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
 
 
 A proteção de instruções usa duas mensagens separadas: a instrução de segurança permanece no papel `system`; o JSON com os trechos extraídos entra no papel `user`. Assim, o texto dos arquivos não recebe o mesmo nível de autoridade da instrução de proteção.
+
+
+## OCR local de anexos
+
+O OCR é executado no computador que hospeda a Plataforma. Não há envio das imagens ou páginas a serviços externos. JPEG e PNG passam pelo Tesseract local. Em PDFs, o pypdf extrai primeiro o texto nativo; páginas sem texto são renderizadas pelo PDFium via pypdfium2 e encaminhadas ao Tesseract.
+
+Limites: 8 segundos por imagem/página; até cinco páginas digitalizadas por PDF; renderização a 150 DPI, limitada a 3.000 pixels no maior lado; imagens de OCR reduzidas a no máximo 9 milhões de pixels. O limite original de 20 milhões de pixels para validação do arquivo permanece.
+
+Dependências Python: pytesseract e pypdfium2. O executável Tesseract e os dados de idioma são componentes locais separados. O idioma padrão é por+eng. No Windows, instale o Tesseract e os arquivos de idioma português (por) e inglês (eng). O caminho do executável pode ser informado por SERMAX_TESSERACT_CMD; sem essa configuração, a Plataforma procura tesseract no PATH.
+
+A ausência do executável, do pacote Python, dos dados de idioma ou do renderizador não bloqueia o upload. O SQLite registra extraction_method e extraction_status, e a interface mostra o estado. PDFs com texto nativo continuam legíveis sem OCR. Em documentos mistos, o texto nativo e o OCR são combinados, identificando as páginas reconhecidas.
+
+O OCR não é prova de fidelidade. O MAX recebe a indicação de que o trecho veio de OCR e que pode conter erros. O conteúdo continua sendo dado não confiável, sem autoridade para alterar instruções do sistema. O contexto segue limitado a 2.600 caracteres agregados e 650 por arquivo.
+
+A execução automatizada testa a integração com o renderizador PDF e simula a resposta do Tesseract. Ela não comprova a instalação do executável nem a qualidade do reconhecimento. A homologação com Tesseract real, pacote por+eng e imagens de referência continua pendente.
+
+Licenças para a futura distribuição: Tesseract está sob Apache-2.0. pypdfium2 declara Apache-2.0/BSD-3-Clause e PDFium usa licença BSD-style, com licenças de dependências que devem acompanhar distribuições binárias. Antes de empacotar a Plataforma, revisar e incluir os avisos correspondentes.
+
+Referências técnicas:
+- Tesseract, instalação e idiomas: https://tesseract-ocr.github.io/tessdoc/Installation
+- pypdfium2, instalação e licenças: https://pypdfium2.readthedocs.io/en/stable/readme.html
