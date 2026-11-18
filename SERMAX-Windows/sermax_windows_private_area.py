@@ -568,16 +568,20 @@ class ExistingPrivateAreaLayout:
                 close_handle(handle)
             except Exception as exc:
                 errors.append((name, exc))
-        self.directories.clear()
+            else:
+                del self.directories[name]
         if self.update_handle is not None:
             try:
                 close_handle(self.update_handle)
             except Exception as exc:
                 errors.append(("_update", exc))
-            self.update_handle = None
+            else:
+                self.update_handle = None
         if errors:
             details = "; ".join(f"{name}: {error}" for name, error in errors)
-            raise PrivateAreaError(f"Falha ao fechar handles da área privada: {details}")
+            raise PrivateAreaError(
+                f"Falha ao fechar handles da área privada; handles pendentes preservados: {details}"
+            )
 
     def __enter__(self):
         if self.update_handle is None:
