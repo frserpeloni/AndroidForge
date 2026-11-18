@@ -281,3 +281,34 @@ Foi implementado `backup_existing_files_by_handle()`:
 - Chave pública oficial de release permanece pendente.
 - Homologação Windows 11 local e testes com identidades Windows distintas continuam pendentes.
 - Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
+## Atualização: journal append-only e varredura de recuperação
+
+Foi implementado journal de transação por handles:
+- Diretório de transação exclusivo `txn-<24 hex>`.
+- Arquivos de evento sequenciais e exclusivos `event-000001.json`, criados por `FILE_CREATE`.
+- JSON canônico, schema estrito, rejeição de chaves duplicadas e payloads inválidos.
+- SHA-256 encadeado por `previous_hash` e `record_sha256`.
+- Máquina de estados que rejeita eventos fora de ordem e bloqueia transições após COMMITTED ou ROLLED_BACK.
+- Leitura valida FileId, volume, número de links, tamanho, sequência, cadeia e conteúdo.
+- Limites de 4.096 eventos, 1 MiB por evento e 64 MiB por transação.
+- `scan_journal_transactions_by_handle()` identifica transações vazias, em andamento, terminais ou que exigem recuperação, sem alterar arquivos.
+
+Limite de segurança: o hash encadeado detecta corrupção e inconsistências. Não é assinatura contra um processo com a mesma identidade que tenha controle dos arquivos. A chave pública oficial de release continua pendente. Não há recuperação automática ou rollback ainda.
+
+Foi corrigida a validação de filhos por handle: o tamanho do diretório não é mais comparado após enumeração, pois muda conforme a pasta recebe conteúdo. Para arquivos, a comparação de tamanho continua obrigatória.
+
+### CI
+
+- Run `44411616395`, commit `01ded92cd4e0f311280d5333b28db35becd4abfe`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 108 testes aprovados em onze grupos, incluindo teste nativo de append, reabertura e detecção de adulteração do journal.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44411616395).
+
+### Próximos gates
+
+- Verificação independente do backup após reabertura.
+- Restauração de conteúdo, atributos e ACL a partir do catálogo.
+- Integração dos eventos de journal com backup e staging.
+- Instalação transacional, recuperação após interrupção e rollback em sandbox.
+- Homologação Windows 11 local e testes com identidades Windows distintas.
+- Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
