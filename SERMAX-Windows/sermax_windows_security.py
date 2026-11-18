@@ -90,7 +90,15 @@ def read_security_by_handle(handle) -> dict[str, object]:
                 access_mask = int(ace[1]) if len(ace) >= 3 and isinstance(
                     ace[1], int
                 ) else None
-                trustee = _sid_text(ace[-1], win32security) if len(ace) >= 3 else None
+                trustee = None
+                if len(ace) >= 3:
+                    for candidate in ace[2:]:
+                        try:
+                            trustee = _sid_text(candidate, win32security)
+                            if trustee is not None:
+                                break
+                        except DirectorySecurityError:
+                            continue
                 ace_records.append({
                     "index": index,
                     "ace_type": ace_type,
