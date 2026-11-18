@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import sermax_windows_private_area as private_area
+import sermax_windows_effective_access as effective_access
 
 
 class PrivateAreaCreationTests(unittest.TestCase):
@@ -302,14 +303,13 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
         })
         modules.start()
         self.addCleanup(modules.stop)
-        import sermax_windows_effective_access as effective
         self.descriptor_patch = mock.patch.object(
-            effective, "read_security_descriptor_binary", return_value=b"x" * 20
+            effective_access, "read_security_descriptor_binary", return_value=b"x" * 20
         )
         self.descriptor_patch.start()
         self.addCleanup(self.descriptor_patch.stop)
         self.authz_patch = mock.patch.object(
-            effective, "evaluate_access_for_token",
+            effective_access, "evaluate_access_for_token",
             return_value={
                 "api": "AuthzAccessCheck", "api_success": True,
                 "desired_access": 0x001F01FF, "granted": True,
