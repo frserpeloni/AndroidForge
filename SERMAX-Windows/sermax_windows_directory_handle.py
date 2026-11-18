@@ -174,8 +174,11 @@ def open_verified_child_component(
             raise HandleIoError("FileId do handle não corresponde à entrada enumerada.")
         if child_metadata["attributes"] != entry.attributes:
             raise HandleIoError("Atributos do filho mudaram desde a enumeração.")
-        if child_metadata["end_of_file"] != entry.end_of_file:
-            raise HandleIoError("Tamanho do filho mudou desde a enumeração.")
+        if (
+            not entry.is_directory
+            and child_metadata["end_of_file"] != entry.end_of_file
+        ):
+            raise HandleIoError("Tamanho do arquivo filho mudou desde a enumeração.")
         if bool(child_metadata["is_directory"]) != entry.is_directory:
             raise HandleIoError("Tipo do filho diverge da entrada enumerada.")
         return child_handle
