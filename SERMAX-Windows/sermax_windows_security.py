@@ -1,8 +1,8 @@
-"""Leitura somente de metadados de segurança por handle Windows.
+"""Protótipo independente de leitura de metadados de segurança por handle.
 
-Não altera DACL, proprietário, grupo ou permissões. O resultado é evidência
-bruta estruturada para uma política de autorização posterior, não uma decisão
-de que o diretório é seguro para escrita.
+Não é o inspetor oficial do fluxo do atualizador. O fluxo integrado deve usar
+sermax_windows_acl_inspection.py e sermax_windows_private_area_acl_policy.py.
+Este protótipo fica preservado para comparação e não autoriza escrita.
 """
 from __future__ import annotations
 
