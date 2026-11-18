@@ -28,7 +28,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.created_policy = mock.patch.object(
             private_area, "_validate_created_private_directory"
         )
-        self.created_policy.start()
+        self.created_policy_mock = self.created_policy.start()
         self.addCleanup(self.created_policy.stop)
         self.pointer_size = mock.patch.object(
             private_area.ctypes, "sizeof", return_value=8
@@ -135,7 +135,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.assertEqual(calls[0]["root"], parent_handle)
         self.assertEqual(calls[0]["name"], "_update")
         self.assertIsNotNone(calls[0]["security_descriptor"])
-        self.created_policy.assert_called_once()
+        self.created_policy_mock.assert_called_once()
         self.token_closer.assert_called_once_with(777)
         self.assertEqual(
             calls[0]["access"],
