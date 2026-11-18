@@ -300,6 +300,7 @@ def write_verified_file_component(
             raise HandleFileWriterError(
                 f"FlushFileBuffers falhou, WinError={ctypes.get_last_error()}"
             )
+        _validate_file_acl(file_handle, token, owner_sid)
         after_write = query_handle_metadata(file_handle)
         _validate_file_metadata(after_write, parent_metadata)
         if after_write["file_id_128"] != metadata["file_id_128"]:
@@ -312,6 +313,7 @@ def write_verified_file_component(
         )
         final = query_handle_metadata(file_handle)
         _validate_file_metadata(final, parent_metadata)
+        _validate_file_acl(file_handle, token, owner_sid)
         if (
             final["file_id_128"] != metadata["file_id_128"]
             or final["end_of_file"] != expected_size
