@@ -13,7 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = REPOSITORY_ROOT / "SERMAX-Windows"
 BACKEND_DIR = REPOSITORY_ROOT / "SERMAX-Platform" / "backend"
 WORKER_SOURCE = CORE_DIR / "sermax_jarvis_worker.py"
-ENVIRONMENT_KEYS = ("SERMAX_ROOT", "SERMAX_PLATFORM_DATA", "SERMAX_CORE_DIR")
+ENVIRONMENT_KEYS = ("SERMAX_ROOT", "SERMAX_PLATFORM_DATA", "SERMAX_CORE_DIR", "PYTHONDONTWRITEBYTECODE")
 REQUIRED_MODULES = ("fastapi", "uvicorn", "pypdf", "pypdfium2", "pytesseract", "PIL")
 
 
@@ -30,6 +30,7 @@ def prepare_environment(temp_root: Path, base_environment: Mapping[str, str] | N
     environment["SERMAX_ROOT"] = str(temp_root.resolve())
     environment["SERMAX_PLATFORM_DATA"] = str((temp_root / "platform-data").resolve())
     environment["SERMAX_CORE_DIR"] = str(CORE_DIR.resolve())
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
     return environment
 
 
