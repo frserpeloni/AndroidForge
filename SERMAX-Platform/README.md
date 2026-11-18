@@ -145,3 +145,6 @@ Licenças para a futura distribuição: Tesseract está sob Apache-2.0. pypdfium
 Referências técnicas:
 - Tesseract, instalação e idiomas: https://tesseract-ocr.github.io/tessdoc/Installation
 - pypdfium2, instalação e licenças: https://pypdfium2.readthedocs.io/en/stable/readme.html
+
+
+O painel Motores também informa se o Tesseract local está disponível e se os dados de idioma português (por) e inglês (eng) estão instalados. A consulta executa somente Tesseract --list-langs, com timeout de 2 segundos. Ela não inicia OCR nem processa anexos.
