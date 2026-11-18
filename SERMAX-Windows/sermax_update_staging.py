@@ -94,7 +94,10 @@ def stage_verified_release_by_handle(
     except (PackageError, InventoryError, HandleIoError) as exc:
         raise StagingError("Pacote ou caminhos não passaram na validação integral.") from exc
 
-    from sermax_windows_private_area import create_staging_directory_component
+    from sermax_windows_private_area import (
+        create_staging_directory_component,
+        validate_empty_private_directory_handle,
+    )
     from sermax_windows_file_writer import write_verified_file_component
     from sermax_windows_handle_io import close_handle
 
@@ -105,6 +108,7 @@ def stage_verified_release_by_handle(
     file_results: list[dict[str, object]] = []
 
     try:
+        validate_empty_private_directory_handle(staging_parent_handle)
         root_handle = create_staging_directory_component(
             staging_parent_handle, stage_component
         )
