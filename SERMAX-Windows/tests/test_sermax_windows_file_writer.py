@@ -161,7 +161,7 @@ class HandleFileWriterTests(unittest.TestCase):
                     expected_size=len(self.data), expected_sha256="0" * 64,
                 )
         flush.assert_not_called()
-        close.assert_called_once_with(200)
+        close.assert_called_once_with(ctypes.c_void_p(200))
         self.token_closer.assert_called_once_with(777)
 
     def test_rejects_hardlink_metadata(self):
