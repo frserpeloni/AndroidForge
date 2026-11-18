@@ -343,6 +343,13 @@ def create_staging_directory_component(parent_handle, component: str):
     )
 
 
+def create_journal_directory_component(parent_handle, component: str):
+    """Cria diretório de transação/journal com ACL privada explícita."""
+    return create_private_directory_component(
+        parent_handle, component, _allow_staging_component=True
+    )
+
+
 def create_backup_directory_component(parent_handle, component: str):
     """Cria raiz/subdiretório de backup com ACL explícita e nome de componente."""
     return create_private_directory_component(
