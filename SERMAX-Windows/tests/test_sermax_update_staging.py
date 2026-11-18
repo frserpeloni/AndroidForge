@@ -259,14 +259,18 @@ class HandleReleaseStagingTests(unittest.TestCase):
     "Staging nativo exige Windows x64.",
 )
 class HandleReleaseStagingWindowsTests(unittest.TestCase):
-    def test_stages_nested_release_by_handles_with_real_acl_and_file_readback(self):
+    def test_stages_nested_release_inside_reopened_persistent_layout(self):
         import os
         import shutil
         import ctypes
         from sermax_windows_handle_io import close_handle
-        from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_private_area import (
+            create_private_directory_component,
+            open_existing_private_area_layout,
+        )
 
         files, manifest, archive = make_fixture()
+        layout_names = ("staging", "backups", "journal", "logs", "locks")
         with tempfile.TemporaryDirectory() as parent_path:
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
             create_file = kernel32.CreateFileW
@@ -287,17 +291,31 @@ class HandleReleaseStagingWindowsTests(unittest.TestCase):
                 None, 3, 0x02000000 | 0x00200000, None,
             )
             self.assertNotEqual(parent, ctypes.c_void_p(-1).value)
-            staging_parent = None
+            update_handle = None
+            structural_handles = []
+            layout = None
             staged = None
             try:
-                staging_parent = create_private_directory_component(parent, "_update")
+                update_handle = create_private_directory_component(parent, "_update")
+                for component in layout_names:
+                    structural_handles.append(
+                        create_private_directory_component(update_handle, component)
+                    )
+                for handle in reversed(structural_handles):
+                    close_handle(handle)
+                structural_handles.clear()
+                close_handle(update_handle)
+                update_handle = None
+
+                layout = open_existing_private_area_layout(parent)
+                staging_handle = layout.directories["staging"]
                 staged = stage_verified_release_by_handle(
-                    archive, manifest, staging_parent_handle=staging_parent
+                    archive, manifest, staging_parent_handle=staging_handle
                 )
                 self.assertEqual(len(staged.files), len(files))
                 for relative, expected in files.items():
                     target = os.path.join(
-                        parent_path, "_update", staged.component,
+                        parent_path, "_update", "staging", staged.component,
                         *relative.split("/"),
                     )
                     with open(target, "rb") as created:
@@ -305,8 +323,12 @@ class HandleReleaseStagingWindowsTests(unittest.TestCase):
             finally:
                 if staged is not None:
                     staged.close()
-                if staging_parent is not None:
-                    close_handle(staging_parent)
+                if layout is not None:
+                    layout.close()
+                for handle in reversed(structural_handles):
+                    close_handle(handle)
+                if update_handle is not None:
+                    close_handle(update_handle)
                 self.assertTrue(close(parent))
                 shutil.rmtree(parent_path, ignore_errors=True)
 
