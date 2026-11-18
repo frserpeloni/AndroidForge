@@ -402,3 +402,17 @@ pytesseract e pypdfium2 foram adicionados às dependências Python. O executáve
 Os testes automatizados devem confirmar upload sem motor, extração simulada de imagem, renderização de PDF via PDFium com OCR simulado, migração de banco, isolamento entre conversas, contexto e interface. Esses testes não comprovam precisão do OCR nem funcionamento de uma instalação Tesseract real. A homologação local com por+eng, amostras de imagem e PDFs digitalizados permanece pendente.
 
 PR #15 será mantida em rascunho, sem merge. O CI da branch deve validar Python 3.12, Python 3.14, Windows e os testes de interação da interface.
+
+
+## 25. Validação automatizada do OCR, 2026-11-17
+
+A execução GitHub Actions `44213281399`, evento `pull_request`, commit `60c9f6f9da43d3cbdd0997fa77950d9af5745af9`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A bateria validou a migração dos metadados de extração, upload quando Tesseract não está disponível, integração simulada de OCR em imagem, renderização PDF pelo PDFium com reconhecimento simulado, limite de cinco páginas OCR, indicação de origem e incerteza do OCR no contexto do MAX, além dos testes anteriores de anexos, conversa, memória, streaming e interface.
+
+A validação não executou o binário Tesseract nem mediu precisão de reconhecimento. A homologação local com Tesseract real e os dados de idioma `por` e `eng` continua pendente. Nenhuma inferência real com Ollama/OpenJarvis foi executada. PR #15 permanece aberta, em rascunho e sem merge.
