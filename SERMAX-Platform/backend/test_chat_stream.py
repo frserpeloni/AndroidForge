@@ -206,7 +206,7 @@ class ChatStreamApiTests(unittest.TestCase):
         combined = instruction["content"] + payload["content"]
         self.assertIn("texto.txt", combined)
         self.assertIn("foto.png", combined)
-        self.assertIn("OCR e análise visual não estão disponíveis", combined)
+        self.assertIn("OCR local indisponível neste computador", combined)
         self.assertLessEqual(len(combined), MAX_ATTACHMENT_CONTEXT_CHARS + 1800)
 
     def test_empty_stream_message_is_rejected(self):
