@@ -103,7 +103,7 @@ class HandleFileWriterTests(unittest.TestCase):
             | writer.FILE_OPEN_REPARSE_POINT
             | writer.FILE_SYNCHRONOUS_IO_NONALERT,
         )
-        acl.assert_called_once()
+        self.assertEqual(acl.call_count, 3)
         write_all.assert_called_once()
         readback.assert_called_once()
         close.assert_called_once()
@@ -165,6 +165,39 @@ class HandleFileWriterTests(unittest.TestCase):
         close.assert_called_once()
         self.assertEqual(close.call_args.args[0].value, 200)
         self.token_closer.assert_called_once_with(777)
+
+
+    def test_revalidates_acl_after_flush_before_readback(self):
+        acl_error = writer.HandleFileWriterError("ACL changed after flush")
+        with (
+            mock.patch.object(writer, "query_handle_metadata", side_effect=[
+                {"is_directory": True, "is_reparse_point": False,
+                 "delete_pending": False, "volume_serial_number": 1234},
+                self.metadata(),
+            ]),
+            mock.patch.object(
+                writer, "_native_api",
+                return_value=(lambda out_handle, *args: (setattr(out_handle._obj, "value", 200) or 0), None, None),
+            ),
+            mock.patch.object(
+                writer, "_write_apis",
+                return_value=(mock.Mock(), mock.Mock(), mock.Mock(return_value=1), mock.Mock()),
+            ),
+            mock.patch.object(
+                writer, "_validate_file_acl",
+                side_effect=[None, acl_error],
+            ) as acl,
+            mock.patch.object(writer, "_write_all"),
+            mock.patch.object(writer, "_readback") as readback,
+            mock.patch.object(writer, "close_handle"),
+        ):
+            with self.assertRaisesRegex(writer.HandleFileWriterError, "ACL changed"):
+                writer.write_verified_file_component(
+                    100, "payload.bin", io.BytesIO(self.data),
+                    expected_size=len(self.data), expected_sha256=self.digest,
+                )
+        self.assertEqual(acl.call_count, 2)
+        readback.assert_not_called()
 
     def test_rejects_hardlink_metadata(self):
         with (
