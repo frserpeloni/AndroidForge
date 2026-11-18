@@ -100,7 +100,7 @@ Foi incluída a função `validate_empty_private_directory_handle()` para exigir
 
 - Run `44394857061`, commit `0ccfa72dbe0fd6272c2997d0caa96a43d3fc8c4a`.
 - Windows Server 2025, Python 3.14.10, pywin32.
-- 71 testes aprovados em sete etapas de execução:
+- 71 testes aprovados em oito grupos:
   - escritor por handle: 6;
   - staging e staging por handles: 9;
   - leitor de segurança: 5;
