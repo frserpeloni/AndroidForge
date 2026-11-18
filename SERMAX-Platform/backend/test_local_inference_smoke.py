@@ -35,7 +35,7 @@ class LocalInferenceSmokeTests(unittest.TestCase):
         self.assertEqual(report["backend"], "ollama")
         self.assertFalse(report["personal_memory_accessed"])
         self.assertTrue(report["operational_actions_blocked"])
-        self.assertFalse(report["external_services_called"])
+        self.assertFalse(report["remote_services_called"])
 
     def test_smoke_test_reports_engine_failure_without_accessing_personal_memory(self):
         def fail(_prompt):
