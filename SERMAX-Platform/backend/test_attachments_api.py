@@ -7,6 +7,9 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from docx import Document
 from pypdf import PdfWriter
+from unittest.mock import patch
+import attachment_service
+import ocr_service
 import server
 
 
@@ -104,17 +107,35 @@ class AttachmentApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(url + "/content", headers=self.headers).status_code, 404)
         self.assertEqual(self.client.delete(url, headers=self.headers).status_code, 404)
 
-    def test_image_is_validated_and_stored_without_ocr(self):
+    def test_image_upload_survives_missing_ocr_engine(self):
         buffer = io.BytesIO()
         Image.new("RGB", (8, 8)).save(buffer, format="PNG")
-        response = self.upload("pixel.png", buffer.getvalue())
+        with patch.object(ocr_service, "_tesseract_path", return_value=None):
+            response = self.upload("pixel.png", buffer.getvalue())
         self.assertEqual(response.status_code, 201, response.text)
         self.assertFalse(response.json()["has_extracted_text"])
+        self.assertEqual(response.json()["extraction_method"], "none")
+        self.assertEqual(response.json()["extraction_status"], "engine_unavailable")
         content = self.client.get(
             f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
             headers=self.headers,
         )
         self.assertEqual(content.status_code, 415)
+
+    def test_image_ocr_text_is_stored_and_available_to_context(self):
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+        with patch.object(ocr_service, "_run_tesseract", return_value=("Texto reconhecido na imagem", "completed")):
+            response = self.upload("documento.png", buffer.getvalue())
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["extraction_method"], "ocr")
+        self.assertEqual(response.json()["extraction_status"], "completed")
+        content = self.client.get(
+            f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
+            headers=self.headers,
+        )
+        self.assertEqual(content.status_code, 200)
+        self.assertEqual(content.json()["text"], "Texto reconhecido na imagem")
 
     def test_delete_removes_metadata_and_file(self):
         response = self.upload("remove.txt", b"apagar")
@@ -156,9 +177,11 @@ class AttachmentApiTests(unittest.TestCase):
         writer = PdfWriter()
         writer.add_blank_page(width=72, height=72)
         writer.write(pdf_buffer)
-        pdf_response = self.upload("folha.pdf", pdf_buffer.getvalue())
+        with patch.object(attachment_service, "ocr_pdf_pages", return_value=({}, "engine_unavailable")):
+            pdf_response = self.upload("folha.pdf", pdf_buffer.getvalue())
         self.assertEqual(pdf_response.status_code, 201, pdf_response.text)
-        self.assertTrue(pdf_response.json()["has_extracted_text"])
+        self.assertFalse(pdf_response.json()["has_extracted_text"])
+        self.assertEqual(pdf_response.json()["extraction_status"], "engine_unavailable")
 
     def test_corrupt_docx_and_encrypted_pdf_are_rejected(self):
         corrupt = self.upload("quebrado.docx", bytes([0x50, 0x4B, 0x03, 0x04]) + b"nao-e-zip")
@@ -171,6 +194,26 @@ class AttachmentApiTests(unittest.TestCase):
         writer.write(pdf_buffer)
         encrypted = self.upload("protegido.pdf", pdf_buffer.getvalue())
         self.assertEqual(encrypted.status_code, 422)
+
+
+    def test_scanned_pdf_ocr_uses_local_renderer_with_mocked_engine(self):
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.write(pdf_buffer)
+        with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
+             patch.object(ocr_service, "_run_tesseract", return_value=("Texto reconhecido na página", "completed")):
+            response = self.upload("digitalizado.pdf", pdf_buffer.getvalue())
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["extraction_method"], "ocr")
+        self.assertEqual(response.json()["extraction_status"], "completed")
+        content = self.client.get(
+            f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
+            headers=self.headers,
+        )
+        self.assertEqual(content.status_code, 200)
+        self.assertIn("[OCR página 1]", content.json()["text"])
+        self.assertIn("Texto reconhecido na página", content.json()["text"])
 
     def test_sixth_attachment_is_rejected(self):
         for index in range(5):
