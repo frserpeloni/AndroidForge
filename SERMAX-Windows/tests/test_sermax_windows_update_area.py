@@ -61,7 +61,8 @@ class UpdateAreaInspectionTests(unittest.TestCase):
             ),
             mock.patch.object(
                 update_area, "read_security_by_handle",
-                return_value=self.security if security is None else security,
+                side_effect=security if isinstance(security, Exception) else None,
+                return_value=self.security if security is None or isinstance(security, Exception) else security,
             ),
         )
 
