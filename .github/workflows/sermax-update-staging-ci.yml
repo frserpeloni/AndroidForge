@@ -8,8 +8,6 @@ on:
       - "SERMAX-Windows/sermax_update_staging.py"
       - "SERMAX-Windows/sermax_windows_file_writer.py"
       - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
-      - "SERMAX-Windows/sermax_windows_file_writer.py"
-      - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
       - "SERMAX-Windows/sermax_update_package.py"
       - "SERMAX-Windows/sermax_update_manifest.py"
       - "SERMAX-Windows/sermax_update_inventory.py"
@@ -32,6 +30,8 @@ on:
       - sermax-windows-integration-20261029
     paths:
       - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_windows_file_writer.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
       - "SERMAX-Windows/sermax_update_package.py"
       - "SERMAX-Windows/sermax_update_manifest.py"
       - "SERMAX-Windows/sermax_update_inventory.py"
