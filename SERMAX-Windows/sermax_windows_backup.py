@@ -158,8 +158,9 @@ def _open_source_file(root_handle, relative_path: str, expected_volume: int):
             child = open_verified_child_component(
                 parent_handle,
                 entry,
-                desired_access=FILE_LIST_DIRECTORY | READ_CONTROL,
+                desired_access=FILE_LIST_DIRECTORY,
             )
+            opened_directories.append(child)
             metadata = query_handle_metadata(child)
             if (
                 not metadata["is_directory"]
@@ -167,9 +168,7 @@ def _open_source_file(root_handle, relative_path: str, expected_volume: int):
                 or metadata["delete_pending"]
                 or metadata["volume_serial_number"] != expected_volume
             ):
-                close_handle(child)
                 raise BackupError(f"Diretório de origem instável: {part}")
-            opened_directories.append(child)
             parent_handle = child
 
         leaf = parts[-1]
@@ -189,7 +188,7 @@ def _open_source_file(root_handle, relative_path: str, expected_volume: int):
         file_handle = open_verified_child_component(
             parent_handle,
             entry,
-            desired_access=FILE_READ_DATA | READ_CONTROL,
+            desired_access=FILE_READ_DATA,
         )
         metadata = query_handle_metadata(file_handle)
         _validate_regular_source(metadata, expected_volume)
