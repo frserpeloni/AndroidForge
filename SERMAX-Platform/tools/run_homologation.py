@@ -72,7 +72,9 @@ def main() -> int:
         environment = prepare_environment(temp_root)
         previous = {key: os.environ.get(key) for key in ENVIRONMENT_KEYS}
         original_path = list(sys.path)
+        original_dont_write_bytecode = sys.dont_write_bytecode
         try:
+            sys.dont_write_bytecode = True
             for key in ENVIRONMENT_KEYS:
                 os.environ[key] = environment[key]
             sys.path.insert(0, str(BACKEND_DIR))
@@ -93,6 +95,7 @@ def main() -> int:
                 else:
                     os.environ[key] = value
             sys.path[:] = original_path
+            sys.dont_write_bytecode = original_dont_write_bytecode
 
 
 if __name__ == "__main__":
