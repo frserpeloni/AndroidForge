@@ -19,6 +19,7 @@ MAX_OCR_PDF_PAGES = 5
 PDF_RENDER_DPI = 150
 OCR_LANGUAGE = "por+eng"
 OCR_LOCK = threading.Lock()
+OCR_JOB_LOCK = threading.Lock()
 
 
 def _tesseract_path() -> str | None:
@@ -148,7 +149,7 @@ def _prepare_image(image: Image.Image) -> Image.Image:
     return prepared
 
 
-def ocr_image_bytes(data: bytes) -> tuple[str | None, str]:
+def _ocr_image_bytes_locked(data: bytes) -> tuple[str | None, str]:
     """Executa OCR local em JPEG/PNG, sem falhar o upload se o motor faltar."""
     try:
         with Image.open(io.BytesIO(data)) as source:
@@ -162,8 +163,14 @@ def ocr_image_bytes(data: bytes) -> tuple[str | None, str]:
         return None, "failed"
     return (text, status) if text else (None, status)
 
+ 
+def ocr_image_bytes(data: bytes) -> tuple[str | None, str]:
+    """Serializa trabalhos de OCR para limitar CPU e memória concorrentes."""
+    with OCR_JOB_LOCK:
+        return _ocr_image_bytes_locked(data)
 
-def ocr_pdf_pages(
+
+def _ocr_pdf_pages_locked(
     data: bytes,
     page_indexes: Iterable[int],
 ) -> tuple[dict[int, str], str]:
@@ -228,3 +235,12 @@ def ocr_pdf_pages(
     if statuses:
         return {}, statuses[0] if len(set(statuses)) == 1 else "failed"
     return {}, "no_text"
+
+
+def ocr_pdf_pages(
+    data: bytes,
+    page_indexes: Iterable[int],
+) -> tuple[dict[int, str], str]:
+    """Serializa renderização e OCR de PDFs para limitar uso de recursos."""
+    with OCR_JOB_LOCK:
+        return _ocr_pdf_pages_locked(data, page_indexes)
