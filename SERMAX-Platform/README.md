@@ -177,3 +177,16 @@ python SERMAX-Platform/tools/check_local_ocr.py
 ```
 
 O teste gera em memória uma imagem sintética com o texto `SERMAX OCR TESTE 2026 12345`, executa o Tesseract real na imagem e em um PDF digitalizado montado em memória e verifica se os marcadores foram reconhecidos. Não lê arquivos pessoais, não grava arquivos e não envia dados à rede. Resultado `passed` confirma o funcionamento básico do motor e do renderizador naquele ambiente, mas não mede precisão em documentos reais. O teste exige Tesseract com `por` e `eng`, `pytesseract` e `pypdfium2` instalados.
+
+
+### Teste real dos motores locais
+
+Para verificar uma resposta real pelo roteamento do núcleo, execute:
+
+```powershell
+python SERMAX-Platform/tools/check_local_inference.py
+```
+
+O script envia uma solicitação fixa ao SERMAX. O núcleo tenta OpenJarvis local e usa Ollama local como fallback, conforme a configuração existente. A variável `SERMAX_JARVIS_PYTHON` deve apontar para o `python.exe` do ambiente OpenJarvis já instalado para que esse backend seja testado; sem ela, o adaptador procura `.venv-jarvis` dentro da pasta temporária e tende a seguir pelo fallback Ollama. O modelo definido no núcleo é `sermax`; confirme que esse modelo existe no Ollama com `ollama list`.
+
+O script direciona `SERMAX_ROOT` para uma pasta temporária, não carrega os arquivos de memória pessoais e bloqueia as funções de execução de comandos e planos. A pergunta fixa é `Responda exatamente com SERMAX_LOCAL_OK e nada mais.`. O relatório indica backend, agente, fallback e resposta. A pasta temporária é removida ao encerrar. O teste executa inferência real nos motores locais e pode levar alguns minutos; não é executado pelo CI.
