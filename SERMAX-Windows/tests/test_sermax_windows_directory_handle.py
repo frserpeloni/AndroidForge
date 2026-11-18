@@ -211,6 +211,27 @@ class VerifiedChildHandleTests(unittest.TestCase):
         opened.assert_called_once_with(123, "subdir", directory=True,
                                        desired_access=native_enum.FILE_LIST_DIRECTORY)
 
+
+    def test_accepts_directory_size_change_after_enumeration(self):
+        entry = directory_entry(name="subdir", attributes=0x10, size=0)
+        with (
+            patch.object(
+                native_enum, "query_handle_metadata",
+                side_effect=(
+                    handle_metadata(directory=True, attributes=0x10, size=0),
+                    handle_metadata(directory=True, attributes=0x10, size=8192),
+                ),
+            ),
+            patch.object(
+                native_enum, "open_relative_component", return_value=456
+            ) as opened,
+            patch.object(native_enum, "close_handle") as closed,
+        ):
+            result = native_enum.open_verified_child_component(123, entry)
+        self.assertEqual(result, 456)
+        opened.assert_called_once()
+        closed.assert_not_called()
+
     def test_rejects_file_id_mismatch_and_closes_child(self):
         entry = directory_entry()
         with (
