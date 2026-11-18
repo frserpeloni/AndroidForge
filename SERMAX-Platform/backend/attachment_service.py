@@ -13,6 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from starlette.datastructures import UploadFile
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from docx import Document
@@ -265,7 +266,7 @@ async def upload_attachment(conversation_id: str, request: Request):
         raise HTTPException(status_code=422, detail="Arquivo vazio.")
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="Cada arquivo deve ter no máximo 10 MiB.")
-    mime, extracted, extraction_method, extraction_status = _validate_and_extract(data, display_name)
+    mime, extracted, extraction_method, extraction_status = await run_in_threadpool(_validate_and_extract, data, display_name)
     extension = Path(display_name).suffix.casefold()
     attachment_id, storage_name = str(uuid.uuid4()), str(uuid.uuid4())
     root = _storage_root()
