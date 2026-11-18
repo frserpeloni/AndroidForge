@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 import types
 from pathlib import Path
 
@@ -54,7 +55,7 @@ class HomologationLauncherTests(unittest.TestCase):
         tasks = types.ModuleType("sermax_tarefas")
         executor.executar = lambda *_args, **_kwargs: "executado"
         tasks.executar_plano = lambda *_args, **_kwargs: "executado"
-        with unittest.mock.patch.dict(sys.modules, {
+        with patch.dict(sys.modules, {
             "sermax_executor": executor,
             "sermax_tarefas": tasks,
         }):
