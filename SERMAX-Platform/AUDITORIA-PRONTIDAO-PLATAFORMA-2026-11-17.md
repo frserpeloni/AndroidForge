@@ -516,3 +516,19 @@ A execução GitHub Actions `44226515348`, evento `pull_request`, commit `571f73
 - `frontend-interaction`: sucesso.
 
 O CI validou a construção da amostra sintética em memória, o relatório do teste local e o encerramento seguro quando o Tesseract não está disponível, com respostas de OCR simuladas. O teste real com o executável Tesseract e PDFium continua pendente no computador de homologação.
+
+
+## 34. Teste real local de inferência pelo roteamento SERMAX, 2026-11-17
+
+Foi adicionado `SERMAX-Platform/tools/check_local_inference.py` para executar uma solicitação fixa pelo método `sermax_core.perguntar` e registrar o backend selecionado.
+
+- O teste importa o núcleo do repositório e direciona `SERMAX_ROOT` para uma pasta temporária.
+- O worker OpenJarvis é copiado para a pasta temporária; o executável Python é lido da variável `SERMAX_JARVIS_PYTHON`, se configurada.
+- O núcleo tenta OpenJarvis local e mantém o fallback Ollama local existente.
+- A pergunta é fixa e não contém arquivos ou dados pessoais.
+- `sermax_executor.executar` e `sermax_tarefas.executar_plano` ficam bloqueados.
+- A memória pessoal e a memória neural apontam para a pasta temporária; nenhum arquivo de memória existente é lido ou copiado.
+- O relatório JSON informa backend, agente, fallback e resposta. A pasta temporária é removida ao finalizar.
+- O script não chama serviços remotos. A inferência real exige que Ollama e/ou OpenJarvis estejam instalados e operacionais.
+
+Os testes automatizados simulam a resposta do núcleo e verificam os relatórios de sucesso e falha. Eles não executam inferência. A homologação com modelos locais continua pendente.
