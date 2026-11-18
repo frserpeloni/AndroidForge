@@ -7,8 +7,8 @@ pelo processo e com ACL que impeça escrita por outros usuários.
 from __future__ import annotations
 
 import hashlib
+import io
 import os
-import shutil
 import stat
 import tempfile
 import zipfile
@@ -79,7 +79,7 @@ def stage_verified_release(
             raise StagingError(f"Não foi possível restringir permissões do staging: {stage}") from exc
 
     try:
-        with zipfile.ZipFile(__import__("io").BytesIO(archive_bytes), "r") as package:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as package:
             entries = {info.filename: info for info in package.infolist()}
             for item in manifest.files:
                 destination = _ensure_safe_parents(stage, item.path)
