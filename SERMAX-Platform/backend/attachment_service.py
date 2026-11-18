@@ -126,7 +126,7 @@ def _extract_pdf(data: bytes) -> tuple[str, str, str]:
         for index in range(len(reader.pages)):
             page_text = native_by_page.get(index)
             if page_text is None and index in recognized:
-                page_text = f"[OCR página {index + 1}]\\n{recognized[index]}"
+                page_text = f"[OCR página {index + 1}]\n{recognized[index]}"
             if not page_text:
                 continue
             remaining = MAX_EXTRACTED_CHARS - total
@@ -134,7 +134,7 @@ def _extract_pdf(data: bytes) -> tuple[str, str, str]:
                 break
             chunks.append(page_text[:remaining])
             total += min(len(page_text), remaining)
-        extracted = "\\n".join(chunks)
+        extracted = "\n".join(chunks)
         if recognized and native_by_page:
             method = "mixed"
         elif recognized:
@@ -209,7 +209,7 @@ def _validate_and_extract(data: bytes, display_name: str) -> tuple[str, str | No
             text = data.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
             raise HTTPException(status_code=415, detail="TXT deve estar codificado em UTF-8.") from exc
-        if "\\x00" in text:
+        if "\x00" in text:
             raise HTTPException(status_code=415, detail="TXT contém bytes NUL.")
         return MIME_BY_KIND[kind], text[:MAX_EXTRACTED_CHARS], "native", "completed"
     try:
