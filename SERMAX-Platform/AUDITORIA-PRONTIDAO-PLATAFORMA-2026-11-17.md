@@ -452,3 +452,15 @@ Foi adicionado SERMAX-Platform/tools/run_homologation.py para permitir testes lo
 - O launcher desativa gravação de bytecode no processo e nos subprocessos, não instala dependências, não baixa modelos e não altera C:\SERMAX.
 
 Testes automatizados verificam redirecionamento de memória e banco, preservação dos caminhos de motores, cópia do worker e bloqueio das ações operacionais. A execução real do launcher e a homologação com modelos locais dependem do computador de execução e permanecem pendentes.
+
+
+## 29. CI do launcher de homologação isolada, 2026-11-17
+
+A execução GitHub Actions `44214557379`, evento `pull_request`, commit `24edb5b7335d60ac242852296e40e8c3033a0d95`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes do launcher validaram a substituição de SERMAX_ROOT e SERMAX_PLATFORM_DATA por diretórios temporários, preservação dos caminhos configurados para Tesseract e OpenJarvis, cópia do worker, ausência de cópia de arquivos de memória e bloqueio de execução de comandos e planos. A validação CI não iniciou a Plataforma com modelos reais nem executou reconhecimento OCR real.
