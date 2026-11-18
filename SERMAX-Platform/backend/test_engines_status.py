@@ -84,7 +84,7 @@ class EngineStatusApiTests(unittest.TestCase):
     def test_ocr_diagnostic_checks_required_languages(self):
         result = type("Result", (), {
             "returncode": 0,
-            "stdout": 'List of available languages (2):\\neng\\npor\\n',
+            "stdout": 'List of available languages (2):\neng\npor\n',
             "stderr": "",
         })()
         with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
@@ -97,7 +97,7 @@ class EngineStatusApiTests(unittest.TestCase):
 
     def test_ocr_diagnostic_identifies_missing_portuguese_data(self):
         result = type("Result", (), {
-            "returncode": 0, "stdout": "List of available languages (1):\\neng\\n", "stderr": ""
+            "returncode": 0, "stdout": "List of available languages (1):\neng\n", "stderr": ""
         })()
         with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
              patch.object(ocr_service.subprocess, "run", return_value=result):
