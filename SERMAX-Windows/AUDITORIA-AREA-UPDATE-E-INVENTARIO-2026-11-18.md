@@ -164,3 +164,33 @@ A execução nativa usa diretórios temporários e o token do processo do runner
 ## Próximo gate técnico
 
 O próximo trabalho é projetar e testar criação atômica da pasta privada com SECURITY_DESCRIPTOR explícito. A rotina atual `create_private_directory_component()` ainda passa descritor nulo para `NtCreateFile`; por isso, não deve criar a área privada de produção. Nenhum staging ou dado de atualização será gravado antes desse gate.
+
+
+## Criação atômica da área privada com SECURITY_DESCRIPTOR
+
+A rotina `create_private_directory_component()` foi evoluída:
+- Obtém o SID do usuário do token real do processo.
+- Monta um SECURITY_DESCRIPTOR self-relative com proprietário explícito.
+- Define DACL com três ACEs de controle total: proprietário, SYSTEM e Administradores.
+- Marca a DACL como protegida contra herança.
+- Anexa o buffer do descritor em `OBJECT_ATTRIBUTES.SecurityDescriptor` antes da chamada `NtCreateFile(FILE_CREATE)`.
+- Solicita READ_CONTROL no handle recém-criado.
+- Lê e valida DACL, proprietário, identidade, diretório vazio e direitos Authz no mesmo handle antes de retorná-lo.
+- Se a validação falhar, fecha o handle e preserva a pasta vazia para inspeção. Não grava arquivos e não tenta reparar a ACL.
+
+A documentação Microsoft confirma que `OBJECT_ATTRIBUTES.SecurityDescriptor` define o descritor de segurança no momento da criação; quando é NULL, o objeto recebe configurações padrão. Também confirma os formatos absoluto e self-relative do descritor. Fontes: [OBJECT_ATTRIBUTES](https://learn.microsoft.com/pt-br/windows/win32/api/ntdef/ns-ntdef-_object_attributes) e [Absolute and Self-Relative Security Descriptors](https://learn.microsoft.com/en-us/windows/win32/secauthz/absolute-and-self-relative-security-descriptors).
+
+## CI após criação protegida
+
+- Run push `44350582401`, commit `e1e67c2905abb037b41578848145838ff76cf0a8`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 61 testes aprovados, incluindo:
+  - criação nativa de `_update` e `staging` com SECURITY_DESCRIPTOR aplicado durante NtCreateFile;
+  - leitura da ACL resultante e validação no handle recém-criado;
+  - inspeção nativa da área preexistente;
+  - Authz com o token real do processo.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44350582401).
+
+## Limites ainda vigentes
+
+A criação protegida foi testada em diretórios temporários no Windows Server 2025. Ainda faltam testes com identidades Windows distintas, execução no Windows 11 do mantenedor, integração do staging para escrita por handles e validação de concorrência. A rotina não foi executada em `C:\\SERMAX`.
