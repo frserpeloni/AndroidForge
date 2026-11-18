@@ -88,9 +88,10 @@ def stage_verified_release_by_handle(
     preservada e seus handles são fechados para inspeção posterior.
     """
     try:
+        from sermax_windows_handle_io import HandleIoError
         validate_release_archive(archive_bytes, manifest)
         _preflight_handle_paths(manifest)
-    except (PackageError, InventoryError) as exc:
+    except (PackageError, InventoryError, HandleIoError) as exc:
         raise StagingError("Pacote ou caminhos não passaram na validação integral.") from exc
 
     from sermax_windows_private_area import create_staging_directory_component
