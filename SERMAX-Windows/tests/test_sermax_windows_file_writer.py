@@ -106,7 +106,8 @@ class HandleFileWriterTests(unittest.TestCase):
         acl.assert_called_once()
         write_all.assert_called_once()
         readback.assert_called_once()
-        close.assert_called_once_with(ctypes.c_void_p(200))
+        close.assert_called_once()
+        self.assertEqual(close.call_args.args[0].value, 200)
         self.token_closer.assert_called_once_with(777)
 
     def test_rejects_parent_reparse_point_before_native_create(self):
@@ -161,7 +162,8 @@ class HandleFileWriterTests(unittest.TestCase):
                     expected_size=len(self.data), expected_sha256="0" * 64,
                 )
         flush.assert_not_called()
-        close.assert_called_once_with(ctypes.c_void_p(200))
+        close.assert_called_once()
+        self.assertEqual(close.call_args.args[0].value, 200)
         self.token_closer.assert_called_once_with(777)
 
     def test_rejects_hardlink_metadata(self):
@@ -223,10 +225,8 @@ class HandleFileWriterWindowsTests(unittest.TestCase):
                 )
                 self.assertEqual(result["size"], len(payload))
                 self.assertTrue(result["acl_validated"])
-                self.assertEqual(
-                    open(os.path.join(parent_path, "native-test.bin"), "rb").read(),
-                    payload,
-                )
+                with open(os.path.join(parent_path, "native-test.bin"), "rb") as created:
+                    self.assertEqual(created.read(), payload)
             finally:
                 self.assertTrue(close(parent))
 
