@@ -172,3 +172,44 @@ Os testes nativos foram executados em Windows Server 2025, com token do processo
 ### Próxima etapa
 
 Implementar journal durável append-only com sequência monotônica, hash encadeado, eventos de transação, leitura de recuperação e validação por handles. Depois integrar backup, journal e staging em um fluxo transacional de instalação/rollback em sandbox. Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
+## Journal transacional append-only
+
+Foi adicionado `sermax_windows_journal.py`.
+
+Contrato implementado:
+- Cria diretório exclusivo `txn-<24 hex>` dentro de `_update/journal`, com ACL privada.
+- Cada evento é um arquivo `event-000001.json`, `event-000002.json` etc., criado por `FILE_CREATE`. Não há sobrescrita de evento.
+- Cada registro usa JSON canônico, rejeita chaves duplicadas e constantes não finitas.
+- Cada evento contém schema, transaction_id, sequência, tipo, payload, hash anterior e hash próprio SHA-256.
+- A leitura valida FileId, volume, hardlinks, tamanho, nome, sequência, cadeia hash, schema, payload e transição de estado.
+- A máquina de estados restringe a ordem: PREPARED, BACKUP_COMPLETE, STAGING_COMPLETE, INSTALL_STARTED, FILE_REPLACED, COMMITTED e os eventos de rollback/recuperação.
+- Limites: 4.096 eventos por transação, 1 MiB por evento e 64 MiB por journal.
+- `scan_journal_transactions_by_handle()` enumera transações sem mutação e identifica registros incompletos ou não terminais que exigem recuperação.
+- Cada evento é gravado com ACL protegida, FlushFileBuffers e readback pelo escritor verificado.
+
+O hash encadeado detecta corrupção e inconsistências da cadeia. Não equivale a assinatura criptográfica contra um processo com a mesma identidade e controle total sobre os arquivos. A autenticação da release continua dependendo da chave pública oficial, ainda pendente.
+
+Foi corrigido também `open_verified_child_component()`: diretórios podem mudar de tamanho quando recebem conteúdo. A comparação de tamanho agora se aplica somente a arquivos. FileId, volume, atributos, tipo e reparse point continuam validados.
+
+### CI consolidado com journal
+
+- Run `44411616395`, commit de código/testes `01ded92cd4e0f311280d5333b28db35becd4abfe`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 108 testes aprovados em onze grupos:
+  - handles de diretório: 11;
+  - journal: 9;
+  - backup: 9;
+  - escritor por handles: 7;
+  - staging: 10;
+  - segurança de handles: 5;
+  - inspeção/política de `_update`: 11;
+  - área privada: 19;
+  - layout persistente: 5;
+  - inspeção ACL: 5;
+  - política ACL: 17.
+- O teste nativo do journal cria, grava, fecha, reabre, valida a cadeia e detecta adulteração de evento.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44411616395).
+
+### Próxima etapa
+
+Implementar verificação independente de backups após reabertura, rotina de restauração de conteúdo/ACL e integração do journal com o staging e o backup. Depois desenvolver instalação transacional e rollback em sandbox. O journal ainda não executa recuperação automática nem altera a instalação ativa.
