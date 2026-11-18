@@ -3,6 +3,7 @@ from unittest import mock
 
 from sermax_windows_directory_enum import DirectoryEntry
 import sermax_windows_update_area as update_area
+from sermax_windows_security import DirectorySecurityError
 
 
 def directory_entry(name="_update", *, attributes=0x10):
@@ -110,14 +111,14 @@ class UpdateAreaInspectionTests(unittest.TestCase):
     def test_closes_child_handle_when_security_read_fails(self):
         patches = self._patch_common(
             [directory_entry()],
-            security=RuntimeError("security read failure"),
+            security=DirectorySecurityError("security read failure"),
         )
         with (
             patches[0], patches[1], patches[2],
             patches[3],
             mock.patch.object(update_area, "close_handle") as close,
         ):
-            with self.assertRaisesRegex(RuntimeError, "security read failure"):
+            with self.assertRaisesRegex(update_area.UpdateAreaError, "security read failure"):
                 update_area.inspect_update_area_by_handle(100)
         close.assert_called_once_with(200)
 
