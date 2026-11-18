@@ -478,6 +478,9 @@ def backup_existing_files_by_handle(
                     "size": item["size"],
                     "sha256": item["sha256"],
                     "backup_file_id_128": item["backup"]["file_id_128"],
+                    "backup_volume_serial_number": item["backup"]["volume_serial_number"],
+                    "backup_number_of_links": item["backup"]["number_of_links"],
+                    "backup_size": item["backup"]["size"],
                     "backup_sha256": item["backup"]["sha256"],
                 }
                 for item in results
