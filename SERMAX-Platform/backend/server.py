@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from attachment_service import router as attachments_router
+from ocr_service import get_ocr_engine_status
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
@@ -250,7 +251,7 @@ def models():
 
 @app.get("/api/engines/status")
 def engines_status():
-    """Diagnóstico local. Não inicia motores nem envia prompts."""
+    """Diagnóstico local. Consulta Tesseract --list-langs, sem OCR ou prompts."""
     with CHAT_LOCK:
         core = CORE_MODULE
         route_info = getattr(core, "ultimo_diagnostico_roteamento", {}) if core is not None else {}
@@ -287,6 +288,8 @@ def engines_status():
     jarvis_worker = adapter_root / "sermax_jarvis_worker.py"
     jarvis_configured = jarvis_python.is_file() and jarvis_worker.is_file()
 
+    ocr = get_ocr_engine_status()
+
     last_backend = route_info.get("backend")
     if last_backend not in {"openjarvis", "ollama", "nao_executado"}:
         last_backend = "nao_executado"
@@ -294,6 +297,7 @@ def engines_status():
     return {
         "core_loaded": core is not None,
         "ollama": ollama,
+        "ocr": ocr,
         "openjarvis": {
             "environment_files_present": jarvis_configured,
             "detail": (
