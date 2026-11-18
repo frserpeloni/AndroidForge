@@ -113,7 +113,11 @@ def stage_verified_release_by_handle(
         parent_validation = validate_private_directory_handle(
             staging_parent_handle, require_empty=False
         )
-        existing_stages = enumerate_stable_directory_handle(staging_parent_handle)
+        existing_stages = (
+            entry
+            for entry in enumerate_stable_directory_handle(staging_parent_handle)
+            if entry.name not in {".", ".."}
+        )
         for entry in existing_stages:
             if (
                 not entry.is_directory
