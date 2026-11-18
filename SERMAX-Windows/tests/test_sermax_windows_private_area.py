@@ -438,3 +438,31 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
                     100, expected_owner_sid="S-1-5-21-100"
                 )
         opener.assert_not_called()
+
+
+    def test_rejects_noncanonical_update_name_without_opening_child(self):
+        from types import SimpleNamespace
+
+        entry = SimpleNamespace(
+            name="_UPDATE", is_directory=True, file_id="b" * 32
+        )
+        with (
+            mock.patch.object(
+                private_area, "query_handle_metadata",
+                return_value=self._metadata(),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(entry,),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component"
+            ) as opener,
+        ):
+            with self.assertRaisesRegex(
+                private_area.PrivateAreaError, "grafia não canônica"
+            ):
+                private_area.validate_existing_private_area(
+                    100, expected_owner_sid="S-1-5-21-100"
+                )
+        opener.assert_not_called()
