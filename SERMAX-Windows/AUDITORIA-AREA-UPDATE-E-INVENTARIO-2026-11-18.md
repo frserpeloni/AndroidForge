@@ -55,3 +55,37 @@ A próxima implementação deve falhar fechada e cumprir todos estes pontos:
 ## Restrições preservadas
 
 Nenhuma escrita foi feita em `C:\SERMAX`. Nenhum arquivo foi substituído ou removido. Não houve alteração em `main`, merge de PR, criação de chave de produção, backup da instalação, instalação ou rollback. O staging parcial de qualquer falha deve ser preservado até revisão.
+
+
+## Execução da etapa de inspeção por handle
+
+Implementado na branch:
+- `sermax_windows_security.py`: leitura somente de owner, group, DACL, ACEs, controle de herança, FileId, volume e número de links.
+- `sermax_windows_update_area.py`: enumeração e abertura de `_update` relativa ao handle SERMAX, com validação de nome literal, tipo, reparse point, FileId, volume e leitura do descritor de segurança.
+- Os handles permanecem abertos até encerramento explícito pela classe de inspeção.
+- Nenhuma ACL é alterada. Nenhuma gravação é autorizada por esses módulos.
+
+## Evidência de CI desta etapa
+
+- Run push `44348206885`, commit `5ed4c044387b25c82f4928cf4bed3be3391aabfe`.
+- Windows Server 2025, Python 3.14.10.
+- Compilação dos módulos: sucesso.
+- Staging: 5 testes aprovados.
+- Leitor de segurança: 5 testes aprovados.
+- Inspeção de `_update`: 7 testes aprovados.
+- Total: 17 testes aprovados.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/44348206885
+
+Os testes do leitor de segurança e do inspetor de `_update` usam mocks para as APIs nativas. Portanto, esta execução valida contratos e tratamento de falhas, não comprova leitura de ACL real sob contas Windows distintas. A homologação nativa permanece pendente.
+
+## Estado após esta etapa
+
+A inspeção da área privada foi implementada em modo somente leitura. Ainda faltam:
+1. Política explícita de autorização baseada no descritor completo, incluindo ACEs herdadas, grupos, proprietário e direitos efetivos.
+2. Testes nativos com contas Windows distintas, incluindo usuário padrão, Administradores e SYSTEM.
+3. Política formal de hardlinks e validação de identidade durante staging.
+4. Provisionamento e validação de ACL, ainda sem implementação nesta etapa.
+5. Backup verificável, journal durável, instalação transacional e rollback.
+6. Chave pública oficial de release e homologação em VM Windows 11.
+
+A PR permanece em rascunho, sem merge. A instalação ativa permanece intocada.
