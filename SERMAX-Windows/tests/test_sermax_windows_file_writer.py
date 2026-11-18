@@ -106,7 +106,7 @@ class HandleFileWriterTests(unittest.TestCase):
         acl.assert_called_once()
         write_all.assert_called_once()
         readback.assert_called_once()
-        close.assert_called_once_with(200)
+        close.assert_called_once_with(ctypes.c_void_p(200))
         self.token_closer.assert_called_once_with(777)
 
     def test_rejects_parent_reparse_point_before_native_create(self):
@@ -174,7 +174,11 @@ class HandleFileWriterTests(unittest.TestCase):
                     self.metadata(number_of_links=2),
                 ],
             ),
-            mock.patch.object(writer, "_native_api") as native,
+            mock.patch.object(
+                writer, "_native_api",
+                return_value=(lambda out_handle, *args: (setattr(out_handle._obj, "value", 200) or 0), None, None),
+            ) as native,
+            mock.patch.object(writer, "close_handle"),
         ):
             with self.assertRaisesRegex(writer.HandleFileWriterError, "hardlinks"):
                 writer.write_verified_file_component(
