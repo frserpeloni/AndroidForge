@@ -489,3 +489,18 @@ Correção aplicada:
 - Novo teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
 
 CI `44226228270`, commit `59c01cdc224e0f92e583cffd1b59525eb18ed677`, concluiu com sucesso nos cinco jobs: Python 3.12, Python 3.14, Windows, frontend-check e frontend-interaction. A homologação real de OCR e inferência local continua pendente.
+
+
+## 32. Teste real local de OCR com amostra sintética, 2026-11-17
+
+Foi adicionado `SERMAX-Platform/tools/check_local_ocr.py` como verificação local anterior à homologação da Plataforma.
+
+- Gera uma imagem de teste em memória com texto conhecido.
+- Executa o Tesseract instalado localmente na imagem PNG.
+- Converte a mesma imagem para PDF digitalizado em memória e testa renderização PDFium mais OCR.
+- Confirma os marcadores SERMAX e 12345 no resultado de ambos os caminhos.
+- Emite relatório JSON com estado do motor, texto reconhecido e resultado por formato.
+- Não abre documentos pessoais, não grava arquivos e não acessa rede.
+- Retorna código distinto quando Tesseract/idiomas ou PDFium estão indisponíveis.
+
+O teste automatizado do script simula as respostas do OCR e valida o relatório e a interrupção segura quando o motor está ausente. A execução com Tesseract real continua dependente do computador de homologação. A amostra sintética verifica funcionamento básico, não a qualidade de OCR em documentos reais.
