@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import json
 import os
 import tempfile
 import unittest
@@ -100,6 +101,14 @@ class HandleBackupUnitTests(unittest.TestCase):
                 backup.backup_existing_files_by_handle(100, 200, manifest)
         query.assert_not_called()
 
+
+    def test_rejects_reserved_backup_catalog_destination_before_io(self):
+        manifest = Manifest((Item("__sermax_backup_catalog__.json", "replace"),))
+        with mock.patch.object(backup, "query_handle_metadata") as query:
+            with self.assertRaisesRegex(backup.BackupError, "reservado"):
+                backup.backup_existing_files_by_handle(100, 200, manifest)
+        query.assert_not_called()
+
     def test_no_replace_files_does_not_create_empty_backup(self):
         manifest = Manifest((Item("bin/new.dll", "create"),))
         with (
@@ -190,6 +199,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertEqual(snapshot.files[0]["path"], "bin/engine.dll")
                 self.assertEqual(snapshot.files[0]["sha256"], hashlib.sha256(source).hexdigest())
                 self.assertTrue(snapshot.files[0]["source_stable_after_copy"])
+                self.assertIsNotNone(snapshot.catalog)
 
                 backup_path = os.path.join(
                     root, "backups", snapshot.component, "bin", "engine.dll"
@@ -198,6 +208,21 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                     self.assertEqual(saved.read(), source)
                 with open(source_path, "rb") as active:
                     self.assertEqual(active.read(), source)
+                catalog_path = os.path.join(
+                    root, "backups", snapshot.component,
+                    "__sermax_backup_catalog__.json",
+                )
+                with open(catalog_path, "r", encoding="utf-8") as catalog_file:
+                    catalog = json.load(catalog_file)
+                self.assertEqual(catalog["schema_version"], 1)
+                self.assertEqual(catalog["files"][0]["path"], "bin/engine.dll")
+                self.assertEqual(
+                    catalog["files"][0]["sha256"],
+                    hashlib.sha256(source).hexdigest(),
+                )
+                self.assertTrue(
+                    catalog["files"][0]["source_security_descriptor_b64"]
+                )
             finally:
                 if snapshot is not None:
                     snapshot.close()
