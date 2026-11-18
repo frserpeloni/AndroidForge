@@ -725,6 +725,11 @@
         : data.ollama.detail + (data.ollama.reachable ? " Nenhum modelo foi listado." : "");
       addEngineCard(panel, "Ollama local", data.ollama.reachable ? "ok" : "offline", ollamaDetail);
 
+      const ocrStatus = data.ocr || {status:"engine_unavailable", languages:[], detail:"Diagnóstico OCR indisponível."};
+      const ocrDetail = ocrStatus.detail + (ocrStatus.languages.length ? " Idiomas: " + ocrStatus.languages.join(", ") + "." : "");
+      const ocrState = ocrStatus.status === "ready" ? "ok" : ocrStatus.status === "language_unavailable" ? "warn" : "offline";
+      addEngineCard(panel, "OCR local", ocrState, ocrDetail);
+
       addEngineCard(
         panel,
         "OpenJarvis",
