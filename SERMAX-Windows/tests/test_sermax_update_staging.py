@@ -166,7 +166,7 @@ class HandleReleaseStagingTests(unittest.TestCase):
         with mock.patch(
             "sermax_windows_private_area.create_staging_directory_component"
         ) as create_directory:
-            with self.assertRaisesRegex(StagingError, "conflita"):
+            with self.assertRaisesRegex(StagingError, "arquivo do manifesto"):
                 stage_verified_release_by_handle(
                     stream.getvalue(), manifest, staging_parent_handle=object()
                 )
