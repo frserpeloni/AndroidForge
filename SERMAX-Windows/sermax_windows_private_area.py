@@ -171,9 +171,11 @@ def create_private_directory_component(
 ):
     """Cria um diretório interno com DACL privada aplicada na própria criação.
 
-    O pai deve permanecer aberto e conceder FILE_ADD_SUBDIRECTORY. O componente
-    precisa pertencer à allowlist fixa. O SECURITY_DESCRIPTOR self-relative é
-    anexado a OBJECT_ATTRIBUTES.SecurityDescriptor durante NtCreateFile.
+    O pai deve permanecer aberto e conceder FILE_ADD_SUBDIRECTORY. Por padrão,
+    o componente pertence à allowlist estrutural. A exceção privada de staging
+    aceita um único componente validado vindo da árvore autenticada. O
+    SECURITY_DESCRIPTOR self-relative é anexado a OBJECT_ATTRIBUTES durante
+    NtCreateFile.
     Depois da criação, a função valida owner, DACL, trustees, identidade, estado
     vazio e direitos Authz pelo mesmo handle. Se a validação falhar, fecha o
     handle e preserva o diretório recém-criado para inspeção, sem gravar dados.
