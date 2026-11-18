@@ -163,3 +163,6 @@ O launcher usa o código do núcleo presente no repositório, mas define SERMAX_
 O modo de homologação bloqueia as funções de execução de comandos e planos. Consultas locais de leitura continuam disponíveis. Abra http://127.0.0.1:8765, verifique os cartões Motores, envie uma imagem e um PDF digitalizado de teste e encerre com Ctrl+C. Não use comandos operacionais neste modo.
 
 O launcher não instala dependências nem modelos. Se os módulos Python estiverem ausentes, instale SERMAX-Platform/backend/requirements.txt no ambiente Python ativo. Para OpenJarvis, configure SERMAX_JARVIS_PYTHON com o caminho do python.exe do ambiente já instalado. Para Tesseract fora do PATH, configure SERMAX_TESSERACT_CMD.
+
+
+A validação e extração dos anexos agora ocorre fora do event loop assíncrono da API, em worker thread. Os trabalhos de OCR são serializados por um bloqueio local para evitar renderizações e reconhecimentos simultâneos concorrentes, reduzindo picos de CPU e memória. O teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
