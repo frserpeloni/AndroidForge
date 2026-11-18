@@ -244,6 +244,14 @@ def read_journal_events_by_handle(
     entries = _real_entries(transaction_handle)
     if len(entries) > MAX_JOURNAL_EVENTS:
         raise JournalError("Quantidade de eventos excede o limite do journal.")
+    if any(
+        isinstance(entry.end_of_file, bool)
+        or not isinstance(entry.end_of_file, int)
+        or entry.end_of_file < 1
+        or entry.end_of_file > MAX_JOURNAL_EVENT_BYTES
+        for entry in entries
+    ):
+        raise JournalError("Metadados de tamanho de evento fora dos limites.")
     total_declared = sum(entry.end_of_file for entry in entries)
     if total_declared > MAX_JOURNAL_TOTAL_BYTES:
         raise JournalError("Tamanho total do journal excede o limite de segurança.")
