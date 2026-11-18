@@ -12,6 +12,7 @@ import os
 import stat
 import tempfile
 import secrets
+import re
 import zipfile
 from pathlib import Path
 from dataclasses import dataclass
@@ -96,8 +97,9 @@ def stage_verified_release_by_handle(
 
     from sermax_windows_private_area import (
         create_staging_directory_component,
-        validate_empty_private_directory_handle,
+        validate_private_directory_handle,
     )
+    from sermax_windows_directory_handle import enumerate_stable_directory_handle
     from sermax_windows_file_writer import write_verified_file_component
     from sermax_windows_handle_io import close_handle
 
@@ -108,7 +110,21 @@ def stage_verified_release_by_handle(
     file_results: list[dict[str, object]] = []
 
     try:
-        validate_empty_private_directory_handle(staging_parent_handle)
+        parent_validation = validate_private_directory_handle(
+            staging_parent_handle, require_empty=False
+        )
+        existing_stages = enumerate_stable_directory_handle(staging_parent_handle)
+        for entry in existing_stages:
+            if (
+                not entry.is_directory
+                or entry.is_reparse_point
+                or not re.fullmatch(r"stage-[0-9a-f]{24}", entry.name)
+            ):
+                raise StagingError(
+                    "A área staging contém objeto desconhecido, arquivo ou reparse point."
+                )
+        if parent_validation.get("valid") is not True:
+            raise StagingError("A área staging não passou na validação ACL/Authz.")
         root_handle = create_staging_directory_component(
             staging_parent_handle, stage_component
         )
