@@ -63,7 +63,7 @@ def stage_verified_release(
     parent = Path(staging_parent)
     _assert_real_directory(parent)
     try:
-        verified = validate_release_archive(archive_bytes, manifest)
+        validate_release_archive(archive_bytes, manifest)
     except PackageError as exc:
         raise StagingError("Pacote não passou na validação integral.") from exc
 
