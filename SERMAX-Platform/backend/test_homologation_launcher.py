@@ -24,6 +24,7 @@ class HomologationLauncherTests(unittest.TestCase):
                     "SERMAX_CORE_DIR": "C:/SERMAX",
                     "SERMAX_JARVIS_PYTHON": "C:/SERMAX/.venv-jarvis/Scripts/python.exe",
                     "SERMAX_TESSERACT_CMD": "C:/Program Files/Tesseract-OCR/tesseract.exe",
+                    "PYTHONDONTWRITEBYTECODE": "0",
                 },
             )
 
@@ -44,6 +45,7 @@ class HomologationLauncherTests(unittest.TestCase):
                 environment["SERMAX_TESSERACT_CMD"],
                 "C:/Program Files/Tesseract-OCR/tesseract.exe",
             )
+            self.assertEqual(environment["PYTHONDONTWRITEBYTECODE"], "1")
             copied_worker = temp_root / "sermax_jarvis_worker.py"
             self.assertTrue(copied_worker.is_file())
             self.assertEqual(copied_worker.read_bytes(), run_homologation.WORKER_SOURCE.read_bytes())
