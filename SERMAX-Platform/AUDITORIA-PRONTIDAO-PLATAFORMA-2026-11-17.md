@@ -425,3 +425,15 @@ O painel Motores da Plataforma passou a apresentar o estado do OCR local. O endp
 O diagnóstico diferencia executável ausente, timeout, falha ao listar idiomas e ausência dos dados obrigatórios por e eng. O painel apresenta o estado e os idiomas encontrados. O caminho completo do executável não é exposto na API.
 
 Testes adicionados cobrem executável ausente sem subprocesso, Tesseract pronto com por e eng, ausência do idioma português e timeout. A interface também verifica a apresentação do cartão OCR local. A homologação com binário real permanece pendente.
+
+
+## 27. CI do diagnóstico OCR no painel Motores, 2026-11-17
+
+A execução GitHub Actions `44213822225`, evento `pull_request`, commit `79c22b7f99d57715a57dac08f529ad03cf6000ff`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A bateria validou a consulta limitada `Tesseract --list-langs`, os estados de executável ausente, idiomas ausentes e timeout, além da apresentação do cartão OCR local na interface. O diagnóstico não processa arquivos nem inicia inferência. A homologação de reconhecimento com Tesseract real continua pendente.
