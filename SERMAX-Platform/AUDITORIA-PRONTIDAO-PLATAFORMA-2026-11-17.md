@@ -437,3 +437,18 @@ A execução GitHub Actions `44213822225`, evento `pull_request`, commit `79c22b
 - `frontend-interaction`: sucesso.
 
 A bateria validou a consulta limitada `Tesseract --list-langs`, os estados de executável ausente, idiomas ausentes e timeout, além da apresentação do cartão OCR local na interface. O diagnóstico não processa arquivos nem inicia inferência. A homologação de reconhecimento com Tesseract real continua pendente.
+
+
+## 28. Launcher de homologação local isolada, 2026-11-17
+
+Foi adicionado SERMAX-Platform/tools/run_homologation.py para permitir testes locais reais sem apontar a memória ou o banco para a instalação do usuário.
+
+- O launcher define SERMAX_ROOT e SERMAX_PLATFORM_DATA dentro de uma pasta temporária.
+- O núcleo é importado do diretório de código do repositório; nenhuma cópia de memoria_sermax.json ou memoria_neural_pestinha.json é feita.
+- O worker OpenJarvis é copiado para a pasta temporária. O executável Python OpenJarvis e o caminho Tesseract existentes são preservados por suas variáveis de ambiente.
+- O banco SQLite da Plataforma e os arquivos de memória do núcleo ficam na pasta temporária, removida após o encerramento.
+- As funções sermax_executor.executar e sermax_tarefas.executar_plano são substituídas em memória por bloqueios, impedindo comandos operacionais e execução de planos durante a homologação.
+- Consultas locais somente de leitura continuam habilitadas.
+- O launcher não instala dependências, não baixa modelos e não altera C:\\SERMAX.
+
+Testes automatizados verificam redirecionamento de memória e banco, preservação dos caminhos de motores, cópia do worker e bloqueio das ações operacionais. A execução real do launcher e a homologação com modelos locais dependem do computador de execução e permanecem pendentes.
