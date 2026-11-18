@@ -8,6 +8,8 @@ from __future__ import annotations
 import ctypes
 import os
 
+from sermax_windows_handle_io import query_handle_metadata
+
 
 class DirectoryAclInspectionError(RuntimeError):
     """Falha fechada ao inspecionar a segurança de um diretório."""
@@ -35,7 +37,6 @@ def inspect_directory_acl(directory_handle) -> dict:
         raise DirectoryAclInspectionError("A inspeção exige Windows x64.")
 
     try:
-        from sermax_windows_handle_io import query_handle_metadata
         metadata = query_handle_metadata(directory_handle)
     except Exception as exc:
         raise DirectoryAclInspectionError(
