@@ -194,3 +194,29 @@ A documentação Microsoft confirma que `OBJECT_ATTRIBUTES.SecurityDescriptor` d
 ## Limites ainda vigentes
 
 A criação protegida foi testada em diretórios temporários no Windows Server 2025. Ainda faltam testes com identidades Windows distintas, execução no Windows 11 do mantenedor, integração do staging para escrita por handles e validação de concorrência. A rotina não foi executada em `C:\\SERMAX`.
+
+
+## Resultado consolidado da criação atômica protegida
+
+A criação de diretórios internos agora envia um SECURITY_DESCRIPTOR self-relative no próprio `OBJECT_ATTRIBUTES` da chamada `NtCreateFile`. O descriptor contém owner do token real e DACL explícita com ACEs para owner, SYSTEM e Administradores, marcada como protegida. O código valida a estrutura, o estado self-relative e a flag de proteção antes de chamar a API nativa.
+
+Após a criação, o handle permanece aberto enquanto o SERMAX:
+- consulta tipo, volume, FileId e estado do objeto;
+- lê a DACL pelo handle;
+- confirma a política privada e diretório vazio;
+- executa Authz com o token real para os direitos necessários.
+
+O handle só é entregue ao chamador depois de todas as verificações. Se falhar, o handle fecha e a pasta vazia fica preservada para análise.
+
+### Evidência CI
+
+- Run push `44350582401`, commit `e1e67c2905abb037b41578848145838ff76cf0a8`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 61 testes aprovados, incluindo o teste nativo de criação de `_update` e `staging` com DACL aplicada durante a criação.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44350582401).
+
+A etapa está validada no runner Windows com diretórios temporários. Ainda não foi homologada no Windows 11 local, sob contas separadas, nem integrada à gravação do pacote por handles.
+
+### Próxima etapa
+
+Implementar escrita de arquivos por handle, com criação exclusiva, validação de FileId, rejeição de hardlinks/reparse points, hash durante a gravação e FlushFileBuffers. Só então substituir o staging baseado em caminhos pelo fluxo integral baseado em handles.
