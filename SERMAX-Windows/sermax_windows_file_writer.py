@@ -127,7 +127,7 @@ def _validate_file_acl(handle, token_handle, expected_owner_sid):
         if observed != expected:
             raise HandleFileWriterError("Trustees ACL do arquivo divergentes.")
 
-        binary = read_security_descriptor_binary(handle)
+        binary = read_security_descriptor_binary(handle, require_directory=False)
         access = evaluate_access_for_token(token_handle, binary, FILE_ALL_ACCESS)
         if (
             access.get("api_success") is not True
