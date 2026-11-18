@@ -148,3 +148,18 @@ Referências técnicas:
 
 
 O painel Motores também informa se o Tesseract local está disponível e se os dados de idioma português (por) e inglês (eng) estão instalados. A consulta executa somente Tesseract --list-langs, com timeout de 2 segundos. Ela não inicia OCR nem processa anexos.
+
+
+## Homologação local isolada
+
+Depois de obter esta branch e instalar as dependências de backend no ambiente Python ativo, execute no PowerShell, a partir da raiz do repositório:
+
+```powershell
+python SERMAX-Platform/tools/run_homologation.py
+```
+
+O launcher usa o código do núcleo presente no repositório, mas define SERMAX_ROOT e SERMAX_PLATFORM_DATA para uma pasta temporária. A memória SERMAX, a memória neural e o banco SQLite da Plataforma ficam nessa pasta e são apagados quando o servidor encerra. Nenhum arquivo de memória é copiado de C:\\SERMAX. O worker OpenJarvis é copiado para a pasta temporária; o executável Python do ambiente OpenJarvis é preservado pela variável SERMAX_JARVIS_PYTHON, se configurada. O caminho do Tesseract também é preservado pela variável SERMAX_TESSERACT_CMD.
+
+O modo de homologação bloqueia as funções de execução de comandos e planos. Consultas locais de leitura continuam disponíveis. Abra http://127.0.0.1:8765, verifique os cartões Motores, envie uma imagem e um PDF digitalizado de teste e encerre com Ctrl+C. Não use comandos operacionais neste modo.
+
+O launcher não instala dependências nem modelos. Se os módulos Python estiverem ausentes, instale SERMAX-Platform/backend/requirements.txt no ambiente Python ativo. Para OpenJarvis, configure SERMAX_JARVIS_PYTHON com o caminho do python.exe do ambiente já instalado. Para Tesseract fora do PATH, configure SERMAX_TESSERACT_CMD.
