@@ -14,12 +14,12 @@ import secrets
 from ctypes import wintypes
 from dataclasses import dataclass
 
-from sermax_windows_handle_io import (
-    FILE_READ_ATTRIBUTES,
-    SYNCHRONIZE,
-    HandleIoError,
-    close_handle,
-    query_handle_metadata,
+from sermax_windows_handle_io import close_handle, query_handle_metadata
+from sermax_update_inventory import (
+    InventoryError,
+    PROTECTED_FILES,
+    PROTECTED_DIRECTORY_SEGMENTS,
+    _normalize_relative,
 )
 
 FILE_LIST_DIRECTORY = 0x0001
@@ -300,7 +300,22 @@ def backup_existing_files_by_handle(
 
     try:
         _preflight_handle_paths(manifest)
-    except Exception as exc:
+        protected_files = {name.casefold() for name in PROTECTED_FILES}
+        for item in manifest.files:
+            normalized = _normalize_relative(item.path)
+            if (
+                normalized.rsplit("/", 1)[-1].casefold() in protected_files
+                or any(
+                    part.casefold() in PROTECTED_DIRECTORY_SEGMENTS
+                    for part in normalized.split("/")
+                )
+            ):
+                raise BackupError(
+                    f"Destino protegido não entra no fluxo de backup: {normalized}"
+                )
+    except (InventoryError, Exception) as exc:
+        if isinstance(exc, BackupError):
+            raise
         raise BackupError(f"Manifesto contém caminhos incompatíveis: {exc}") from exc
 
     active_metadata = query_handle_metadata(active_root_handle)
