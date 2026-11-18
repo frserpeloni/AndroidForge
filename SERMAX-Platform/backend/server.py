@@ -585,9 +585,20 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
     for row in rows[:5]:
         name = str(row["original_name"])[:180]
         extracted = row["extracted_text"]
+        method = str(row["extraction_method"] or "native")
+        status = str(row["extraction_status"] or "completed")
         if extracted is None:
-            selected.append({"arquivo": name, "conteudo_textual": None,
-                             "observacao": "Imagem armazenada. OCR e análise visual não estão disponíveis."})
+            if status in {"engine_unavailable", "dependency_unavailable", "renderer_unavailable"}:
+                observation = "OCR local indisponível neste computador."
+            elif status == "language_unavailable":
+                observation = "Pacote de idioma do OCR ausente. Instale os dados de português e inglês."
+            elif status == "timeout":
+                observation = "OCR local excedeu o tempo limite."
+            elif status == "not_processed":
+                observation = "OCR ainda não foi executado para este anexo."
+            else:
+                observation = "Nenhum texto foi extraído deste arquivo."
+            selected.append({"arquivo": name, "conteudo_textual": None, "observacao": observation})
             continue
         paragraphs = [
             part.strip() for part in re.split(r"(?<=[.!?])\s+|[\r\n]+", str(extracted))
@@ -618,8 +629,14 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
                 break
         excerpt = " ".join(excerpt_parts)
         if excerpt:
+            source = {
+                "ocr": "Texto reconhecido por OCR local. A leitura pode conter erros.",
+                "mixed": "Texto nativo e texto reconhecido por OCR local. A leitura por OCR pode conter erros.",
+            }.get(method, "Texto extraído do documento.")
             selected.append({
                 "arquivo": name,
+                "origem": source,
+                "estado_extracao": status,
                 "trecho": excerpt,
                 "trecho_limitado": len(excerpt) < len(str(extracted)),
             })
@@ -696,8 +713,8 @@ def _chat_request(payload: ChatInput, on_update=None):
                 if effective_project_id:
                     project = project_or_404(conn, effective_project_id, include_archived=True)
                 attachments = conn.execute(
-                    "SELECT original_name,extracted_text FROM attachments "
-                    "WHERE conversation_id=? ORDER BY created_at,id LIMIT 5",
+                    "SELECT original_name,extension,extracted_text,extraction_method,extraction_status "
+                    "FROM attachments WHERE conversation_id=? ORDER BY created_at,id LIMIT 5",
                     (conversation_id,),
                 ).fetchall()
             conversation_context = [dict(row) for row in reversed(prior)]
