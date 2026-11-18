@@ -4,7 +4,6 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +13,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = REPOSITORY_ROOT / "SERMAX-Windows"
 BACKEND_DIR = REPOSITORY_ROOT / "SERMAX-Platform" / "backend"
 WORKER_SOURCE = CORE_DIR / "sermax_jarvis_worker.py"
+ENVIRONMENT_KEYS = ("SERMAX_ROOT", "SERMAX_PLATFORM_DATA", "SERMAX_CORE_DIR")
 REQUIRED_MODULES = ("fastapi", "uvicorn", "pypdf", "pypdfium2", "pytesseract", "PIL")
 
 
@@ -37,6 +37,19 @@ def missing_dependencies() -> list[str]:
     return [name for name in REQUIRED_MODULES if importlib.util.find_spec(name) is None]
 
 
+def _block_operational_action(*_args, **_kwargs):
+    raise RuntimeError("Ações operacionais estão bloqueadas no modo de homologação isolada.")
+
+
+def apply_safety_guards() -> None:
+    """Bloqueia execução de comandos e planos durante os testes locais."""
+    import sermax_executor
+    import sermax_tarefas
+
+    sermax_executor.executar = _block_operational_action
+    sermax_tarefas.executar_plano = _block_operational_action
+
+
 def main() -> int:
     if missing := missing_dependencies():
         print("Dependências ausentes: " + ", ".join(missing))
@@ -49,22 +62,36 @@ def main() -> int:
     print("SERMAX Platform, homologação isolada")
     print("O núcleo será lido do repositório atual.")
     print("Memória pessoal e banco da Plataforma serão direcionados a uma pasta temporária.")
+    print("Comandos operacionais e execução de planos ficam bloqueados.")
     print("C:\\SERMAX, main e backups não serão alterados.")
     print("Acesse http://127.0.0.1:8765. Pressione Ctrl+C para encerrar.")
 
     with tempfile.TemporaryDirectory(prefix="sermax-homologacao-") as temporary:
         temp_root = Path(temporary)
         environment = prepare_environment(temp_root)
-        print(f"Memória temporária: {temp_root / 'memoria_sermax.json'}")
-        print(f"Banco temporário: {temp_root / 'platform-data' / 'platform.sqlite3'}")
-        command = [
-            sys.executable, "-m", "uvicorn", "server:app",
-            "--host", "127.0.0.1", "--port", "8765",
-        ]
+        previous = {key: os.environ.get(key) for key in ENVIRONMENT_KEYS}
+        original_path = list(sys.path)
         try:
-            return subprocess.run(command, cwd=BACKEND_DIR, env=environment, check=False).returncode
+            for key in ENVIRONMENT_KEYS:
+                os.environ[key] = environment[key]
+            sys.path.insert(0, str(BACKEND_DIR))
+            import server
+            server.load_core()
+            apply_safety_guards()
+            import uvicorn
+            print(f"Memória temporária: {temp_root / 'memoria_sermax.json'}")
+            print(f"Banco temporário: {temp_root / 'platform-data' / 'platform.sqlite3'}")
+            uvicorn.run(server.app, host="127.0.0.1", port=8765, log_level="info")
+            return 0
         except KeyboardInterrupt:
             return 130
+        finally:
+            for key, value in previous.items():
+                if value is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = value
+            sys.path[:] = original_path
 
 
 if __name__ == "__main__":
