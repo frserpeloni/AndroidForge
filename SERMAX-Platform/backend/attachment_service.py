@@ -76,6 +76,7 @@ def initialize_attachment_schema() -> None:
         if "extraction_status" not in columns:
             conn.execute("ALTER TABLE attachments ADD COLUMN extraction_status TEXT NOT NULL DEFAULT 'completed'")
         conn.execute("UPDATE attachments SET extraction_method='none', extraction_status='not_processed' WHERE extension IN ('.jpg','.jpeg','.png') AND extracted_text IS NULL")
+        conn.execute("UPDATE attachments SET extraction_method='none', extraction_status='no_text' WHERE extracted_text=''")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_conversation ON attachments(conversation_id, created_at)")
 
 
