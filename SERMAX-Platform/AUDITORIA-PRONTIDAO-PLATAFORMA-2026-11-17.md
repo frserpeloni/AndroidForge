@@ -464,3 +464,15 @@ A execução GitHub Actions `44214557379`, evento `pull_request`, commit `24edb5
 - `frontend-interaction`: sucesso.
 
 Os testes do launcher validaram a substituição de SERMAX_ROOT e SERMAX_PLATFORM_DATA por diretórios temporários, preservação dos caminhos configurados para Tesseract e OpenJarvis, cópia do worker, ausência de cópia de arquivos de memória e bloqueio de execução de comandos e planos. A validação CI não iniciou a Plataforma com modelos reais nem executou reconhecimento OCR real.
+
+
+## 30. Validação final do launcher isolado e proteções de escrita, 2026-11-17
+
+A execução GitHub Actions `44214779229`, evento `pull_request`, commit `fbb191ea8d28924dcffc2e7514cf61a6e51e59d3`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+O teste final incluiu o redirecionamento de memória e banco para diretório temporário, cópia do worker, preservação das variáveis de caminho dos motores, bloqueio de comandos e planos e desativação de gravação de bytecode no processo e nos subprocessos. A validação não executou modelos reais nem OCR real.
