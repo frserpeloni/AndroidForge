@@ -335,6 +335,58 @@ def create_staging_directory_component(parent_handle, component: str):
     )
 
 
+def validate_empty_private_directory_handle(directory_handle) -> dict[str, object]:
+    """Revalida ACL/Authz e exige diretório privado vazio pelo mesmo handle.
+
+    Destinado ao diretório pai de uma nova operação de staging. O handle deve
+    permanecer aberto durante toda a operação. A função não altera ACL nem
+    enumera caminhos por nome.
+    """
+    token = None
+    close_token = None
+    try:
+        metadata = query_handle_metadata(directory_handle)
+        if (
+            not metadata["is_directory"]
+            or metadata["is_reparse_point"]
+            or metadata["delete_pending"]
+        ):
+            raise PrivateAreaError("O handle de staging não é diretório regular.")
+        token, close_token, _descriptor_buffer, _owner_sid = (
+            _prepare_private_security_descriptor()
+        )
+        policy = _validate_created_private_directory(
+            directory_handle, metadata, token
+        )
+        return {
+            "valid": True,
+            "metadata": metadata,
+            "policy": policy,
+            "mutated": False,
+        }
+    except PrivateAreaError:
+        raise
+    except Exception as exc:
+        raise PrivateAreaError(
+            f"Diretório pai de staging não passou na validação ACL/Authz: {exc}"
+        ) from exc
+    finally:
+        if token is not None and close_token is not None:
+            try:
+                close_token(token)
+            except Exception as exc:
+                active_error = sys.exc_info()[1]
+                if active_error is not None:
+                    if hasattr(active_error, "add_note"):
+                        active_error.add_note(
+                            f"Falha ao fechar token após validação do staging: {exc}"
+                        )
+                else:
+                    raise PrivateAreaError(
+                        f"Falha ao fechar token após validação do staging: {exc}"
+                    ) from exc
+
+
 
 def validate_existing_private_area(
     parent_handle, *, expected_owner_sid: str | None = None
