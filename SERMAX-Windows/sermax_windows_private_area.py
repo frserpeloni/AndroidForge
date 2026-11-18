@@ -674,6 +674,8 @@ def open_existing_private_area_layout(
         update_validation = _validate_created_private_directory(
             update_handle, update_metadata, token, require_empty=False
         )
+        if update_validation.get("valid") is not True:
+            raise PrivateAreaError("ACL/Authz de _update não foi confirmada.")
         update_entries = enumerate_stable_directory_handle(update_handle)
         observed_names = {entry.name for entry in update_entries}
         if observed_names != set(_PRIVATE_LAYOUT_COMPONENTS):
@@ -683,6 +685,7 @@ def open_existing_private_area_layout(
             )
 
         entry_by_name = {entry.name: entry for entry in update_entries}
+        child_validations: dict[str, dict[str, object]] = {}
         for component in _PRIVATE_LAYOUT_COMPONENTS:
             entry = entry_by_name[component]
             if not entry.is_directory or entry.is_reparse_point:
@@ -732,9 +735,7 @@ def open_existing_private_area_layout(
                 raise PrivateAreaError(
                     f"ACL/Authz da área {component} não foi confirmada."
                 )
-
-        if update_validation.get("valid") is not True:
-            raise PrivateAreaError("ACL/Authz de _update não foi confirmada.")
+            child_validations[component] = child_validation
 
         result = ExistingPrivateAreaLayout(
             update_handle=update_handle,
@@ -744,9 +745,7 @@ def open_existing_private_area_layout(
                 "valid": True,
                 "owner_sid": actual_owner_sid,
                 "update": update_validation,
-                "directories": {
-                    name: {"valid": True} for name in _PRIVATE_LAYOUT_COMPONENTS
-                },
+                "directories": child_validations,
                 "mutated": False,
             },
         )
