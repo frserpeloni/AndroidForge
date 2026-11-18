@@ -228,3 +228,127 @@ class UpdateAreaPolicyValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpdateAreaNativeWindowsIntegrationTests(unittest.TestCase):
+    def test_inspects_and_validates_real_private_area_on_same_retained_handle(self):
+        import ctypes
+        import os
+        import tempfile
+        from ctypes import wintypes
+
+        if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+            self.skipTest("Integração nativa exige Windows x64.")
+
+        import win32api
+        import win32security
+
+        from sermax_windows_handle_io import close_handle
+
+        with tempfile.TemporaryDirectory(prefix="sermax-update-area-") as parent_path:
+            update_path = os.path.join(parent_path, "_update")
+            os.mkdir(update_path)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                wintypes.HANDLE,
+            ]
+            create_file.restype = wintypes.HANDLE
+            close = kernel32.CloseHandle
+            close.argtypes = [wintypes.HANDLE]
+            close.restype = wintypes.BOOL
+
+            share = 0x00000001 | 0x00000002 | 0x00000004
+            flags = 0x02000000 | 0x00200000
+            invalid = ctypes.c_void_p(-1).value
+
+            parent_handle = create_file(
+                parent_path,
+                0x0001 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(parent_handle, (None, 0, invalid))
+
+            writable_child = None
+            token = None
+            inspection = None
+            try:
+                writable_child = create_file(
+                    update_path,
+                    0x0001 | 0x0080 | 0x00020000 | 0x00040000
+                    | 0x00080000 | 0x00100000,
+                    share, None, 3, flags, None,
+                )
+                self.assertNotIn(writable_child, (None, 0, invalid))
+                native_child = (
+                    writable_child.value
+                    if isinstance(writable_child, ctypes.c_void_p)
+                    else writable_child
+                )
+
+                token = win32security.OpenProcessToken(
+                    win32api.GetCurrentProcess(), win32security.TOKEN_QUERY
+                )
+                token_user = win32security.GetTokenInformation(
+                    token, win32security.TokenUser
+                )[0]
+                owner_sid = win32security.ConvertSidToStringSid(token_user)
+                system_sid = win32security.ConvertStringSidToSid("S-1-5-18")
+                admins_sid = win32security.ConvertStringSidToSid("S-1-5-32-544")
+
+                win32security.SetSecurityInfo(
+                    native_child,
+                    win32security.SE_FILE_OBJECT,
+                    win32security.OWNER_SECURITY_INFORMATION,
+                    token_user, None, None, None,
+                )
+
+                dacl = win32security.ACL()
+                for sid in (token_user, system_sid, admins_sid):
+                    dacl.AddAccessAllowedAceEx(
+                        win32security.ACL_REVISION,
+                        0x01 | 0x02,
+                        0x001F01FF,
+                        sid,
+                    )
+                win32security.SetSecurityInfo(
+                    native_child,
+                    win32security.SE_FILE_OBJECT,
+                    (
+                        win32security.DACL_SECURITY_INFORMATION
+                        | win32security.PROTECTED_DACL_SECURITY_INFORMATION
+                    ),
+                    None, None, dacl, None,
+                )
+
+                self.assertTrue(close(writable_child))
+                writable_child = None
+
+                inspection = update_area.inspect_update_area_by_handle(
+                    parent_handle
+                )
+                self.assertEqual(
+                    inspection.acl_inspection["owner_sid"], owner_sid
+                )
+                result = update_area.validate_update_area_acl_policy(
+                    inspection, token_handle=token
+                )
+                self.assertTrue(result["valid"])
+                self.assertTrue(result["acl_policy"]["directory_empty"])
+                self.assertEqual(
+                    set(result["effective_rights"]),
+                    set(update_area._REQUIRED_EFFECTIVE_RIGHTS),
+                )
+                self.assertFalse(result["mutated"])
+                self.assertFalse(result["performed_io"])
+            finally:
+                if inspection is not None:
+                    inspection.close()
+                if token is not None:
+                    win32api.CloseHandle(token)
+                if writable_child is not None:
+                    self.assertTrue(close(writable_child))
+                self.assertTrue(close(parent_handle))
