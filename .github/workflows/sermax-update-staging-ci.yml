@@ -20,6 +20,7 @@ on:
       - "SERMAX-Windows/tests/test_sermax_windows_security.py"
       - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_layout.py"
       - "SERMAX-Windows/tests/test_sermax_windows_acl_inspection.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
@@ -89,6 +90,9 @@ jobs:
 
       - name: Run existing private area tests
         run: python -m unittest discover -s tests -p "test_sermax_windows_private_area.py" -v
+
+      - name: Run persistent private layout tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_private_area_layout.py" -v
 
       - name: Run existing ACL inspection tests
         run: python -m unittest discover -s tests -p "test_sermax_windows_acl_inspection.py" -v
