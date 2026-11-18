@@ -6,6 +6,9 @@ on:
       - sermax-windows-integration-20261029
     paths:
       - ".github/workflows/sermax-dev-agents.yml"
+      - "SERMAX-Windows/sermax_github_agent_runner.py"
+      - "SERMAX-Windows/sermax_groq_backend.py"
+      - "SERMAX-Windows/tests/test_sermax_groq_backend.py"
   workflow_dispatch:
     inputs:
       task:
