@@ -202,5 +202,63 @@ class HandleReleaseStagingTests(unittest.TestCase):
         self.assertCountEqual(close_handle.call_args_list, [mock.call(nested_handle), mock.call(root_handle)])
 
 
+
+@unittest.skipUnless(
+    __import__("os").name == "nt" and __import__("ctypes").sizeof(__import__("ctypes").c_void_p) == 8,
+    "Staging nativo exige Windows x64.",
+)
+class HandleReleaseStagingWindowsTests(unittest.TestCase):
+    def test_stages_nested_release_by_handles_with_real_acl_and_file_readback(self):
+        import os
+        import shutil
+        import ctypes
+        from sermax_windows_handle_io import close_handle
+        from sermax_windows_private_area import create_private_directory_component
+
+        files, manifest, archive = make_fixture()
+        with tempfile.TemporaryDirectory() as parent_path:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+
+            parent = create_file(
+                parent_path,
+                0x0080 | 0x0001 | 0x0004 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotEqual(parent, ctypes.c_void_p(-1).value)
+            staging_parent = None
+            staged = None
+            try:
+                staging_parent = create_private_directory_component(parent, "staging")
+                staged = stage_verified_release_by_handle(
+                    archive, manifest, staging_parent_handle=staging_parent
+                )
+                self.assertEqual(len(staged.files), len(files))
+                for relative, expected in files.items():
+                    target = os.path.join(
+                        parent_path, "staging", staged.component,
+                        *relative.split("/"),
+                    )
+                    with open(target, "rb") as created:
+                        self.assertEqual(created.read(), expected)
+            finally:
+                if staged is not None:
+                    staged.close()
+                if staging_parent is not None:
+                    close_handle(staging_parent)
+                self.assertTrue(close(parent))
+                shutil.rmtree(parent_path, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
