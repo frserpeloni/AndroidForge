@@ -307,6 +307,8 @@ def read_journal_events_by_handle(
         }
         if not isinstance(record, dict) or set(record) != expected_keys:
             raise JournalError("Schema do evento de journal inválido.")
+        if raw != _canonical_json(record):
+            raise JournalError("Evento não está na serialização canônica esperada.")
         if type(record["schema_version"]) is not int or record["schema_version"] != 1:
             raise JournalError("Versão do schema de journal não suportada.")
         if record["transaction_id"] != transaction_id:
