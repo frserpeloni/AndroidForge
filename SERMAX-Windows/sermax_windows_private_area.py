@@ -11,6 +11,7 @@ import ctypes
 import os
 import re
 import sys
+from dataclasses import dataclass
 from ctypes import wintypes
 
 from sermax_windows_handle_io import (
