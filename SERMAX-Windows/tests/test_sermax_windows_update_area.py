@@ -133,5 +133,99 @@ class UpdateAreaInspectionTests(unittest.TestCase):
         enumerate_dir.assert_not_called()
 
 
+class UpdateAreaPolicyValidationTests(unittest.TestCase):
+    def setUp(self):
+        import sys
+        import types
+
+        self.token_sid = "S-1-5-21-100-200-300-1001"
+        self.win32security = types.SimpleNamespace(
+            TokenUser=1,
+            GetTokenInformation=mock.Mock(return_value=("token-user-sid",)),
+            ConvertSidToStringSid=mock.Mock(return_value=self.token_sid),
+        )
+        self.modules = mock.patch.dict(
+            sys.modules, {"win32security": self.win32security}
+        )
+        self.modules.start()
+        self.addCleanup(self.modules.stop)
+        self.inspection = update_area.UpdateAreaInspection(
+            handle=200,
+            metadata={
+                "volume_serial_number": 123,
+                "file_id_128": "00112233445566778899aabbccddeeff",
+            },
+            acl_inspection={"dacl_state": "present"},
+            directory_entries=[],
+        )
+
+    def _mock_policy_and_authz(self, *, denied_name=None):
+        mock.patch.object(
+            update_area, "validate_private_area_acl",
+            return_value={"valid": True},
+        ).start()
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(
+            update_area, "read_security_descriptor_binary",
+            return_value=b"descriptor",
+        ).start()
+
+        def evaluate(token, descriptor, mask):
+            name = next(
+                key for key, value in update_area._REQUIRED_EFFECTIVE_RIGHTS.items()
+                if value == mask
+            )
+            return {
+                "api_success": True,
+                "granted": name != denied_name,
+                "token_source": "real_kernel_token",
+                "mutated": False,
+                "performed_io": False,
+            }
+
+        evaluator = mock.patch.object(
+            update_area, "evaluate_access_for_token", side_effect=evaluate
+        )
+        evaluator.start()
+        self.addCleanup(evaluator.stop)
+
+    def test_validates_existing_acl_policy_and_all_required_effective_rights(self):
+        self._mock_policy_and_authz()
+        with mock.patch.object(
+            update_area, "validate_private_area_acl",
+            return_value={"valid": True},
+        ) as policy:
+            result = update_area.validate_update_area_acl_policy(
+                self.inspection, token_handle=300
+            )
+        self.assertTrue(result["valid"])
+        self.assertEqual(result["owner_sid"], self.token_sid)
+        self.assertEqual(
+            set(result["effective_rights"]),
+            set(update_area._REQUIRED_EFFECTIVE_RIGHTS),
+        )
+        self.assertFalse(result["mutated"])
+        self.assertFalse(result["performed_io"])
+        policy.assert_called_once()
+        self.assertEqual(
+            policy.call_args.kwargs["expected_owner_sid"], self.token_sid
+        )
+
+    def test_rejects_token_when_a_required_effective_right_is_denied(self):
+        self._mock_policy_and_authz(denied_name="add_file")
+        with self.assertRaisesRegex(update_area.UpdateAreaError, "add_file"):
+            update_area.validate_update_area_acl_policy(
+                self.inspection, token_handle=300
+            )
+
+    def test_rejects_closed_inspection_before_token_access(self):
+        self.inspection.handle = None
+        with self.assertRaises(update_area.UpdateAreaError):
+            update_area.validate_update_area_acl_policy(
+                self.inspection, token_handle=300
+            )
+        self.win32security.GetTokenInformation.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
