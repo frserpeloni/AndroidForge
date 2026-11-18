@@ -193,8 +193,10 @@ class ChatStreamApiTests(unittest.TestCase):
     def test_attachment_context_is_bounded_and_image_limitation_is_explicit(self):
         from server import build_attachment_context, MAX_ATTACHMENT_CONTEXT_CHARS
         rows = [
-            {"original_name": "texto.txt", "extracted_text": "Dado técnico relevante. " * 500},
-            {"original_name": "foto.png", "extracted_text": None},
+            {"original_name": "texto.txt", "extracted_text": "Dado técnico relevante. " * 500,
+             "extraction_method": "native", "extraction_status": "completed"},
+            {"original_name": "foto.png", "extracted_text": None,
+             "extraction_method": "none", "extraction_status": "engine_unavailable"},
         ]
         context = build_attachment_context(rows, "Dado técnico")
         self.assertIsNotNone(context)
