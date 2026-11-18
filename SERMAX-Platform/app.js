@@ -270,6 +270,21 @@
         row.className = "attachment-row";
         const name = document.createElement("span");
         name.textContent = item.name + " (" + Math.ceil(item.size_bytes / 1024) + " KB)";
+        const extraction = document.createElement("small");
+        const extractionLabels = {
+          completed: item.extraction_method === "ocr" || item.extraction_method === "mixed" ? "OCR concluído" : "Texto extraído",
+          partial: "OCR parcial",
+          engine_unavailable: "OCR indisponível, instale o Tesseract",
+          dependency_unavailable: "Dependência OCR ausente",
+          renderer_unavailable: "Renderizador PDF ausente",
+          language_unavailable: "Instale os idiomas por e eng",
+          timeout: "OCR excedeu o tempo limite",
+          no_text: "Nenhum texto reconhecido",
+          not_processed: "OCR não executado",
+          render_failed: "Falha ao renderizar PDF",
+          failed: "Falha na extração"
+        };
+        extraction.textContent = extractionLabels[item.extraction_status] || "Extração: " + (item.extraction_status || "indisponível");
         const download = document.createElement("a");
         download.href = "/api/conversations/" + encodeURIComponent(conversationId) + "/attachments/" + encodeURIComponent(item.id);
         download.textContent = "Baixar";
@@ -282,7 +297,7 @@
           if (!result.ok) return toast("Não foi possível excluir o anexo.");
           await refreshAttachments();
         });
-        row.append(name, download, remove);
+        row.append(name, extraction, download, remove);
         list.appendChild(row);
       });
       renderPendingFiles();
@@ -303,7 +318,7 @@
         });
         const data = await response.json();
         if (!response.ok) throw new Error(data.detail || "Falha ao enviar " + file.name);
-        toast("Anexo salvo: " + data.name);
+        toast("Anexo salvo: " + data.name + (data.extraction_method === "ocr" || data.extraction_method === "mixed" ? " (OCR concluído)" : data.extraction_status === "engine_unavailable" ? " (OCR indisponível)" : ""));
       } catch (error) {
         remaining.push(file);
         toast(error.message);
