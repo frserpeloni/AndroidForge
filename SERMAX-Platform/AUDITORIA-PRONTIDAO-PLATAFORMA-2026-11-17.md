@@ -356,3 +356,49 @@ A execução GitHub Actions `44199605658`, no commit de código/testes `546844df
 A revisão confirmou que as instruções de segurança permanecem em uma mensagem `system` separada e o JSON com o conteúdo dos anexos entra como mensagem `user`. Os testes verificam essa separação, o isolamento entre conversas e a não persistência do conteúdo documental na tabela de mensagens. O teste de integração do núcleo também verifica que a rotina de memória recebe somente a pergunta original.
 
 A atualização posterior deste relatório é documental. Nenhuma inferência real, instalação local ou gravação de memória pessoal foi executada. PR #14 permanece aberta, em rascunho e sem merge.
+
+
+## 24. OCR local para imagens e PDFs digitalizados, 2026-11-17
+
+Foi iniciada a etapa de OCR local na branch sermax-platform-ocr-20261117, empilhada sobre a branch da PR #14. A implementação mantém os anexos locais e não chama serviços externos.
+
+### Arquitetura
+
+- backend/ocr_service.py isola a integração com Tesseract e PDFium.
+- pytesseract chama o executável Tesseract instalado localmente.
+- pypdfium2 renderiza páginas PDF sem texto nativo.
+- O idioma configurado é por+eng.
+- A variável opcional SERMAX_TESSERACT_CMD aponta para o executável local. Sem ela, a aplicação procura tesseract no PATH.
+- OCR de imagem ocorre após a validação de assinatura, formato e dimensão.
+- Em PDF, a extração nativa continua primeiro. Somente páginas sem texto nativo seguem para renderização e OCR.
+- O resultado de OCR é marcado como origem ocr ou mixed e recebe aviso de possível erro.
+- O conteúdo permanece não confiável no contexto temporário do MAX.
+
+### Limites de execução
+
+- Timeout de 8 segundos por imagem ou página.
+- Até cinco páginas digitalizadas por PDF.
+- Renderização PDF em 150 DPI, limitada a 3.000 pixels no maior lado.
+- Imagens preparadas para OCR limitadas a 9 milhões de pixels.
+- O limite original de validação de imagem, 20 milhões de pixels, permanece.
+- Ausência do Tesseract, do pacote Python, dos dados de idioma ou do renderizador não bloqueia o upload.
+- O estado é persistido em extraction_method e extraction_status, com migração aditiva da tabela attachments.
+- A interface apresenta o estado de extração.
+
+### Segurança e preservação
+
+- OCR executado localmente, sem transmissão a serviços externos.
+- O texto reconhecido permanece sujeito ao limite de contexto de 2.600 caracteres agregados e 650 por arquivo.
+- Nenhuma alteração em SERMAX-Windows/sermax_core.py, Terminal, memória pessoal, main, C:\\SERMAX ou backups.
+- Nenhuma inferência real com Ollama/OpenJarvis foi executada.
+- Nenhuma execução real do Tesseract foi realizada nesta etapa.
+
+### Dependências e licenças
+
+pytesseract e pypdfium2 foram adicionados às dependências Python. O executável Tesseract e os arquivos de idioma por e eng precisam existir no computador de execução. Tesseract declara licença Apache-2.0. pypdfium2 declara Apache-2.0/BSD-3-Clause; PDFium e suas dependências exigem revisão e inclusão dos avisos de licença na distribuição binária. Referências consultadas: documentação oficial do Tesseract e documentação do pypdfium2.
+
+### Validação pendente
+
+Os testes automatizados devem confirmar upload sem motor, extração simulada de imagem, renderização de PDF via PDFium com OCR simulado, migração de banco, isolamento entre conversas, contexto e interface. Esses testes não comprovam precisão do OCR nem funcionamento de uma instalação Tesseract real. A homologação local com por+eng, amostras de imagem e PDFs digitalizados permanece pendente.
+
+PR #15 será mantida em rascunho, sem merge. O CI da branch deve validar Python 3.12, Python 3.14, Windows e os testes de interação da interface.
