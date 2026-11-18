@@ -247,3 +247,37 @@ Em 18/11/2026 foi concluída a primeira integração de staging sem caminhos de 
 - Ainda não existe backup verificável, journal durável, troca transacional, recuperação ou rollback.
 - A chave pública oficial de release permanece pendente.
 - Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
+## Atualização: estrutura persistente e backup verificável
+
+Em 18/11/2026 foi implementada a abertura validada da estrutura persistente:
+- `_update` precisa conter exatamente `staging`, `backups`, `journal`, `logs` e `locks`.
+- Cada pasta é aberta relativamente ao handle pai e vinculada ao FileId de 128 bits.
+- Owner, DACL protegida e Authz são revalidados no mesmo handle.
+- A validação distingue diretórios recém-criados vazios de áreas persistentes não vazias.
+- A área `staging` aceita somente diretórios exclusivos `stage-<24 hex>`, sem reparse points.
+- Falhas de fechamento preservam referências aos handles que ainda precisam de limpeza.
+
+Foi implementado `backup_existing_files_by_handle()`:
+- Preflight de destinos `create` e `replace` antes de reservar o backup.
+- Abertura de fontes por handles relativos, FileId, volume e número de links.
+- Rejeição de reparse points, hardlinks e caminhos protegidos.
+- Cálculo SHA-256 da origem, cópia por handle, flush, readback e hash final da origem.
+- Catálogo persistente `__sermax_backup_catalog__.json` com identidade, atributos, tamanho, SHA-256 e descritor de segurança original.
+- Backup e catálogo recebem DACL protegida e validação de ACL/Authz.
+- Nenhum arquivo da instalação ativa é escrito, removido ou renomeado.
+
+### CI
+
+- Run `44410616224`, commit `c0118ee1ccffa5d2286a6bcc6a03d773d081cac8`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 88 testes aprovados em nove grupos, incluindo backup e staging nativos end-to-end.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44410616224).
+
+### Limites e próximos gates
+
+- Catálogo ainda não preserva timestamps originais.
+- Ainda não existe rotina de restauração do backup.
+- Journal durável, recuperação após interrupção, instalação transacional e rollback ainda não foram implementados.
+- Chave pública oficial de release permanece pendente.
+- Homologação Windows 11 local e testes com identidades Windows distintas continuam pendentes.
+- Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
