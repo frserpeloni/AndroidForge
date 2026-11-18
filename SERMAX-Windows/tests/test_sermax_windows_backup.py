@@ -92,6 +92,14 @@ class HandleBackupUnitTests(unittest.TestCase):
                 backup._preflight_targets(100, manifest, 123)
         close.assert_called_once_with(200, [])
 
+
+    def test_rejects_protected_update_area_before_opening_any_handle(self):
+        manifest = Manifest((Item("_update/journal.bin", "replace"),))
+        with mock.patch.object(backup, "query_handle_metadata") as query:
+            with self.assertRaisesRegex(backup.BackupError, "protegido"):
+                backup.backup_existing_files_by_handle(100, 200, manifest)
+        query.assert_not_called()
+
     def test_no_replace_files_does_not_create_empty_backup(self):
         manifest = Manifest((Item("bin/new.dll", "create"),))
         with (
