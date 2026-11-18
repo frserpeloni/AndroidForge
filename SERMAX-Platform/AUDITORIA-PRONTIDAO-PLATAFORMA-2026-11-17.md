@@ -139,7 +139,7 @@ A segunda entrega funcional da Fase B foi implementada na branch de prontidão:
 - Foi adicionado teste de interface para estado inicial, consulta, busca e indicação de somente leitura.
 - O CI foi atualizado para executar os novos testes em Python 3.12, Python 3.14 e Windows.
 
-A execução CI `44137981040` aprovou os testes de memória em Python 3.12, Python 3.14 e Windows. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
+A execução CI `44137981040` aprovou os testes de memória em Python 3.12, Python 3.14 e Windows. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\SERMAX` durante esta etapa.
 
 
 ## 9. Atualização de execução, diagnóstico dos motores, 2026-11-17
@@ -172,7 +172,7 @@ Os testes incluíram API, tarefas, memória somente leitura, diagnóstico local 
 
 Após o commit validado, foi feita uma alteração visual pequena no commit `f4a6d3e26b1d45e4c9e91bf42d7e6789f5777759`, para mostrar o índice original de cada memória na lista filtrada. Essa alteração ainda aguarda uma execução CI própria.
 
-A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\\SERMAX` foi acessado ou alterado.
+A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
 
@@ -187,7 +187,7 @@ O núcleo atual chama o callback com snapshots acumulados durante a geração do
 
 Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes. A execução CI `44191365375` aprovou a revisão corrigida nos cinco jobs, conforme seção 12.
 
-Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
+Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
 
 
 ## 12. Evidência CI do streaming, 2026-11-17
@@ -202,7 +202,7 @@ A execução GitHub Actions `44191365375`, no commit `0804396d2a28c2b4709c149fd3
 
 A primeira execução da revisão, `44191163899`, falhou nos novos testes porque a serialização inicial usava separadores SSE escapados em excesso. A correção foi aplicada, a revisão foi aberta em PR #12 e a execução `44191365375` validou o commit corrigido. PR #11 foi fechado como supersedido, sem merge e sem apagar código.
 
-A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
+A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
 
 
 ## 13. Compatibilidade de streaming OpenJarvis, 2026-11-17
@@ -256,7 +256,7 @@ Implementado:
 Limitações deliberadas:
 - O conteúdo dos anexos ainda não é passado ao núcleo SERMAX.
 - OCR de imagens não implementado.
-- Não houve inferência real, instalação local ou teste em `C:\\SERMAX`.
+- Não houve inferência real, instalação local ou teste em `C:\SERMAX`.
 - Não houve alteração em memória pessoal, núcleo original, Terminal ou backups.
 
 A primeira execução CI `44197305925` encontrou falha nos testes porque o setup isolado não criava a tabela `attachments`. A falha foi reproduzida pelo log e corrigida no teste para inicializar explicitamente o schema. A execução de correção `44197404930` está em andamento; a etapa de testes de anexos já passou nos jobs Linux Python 3.12 e 3.14, conforme os jobs avançaram para as verificações finais. A validação Windows ainda precisa concluir antes de registrar aprovação geral.
@@ -301,7 +301,7 @@ A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixtur
 
 A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
 
-PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
+PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\SERMAX`, memória pessoal ou backup foi realizada.
 
 
 ## 20. Contexto temporário dos anexos, 2026-11-17
@@ -389,7 +389,7 @@ Foi iniciada a etapa de OCR local na branch sermax-platform-ocr-20261117, empilh
 
 - OCR executado localmente, sem transmissão a serviços externos.
 - O texto reconhecido permanece sujeito ao limite de contexto de 2.600 caracteres agregados e 650 por arquivo.
-- Nenhuma alteração em SERMAX-Windows/sermax_core.py, Terminal, memória pessoal, main, C:\\SERMAX ou backups.
+- Nenhuma alteração em SERMAX-Windows/sermax_core.py, Terminal, memória pessoal, main, C:\SERMAX ou backups.
 - Nenhuma inferência real com Ollama/OpenJarvis foi executada.
 - Nenhuma execução real do Tesseract foi realizada nesta etapa.
 
@@ -449,6 +449,6 @@ Foi adicionado SERMAX-Platform/tools/run_homologation.py para permitir testes lo
 - O banco SQLite da Plataforma e os arquivos de memória do núcleo ficam na pasta temporária, removida após o encerramento.
 - As funções sermax_executor.executar e sermax_tarefas.executar_plano são substituídas em memória por bloqueios, impedindo comandos operacionais e execução de planos durante a homologação.
 - Consultas locais somente de leitura continuam habilitadas.
-- O launcher não instala dependências, não baixa modelos e não altera C:\\SERMAX.
+- O launcher não instala dependências, não baixa modelos e não altera C:\SERMAX.
 
 Testes automatizados verificam redirecionamento de memória e banco, preservação dos caminhos de motores, cópia do worker e bloqueio das ações operacionais. A execução real do launcher e a homologação com modelos locais dependem do computador de execução e permanecem pendentes.
