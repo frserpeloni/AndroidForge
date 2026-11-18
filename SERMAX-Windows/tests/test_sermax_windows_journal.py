@@ -6,11 +6,64 @@ import json
 import os
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 import sermax_windows_journal as journal
 
 
 class JournalUnitTests(unittest.TestCase):
+
+    def test_scan_marks_nonterminal_transaction_for_recovery(self):
+        entry = SimpleNamespace(
+            name="txn-" + "a" * 24,
+            is_directory=True,
+            is_reparse_point=False,
+        )
+        events = (
+            {"event": "PREPARED", "record_sha256": "b" * 64},
+            {"event": "INSTALL_STARTED", "record_sha256": "c" * 64},
+        )
+        with (
+            mock.patch.object(journal, "_validate_journal_parent"),
+            mock.patch.object(journal, "_real_entries", return_value=(entry,)),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component",
+                return_value=200,
+            ),
+            mock.patch.object(
+                journal, "read_journal_events_by_handle", return_value=events
+            ),
+            mock.patch.object(journal, "close_handle") as closer,
+        ):
+            result = journal.scan_journal_transactions_by_handle(100)
+        self.assertEqual(result[0]["state"], "IN_PROGRESS")
+        self.assertTrue(result[0]["requires_recovery"])
+        closer.assert_called_once_with(200)
+
+    def test_scan_marks_committed_transaction_as_terminal(self):
+        entry = SimpleNamespace(
+            name="txn-" + "a" * 24,
+            is_directory=True,
+            is_reparse_point=False,
+        )
+        events = ({"event": "COMMITTED", "record_sha256": "b" * 64},)
+        with (
+            mock.patch.object(journal, "_validate_journal_parent"),
+            mock.patch.object(journal, "_real_entries", return_value=(entry,)),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component",
+                return_value=200,
+            ),
+            mock.patch.object(
+                journal, "read_journal_events_by_handle", return_value=events
+            ),
+            mock.patch.object(journal, "close_handle"),
+        ):
+            result = journal.scan_journal_transactions_by_handle(100)
+        self.assertEqual(result[0]["state"], "TERMINAL")
+        self.assertFalse(result[0]["requires_recovery"])
+
     def test_canonical_json_is_stable_and_rejects_nonfinite_values(self):
         left = journal._canonical_json({"b": 2, "a": 1})
         right = journal._canonical_json({"a": 1, "b": 2})
@@ -128,6 +181,11 @@ class JournalWindowsIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(len(reopened.read_events()), len(events))
                 reopened.close()
+                reopened = None
+                scan = journal.scan_journal_transactions_by_handle(journal_parent)
+                self.assertEqual(len(scan), 1)
+                self.assertEqual(scan[0]["last_event"], "COMMITTED")
+                self.assertFalse(scan[0]["requires_recovery"])
                 reopened = None
 
                 event_path = os.path.join(
