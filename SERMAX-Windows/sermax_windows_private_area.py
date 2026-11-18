@@ -198,6 +198,8 @@ def validate_existing_private_area(
                 "_update ausente ou ambíguo; nenhuma criação ou reparo foi tentado."
             )
         entry = matches[0]
+        if entry.name != "_update":
+            raise PrivateAreaError("_update existente usa grafia não canônica.")
         if not entry.is_directory:
             raise PrivateAreaError("_update existente não é diretório.")
 
