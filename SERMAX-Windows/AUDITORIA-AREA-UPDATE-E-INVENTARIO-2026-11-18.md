@@ -89,3 +89,43 @@ A inspeção da área privada foi implementada em modo somente leitura. Ainda fa
 6. Chave pública oficial de release e homologação em VM Windows 11.
 
 A PR permanece em rascunho, sem merge. A instalação ativa permanece intocada.
+
+
+## Integração com a política ACL existente e validação nativa
+
+A revisão do repositório identificou os componentes ACL/Authz que já faziam parte do SERMAX. O fluxo de inspeção foi ajustado para reutilizá-los:
+- `sermax_windows_acl_inspection.py`: leitura do descritor pelo handle.
+- `sermax_windows_private_area_acl_policy.py`: validação da DACL estrita, proprietário, trustees, identidade e diretório vazio.
+- `sermax_windows_effective_access.py`: leitura do descritor binário e avaliação de direitos via Authz para o token real fornecido.
+- `sermax_windows_update_area.py`: orquestra inspeção, validação de política e avaliação de direitos, mantendo o mesmo handle aberto.
+
+O módulo `sermax_windows_security.py` foi marcado como protótipo independente preservado para comparação. Não é usado como autoridade no fluxo integrado.
+
+### CI Windows atualizado
+
+- Run push `44349316172`, commit `1d1f3ea129a778450426d006796a1fdd798951f9`.
+- Windows Server 2025, Python 3.14.10, pywin32 instalado no job.
+- Compilação dos módulos: sucesso.
+- Staging: 5 testes.
+- Leitor de segurança protótipo: 5 testes.
+- Inspeção e política de `_update`: 10 testes.
+- Inspeção ACL existente: 5 testes, incluindo leitura nativa de ACL real em diretório temporário.
+- Política ACL: 15 testes.
+- Integração nativa da política privada: 1 teste, incluindo criação de DACL temporária, leitura pelo mesmo handle e Authz para o token real do processo.
+- Total: 41 testes aprovados.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44349316172).
+
+A execução nativa comprova o fluxo no token do processo do runner e em diretórios temporários descartáveis. Não comprova o comportamento sob sessões separadas de usuário padrão, Administradores e SYSTEM, nem homologa a máquina local do mantenedor.
+
+### Estado atualizado
+
+A inspeção de `_update` e a validação da política existente estão integradas em modo somente leitura. A função de validação não cria nem altera ACL e não executa escrita.
+
+Continuam pendentes:
+1. Testes com identidades Windows distintas e política de acesso por conta.
+2. Criação atômica de nova pasta privada com SECURITY_DESCRIPTOR explícito. A primitiva atual com descritor nulo segue proibida para produção.
+3. Política de revalidação e bloqueio durante staging.
+4. Backup verificável, journal durável, instalação transacional e rollback.
+5. Chave pública oficial de release e homologação em VM Windows 11.
+
+Nenhuma alteração em `C:\\SERMAX`, `main` ou backups foi realizada.
