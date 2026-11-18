@@ -46,6 +46,7 @@ on:
       - "SERMAX-Windows/tests/test_sermax_windows_security.py"
       - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_layout.py"
       - "SERMAX-Windows/tests/test_sermax_windows_acl_inspection.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
