@@ -162,7 +162,7 @@ test("painel de motores verifica serviços sem iniciar inferência", async () =>
   assert.match(win.document.getElementById("engineStatus").textContent, /sermax:latest/);
   assert.match(win.document.getElementById("engineStatus").textContent, /OpenJarvis/);
   assert.match(win.document.getElementById("engineStatus").textContent, /OCR local/);
-  assert.match(win.document.getElementById("engineStatus").textContent, /por, eng/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /eng, por/);
   assert.match(win.document.getElementById("engineStatus").textContent, /Último backend registrado: ollama/);
   assert.match(win.document.querySelector(".engine-safety-note").textContent, /não envia prompts/i);
 });
