@@ -215,6 +215,50 @@ class AttachmentApiTests(unittest.TestCase):
         self.assertIn("[OCR página 1]", content.json()["text"])
         self.assertIn("Texto reconhecido na página", content.json()["text"])
 
+
+    def test_schema_migration_adds_extraction_metadata_for_existing_images(self):
+        with server.database() as conn:
+            conn.execute("DROP TABLE attachments")
+            conn.execute("""
+                CREATE TABLE attachments (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    original_name TEXT NOT NULL,
+                    extension TEXT NOT NULL,
+                    detected_mime TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
+                    sha256 TEXT NOT NULL,
+                    storage_name TEXT NOT NULL UNIQUE,
+                    extracted_text TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO attachments(id,conversation_id,original_name,extension,detected_mime,size_bytes,sha256,storage_name,extracted_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("legacy-image", "conversation-a", "old.png", ".png", "image/png", 8, "abc", "legacy.bin", None, server.utc_now()),
+            )
+        attachment_service.initialize_attachment_schema()
+        with server.database() as conn:
+            row = conn.execute(
+                "SELECT extraction_method,extraction_status FROM attachments WHERE id=?",
+                ("legacy-image",),
+            ).fetchone()
+        self.assertEqual(row["extraction_method"], "none")
+        self.assertEqual(row["extraction_status"], "not_processed")
+
+    def test_pdf_ocr_page_limit_is_enforced(self):
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        for _ in range(6):
+            writer.add_blank_page(width=72, height=72)
+        writer.write(pdf_buffer)
+        with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
+             patch.object(ocr_service, "_run_tesseract", return_value=("texto", "completed")) as recognize:
+            pages, status = ocr_service.ocr_pdf_pages(pdf_buffer.getvalue(), range(6))
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(recognize.call_count, 5)
+        self.assertEqual(status, "partial")
+
     def test_sixth_attachment_is_rejected(self):
         for index in range(5):
             response = self.upload(f"{index}.txt", f"item {index}".encode())
