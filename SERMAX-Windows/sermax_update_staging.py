@@ -11,12 +11,169 @@ import io
 import os
 import stat
 import tempfile
+import secrets
 import zipfile
 from pathlib import Path
+from dataclasses import dataclass
 
 from sermax_update_inventory import InventoryError, _normalize_relative, _is_reparse_point
 from sermax_update_manifest import ValidatedManifest
 from sermax_update_package import PackageError, validate_release_archive
+
+
+@dataclass
+class HandleStagedRelease:
+    """Árvore de staging criada por handles; o chamador fecha root_handle."""
+
+    component: str
+    root_handle: object
+    files: tuple[dict[str, object], ...]
+
+    def close(self) -> None:
+        if self.root_handle is not None:
+            from sermax_windows_handle_io import close_handle
+            close_handle(self.root_handle)
+            self.root_handle = None
+
+    def __enter__(self):
+        if self.root_handle is None:
+            raise StagingError("Handle do staging já foi encerrado.")
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        self.close()
+
+
+def _preflight_handle_paths(manifest: ValidatedManifest) -> None:
+    """Rejeita colisões de caixa e conflitos arquivo/diretório antes de gravar."""
+    from sermax_windows_handle_io import _validate_component
+
+    spellings: dict[str, str] = {}
+    files: set[str] = set()
+    directories: set[str] = set()
+    for item in manifest.files:
+        normalized = _normalize_relative(item.path)
+        parts = normalized.split("/")
+        for part in parts:
+            _validate_component(part)
+        for index in range(1, len(parts)):
+            directory = "/".join(parts[:index])
+            key = directory.casefold()
+            previous = spellings.setdefault(key, directory)
+            if previous != directory:
+                raise StagingError("Colisão de caixa em diretório do manifesto.")
+            if key in files:
+                raise StagingError("Um arquivo do manifesto também é diretório pai.")
+            directories.add(key)
+        file_key = normalized.casefold()
+        previous = spellings.setdefault(file_key, normalized)
+        if previous != normalized:
+            raise StagingError("Colisão de caixa em caminho de arquivo do manifesto.")
+        if file_key in directories:
+            raise StagingError("Um destino do manifesto conflita com diretório.")
+        files.add(file_key)
+
+
+def stage_verified_release_by_handle(
+    archive_bytes: bytes,
+    manifest: ValidatedManifest,
+    *,
+    staging_parent_handle,
+) -> HandleStagedRelease:
+    """Valida e extrai a release inteira sob uma árvore criada por handles.
+
+    O manifesto precisa ter sido autenticado antes da chamada. O pai deve ser
+    um diretório privado validado e permanecer aberto. Nenhum caminho é usado
+    para criar diretórios ou arquivos. Em caso de falha, a árvore parcial fica
+    preservada e seus handles são fechados para inspeção posterior.
+    """
+    try:
+        validate_release_archive(archive_bytes, manifest)
+        _preflight_handle_paths(manifest)
+    except (PackageError, InventoryError) as exc:
+        raise StagingError("Pacote ou caminhos não passaram na validação integral.") from exc
+
+    from sermax_windows_private_area import create_staging_directory_component
+    from sermax_windows_file_writer import write_verified_file_component
+    from sermax_windows_handle_io import close_handle
+
+    stage_component = "stage-" + secrets.token_hex(12)
+    root_handle = None
+    nested_handles: list[object] = []
+    directories: dict[str, object] = {}
+    file_results: list[dict[str, object]] = []
+
+    try:
+        root_handle = create_staging_directory_component(
+            staging_parent_handle, stage_component
+        )
+        directories[""] = root_handle
+
+        def ensure_directory(relative: str):
+            if not relative:
+                return root_handle
+            cached = directories.get(relative)
+            if cached is not None:
+                return cached
+            parts = relative.split("/")
+            current_relative = ""
+            parent_handle = root_handle
+            for part in parts:
+                current_relative = (
+                    f"{current_relative}/{part}" if current_relative else part
+                )
+                child_handle = directories.get(current_relative)
+                if child_handle is None:
+                    child_handle = create_staging_directory_component(
+                        parent_handle, part
+                    )
+                    directories[current_relative] = child_handle
+                    nested_handles.append(child_handle)
+                parent_handle = child_handle
+            return parent_handle
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as package:
+            entries = {info.filename: info for info in package.infolist()}
+            for item in manifest.files:
+                if "/" in item.path:
+                    parent_path, leaf_name = item.path.rsplit("/", 1)
+                else:
+                    parent_path, leaf_name = "", item.path
+                parent_handle = ensure_directory(parent_path)
+                with package.open(entries[item.path], "r") as source:
+                    result = write_verified_file_component(
+                        parent_handle,
+                        leaf_name,
+                        source,
+                        expected_size=item.size,
+                        expected_sha256=item.sha256,
+                    )
+                file_results.append(result)
+
+        for handle in reversed(nested_handles):
+            close_handle(handle)
+        nested_handles.clear()
+        return HandleStagedRelease(
+            component=stage_component,
+            root_handle=root_handle,
+            files=tuple(file_results),
+        )
+    except Exception as exc:
+        for handle in reversed(nested_handles):
+            try:
+                close_handle(handle)
+            except Exception:
+                pass
+        if root_handle is not None:
+            try:
+                close_handle(root_handle)
+            except Exception:
+                pass
+        if isinstance(exc, StagingError):
+            raise
+        raise StagingError(
+            f"Falha no staging por handles; árvore parcial preservada: {stage_component}"
+        ) from exc
 
 
 class StagingError(RuntimeError):
