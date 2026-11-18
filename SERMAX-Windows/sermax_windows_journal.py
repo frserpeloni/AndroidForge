@@ -37,6 +37,94 @@ _ALLOWED_EVENTS = {
     "RECOVERY_REQUIRED",
 }
 
+_TRANSITIONS = {
+    None: {"PREPARED"},
+    "PREPARED": {"BACKUP_COMPLETE", "STAGING_COMPLETE", "RECOVERY_REQUIRED"},
+    "BACKUP_COMPLETE": {"STAGING_COMPLETE", "RECOVERY_REQUIRED"},
+    "STAGING_COMPLETE": {"INSTALL_STARTED", "RECOVERY_REQUIRED"},
+    "INSTALL_STARTED": {"FILE_REPLACED", "COMMITTED", "ROLLBACK_STARTED", "RECOVERY_REQUIRED"},
+    "FILE_REPLACED": {"FILE_REPLACED", "COMMITTED", "ROLLBACK_STARTED", "RECOVERY_REQUIRED"},
+    "COMMITTED": set(),
+    "ROLLBACK_STARTED": {"FILE_RESTORED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
+    "FILE_RESTORED": {"FILE_RESTORED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
+    "ROLLED_BACK": set(),
+    "RECOVERY_REQUIRED": {"RECOVERY_REQUIRED", "ROLLBACK_STARTED"},
+}
+
+
+def _validate_event_payload(event: str, payload: dict) -> None:
+    required = {
+        "PREPARED": ("release_version", "manifest_sha256"),
+        "BACKUP_COMPLETE": ("backup_component", "catalog_sha256"),
+        "STAGING_COMPLETE": ("staging_component", "archive_sha256"),
+        "INSTALL_STARTED": (),
+        "FILE_REPLACED": ("path", "sha256"),
+        "COMMITTED": ("release_version",),
+        "ROLLBACK_STARTED": ("reason",),
+        "FILE_RESTORED": ("path", "sha256"),
+        "ROLLED_BACK": ("reason",),
+        "RECOVERY_REQUIRED": ("reason",),
+    }[event]
+    if any(key not in payload for key in required):
+        raise JournalError(f"Payload incompleto para evento {event}.")
+    for key in ("manifest_sha256", "archive_sha256", "catalog_sha256", "sha256"):
+        if key in payload and payload[key] is not None:
+            value = payload[key]
+            if (
+                not isinstance(value, str)
+                or len(value) != 64
+                or any(ch not in "0123456789abcdef" for ch in value)
+            ):
+                raise JournalError(f"Hash inválido no payload: {key}.")
+    for key in ("release_version", "reason"):
+        if key in payload and (
+            not isinstance(payload[key], str) or not payload[key].strip()
+        ):
+            raise JournalError(f"Campo textual inválido no payload: {key}.")
+    if "path" in payload:
+        from sermax_update_inventory import (
+            PROTECTED_FILES, PROTECTED_DIRECTORY_SEGMENTS, _normalize_relative,
+        )
+        try:
+            normalized = _normalize_relative(payload["path"])
+        except Exception as exc:
+            raise JournalError("Caminho inválido no evento.") from exc
+        if normalized != payload["path"]:
+            raise JournalError("Caminho do evento não está normalizado.")
+        if (
+            normalized.rsplit("/", 1)[-1].casefold()
+            in {name.casefold() for name in PROTECTED_FILES}
+            or any(
+                part.casefold() in PROTECTED_DIRECTORY_SEGMENTS
+                for part in normalized.split("/")
+            )
+        ):
+            raise JournalError("Evento aponta para caminho protegido.")
+    if event == "BACKUP_COMPLETE":
+        component = payload["backup_component"]
+        catalog_hash = payload["catalog_sha256"]
+        if (component is None) != (catalog_hash is None):
+            raise JournalError("Backup vazio exige componente e hash nulos.")
+        if component is not None and (
+            not isinstance(component, str)
+            or not re.fullmatch(r"backup-[0-9a-f]{24}", component)
+        ):
+            raise JournalError("Componente de backup inválido.")
+    if event == "STAGING_COMPLETE":
+        component = payload["staging_component"]
+        if (
+            not isinstance(component, str)
+            or not re.fullmatch(r"stage-[0-9a-f]{24}", component)
+        ):
+            raise JournalError("Componente de staging inválido.")
+
+
+def _validate_transition(previous_event: str | None, event: str) -> None:
+    if event not in _TRANSITIONS.get(previous_event, set()):
+        raise JournalError(
+            f"Transição de journal inválida: {previous_event!r} -> {event!r}."
+        )
+
 
 class JournalError(RuntimeError):
     """Journal inválido, inconsistente ou não durável."""
@@ -204,20 +292,28 @@ def read_journal_events_by_handle(
         }
         if not isinstance(record, dict) or set(record) != expected_keys:
             raise JournalError("Schema do evento de journal inválido.")
-        if record["schema_version"] != 1:
+        if type(record["schema_version"]) is not int or record["schema_version"] != 1:
             raise JournalError("Versão do schema de journal não suportada.")
         if record["transaction_id"] != transaction_id:
             raise JournalError("Evento pertence a outra transação.")
         if (
-            isinstance(record["sequence"], bool)
+            type(record["sequence"]) is not int
             or record["sequence"] != sequence
         ):
             raise JournalError("Sequência interna diverge do nome do arquivo.")
-        if record["event"] not in _ALLOWED_EVENTS:
+        if (
+            not isinstance(record["event"], str)
+            or record["event"] not in _ALLOWED_EVENTS
+        ):
             raise JournalError("Tipo de evento não permitido.")
         if not isinstance(record["payload"], dict):
             raise JournalError("Payload do evento precisa ser objeto JSON.")
-        if record["previous_hash"] != previous_hash:
+        if (
+            not isinstance(record["previous_hash"], str)
+            or len(record["previous_hash"]) != 64
+            or any(ch not in "0123456789abcdef" for ch in record["previous_hash"])
+            or record["previous_hash"] != previous_hash
+        ):
             raise JournalError("Cadeia hash do journal foi interrompida.")
         record_hash = record["record_sha256"]
         if (
@@ -230,8 +326,9 @@ def read_journal_events_by_handle(
         calculated_record_hash = hashlib.sha256(_canonical_json(body)).hexdigest()
         if calculated_record_hash != record_hash:
             raise JournalError("Hash interno do evento diverge.")
-        if not file_hash:
-            raise JournalError("Hash de arquivo vazio.")
+        _validate_event_payload(record["event"], record["payload"])
+        previous_event = events[-1]["event"] if events else None
+        _validate_transition(previous_event, record["event"])
         events.append({
             **record,
             "file_sha256": file_hash,
@@ -257,10 +354,11 @@ class JournalSession:
     ) -> dict[str, object]:
         if self.handle is None:
             raise JournalError("Sessão do journal já foi encerrada.")
-        if event not in _ALLOWED_EVENTS:
+        if not isinstance(event, str) or event not in _ALLOWED_EVENTS:
             raise JournalError("Tipo de evento não permitido.")
         if not isinstance(payload, dict):
             raise JournalError("Payload do evento precisa ser objeto JSON.")
+        _validate_event_payload(event, payload)
         payload_bytes = _canonical_json(payload)
         if len(payload_bytes) > MAX_JOURNAL_EVENT_BYTES // 2:
             raise JournalError("Payload do evento excede o limite.")
@@ -269,6 +367,8 @@ class JournalSession:
         sequence = len(current) + 1
         if sequence > 999999:
             raise JournalError("Limite de eventos por transação excedido.")
+        previous_event = current[-1]["event"] if current else None
+        _validate_transition(previous_event, event)
         previous_hash = current[-1]["record_sha256"] if current else _ZERO_HASH
         body = {
             "schema_version": 1,
