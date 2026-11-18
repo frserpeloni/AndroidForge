@@ -130,7 +130,12 @@ class HandleReleaseStagingTests(unittest.TestCase):
                 side_effect=create_directory,
             ),
             mock.patch(
-                "sermax_windows_private_area.validate_empty_private_directory_handle"
+                "sermax_windows_private_area.validate_private_directory_handle",
+                return_value={"valid": True},
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(),
             ),
             mock.patch(
                 "sermax_windows_file_writer.write_verified_file_component",
@@ -192,7 +197,12 @@ class HandleReleaseStagingTests(unittest.TestCase):
                 side_effect=create_directory,
             ),
             mock.patch(
-                "sermax_windows_private_area.validate_empty_private_directory_handle"
+                "sermax_windows_private_area.validate_private_directory_handle",
+                return_value={"valid": True},
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(),
             ),
             mock.patch(
                 "sermax_windows_file_writer.write_verified_file_component",
