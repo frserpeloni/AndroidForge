@@ -138,7 +138,10 @@ class ExistingPrivateAreaLayoutTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(private_area.PrivateAreaError, "staging"):
                 private_area.open_existing_private_area_layout(100)
-        self.assertEqual(closer.call_count, 6)
+        self.assertEqual(closer.call_count, 2)
+        self.assertCountEqual(
+            closer.call_args_list, [mock.call(201), mock.call(200)]
+        )
         self.api.CloseHandle.assert_called_once_with(777)
 
     def test_rejects_incomplete_layout_before_opening_children(self):
