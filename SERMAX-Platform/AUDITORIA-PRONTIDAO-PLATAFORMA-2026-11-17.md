@@ -504,3 +504,15 @@ Foi adicionado `SERMAX-Platform/tools/check_local_ocr.py` como verificação loc
 - Retorna código distinto quando Tesseract/idiomas ou PDFium estão indisponíveis.
 
 O teste automatizado do script simula as respostas do OCR e valida o relatório e a interrupção segura quando o motor está ausente. A execução com Tesseract real continua dependente do computador de homologação. A amostra sintética verifica funcionamento básico, não a qualidade de OCR em documentos reais.
+
+
+## 33. CI do teste local de OCR sintético, 2026-11-17
+
+A execução GitHub Actions `44226515348`, evento `pull_request`, commit `571f73a6c3f4eea2df4d193461068fc4a4f403e4`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+O CI validou a construção da amostra sintética em memória, o relatório do teste local e o encerramento seguro quando o Tesseract não está disponível, com respostas de OCR simuladas. O teste real com o executável Tesseract e PDFium continua pendente no computador de homologação.
