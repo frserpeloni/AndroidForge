@@ -3,7 +3,6 @@ from unittest import mock
 
 from sermax_windows_directory_enum import DirectoryEntry
 import sermax_windows_update_area as update_area
-from sermax_windows_security import DirectorySecurityError
 
 
 def directory_entry(name="_update", *, attributes=0x10):
@@ -53,14 +52,14 @@ class UpdateAreaInspectionTests(unittest.TestCase):
             ),
             mock.patch.object(
                 update_area, "enumerate_stable_directory_handle",
-                return_value=tuple(entries),
+                side_effect=[tuple(entries), tuple()],
             ),
             mock.patch.object(
                 update_area, "open_verified_child_component",
                 return_value=200,
             ),
             mock.patch.object(
-                update_area, "read_security_by_handle",
+                update_area, "inspect_directory_acl",
                 side_effect=security if isinstance(security, Exception) else None,
                 return_value=self.security if security is None or isinstance(security, Exception) else security,
             ),
@@ -72,7 +71,7 @@ class UpdateAreaInspectionTests(unittest.TestCase):
             result = update_area.inspect_update_area_by_handle(100)
         self.assertEqual(result.handle, 200)
         self.assertEqual(result.metadata, self.child_metadata)
-        self.assertEqual(result.security, self.security)
+        self.assertEqual(result.acl_inspection, self.security)
         opener.assert_called_once_with(
             100, mock.ANY, desired_access=update_area.READ_CONTROL
         )
@@ -112,7 +111,7 @@ class UpdateAreaInspectionTests(unittest.TestCase):
     def test_closes_child_handle_when_security_read_fails(self):
         patches = self._patch_common(
             [directory_entry()],
-            security=DirectorySecurityError("security read failure"),
+            security=update_area.DirectoryAclInspectionError("security read failure"),
         )
         with (
             patches[0], patches[1], patches[2],
