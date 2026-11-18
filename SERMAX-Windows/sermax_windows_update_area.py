@@ -120,7 +120,11 @@ def inspect_update_area_by_handle(sermax_handle) -> UpdateAreaInspection:
                 raise UpdateAreaError("_update pertence a volume diferente de SERMAX.")
 
             acl_inspection = inspect_directory_acl(handle)
-            directory_entries = list(enumerate_stable_directory_handle(handle))
+            directory_entries = [
+                item
+                for item in enumerate_stable_directory_handle(handle)
+                if item.name not in {".", ".."}
+            ]
             return UpdateAreaInspection(
                 handle=handle,
                 metadata=metadata,
