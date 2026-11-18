@@ -158,7 +158,7 @@ Depois de obter esta branch e instalar as dependências de backend no ambiente P
 python SERMAX-Platform/tools/run_homologation.py
 ```
 
-O launcher usa o código do núcleo presente no repositório, mas define SERMAX_ROOT e SERMAX_PLATFORM_DATA para uma pasta temporária. A memória SERMAX, a memória neural e o banco SQLite da Plataforma ficam nessa pasta e são apagados quando o servidor encerra. Nenhum arquivo de memória é copiado de C:\\SERMAX. O worker OpenJarvis é copiado para a pasta temporária; o executável Python do ambiente OpenJarvis é preservado pela variável SERMAX_JARVIS_PYTHON, se configurada. O caminho do Tesseract também é preservado pela variável SERMAX_TESSERACT_CMD.
+O launcher usa o código do núcleo presente no repositório, mas define SERMAX_ROOT e SERMAX_PLATFORM_DATA para uma pasta temporária. A memória SERMAX, a memória neural e o banco SQLite da Plataforma ficam nessa pasta e são apagados quando o servidor encerra. Nenhum arquivo de memória é copiado de C:\SERMAX. O worker OpenJarvis é copiado para a pasta temporária; o executável Python do ambiente OpenJarvis é preservado pela variável SERMAX_JARVIS_PYTHON, se configurada. O caminho do Tesseract também é preservado pela variável SERMAX_TESSERACT_CMD.
 
 O modo de homologação bloqueia as funções de execução de comandos e planos. Consultas locais de leitura continuam disponíveis. Abra http://127.0.0.1:8765, verifique os cartões Motores, envie uma imagem e um PDF digitalizado de teste e encerre com Ctrl+C. Não use comandos operacionais neste modo.
 
