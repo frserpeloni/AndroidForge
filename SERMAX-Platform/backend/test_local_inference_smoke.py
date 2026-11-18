@@ -2,6 +2,7 @@ import contextlib
 import io
 import json
 import sys
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -15,14 +16,13 @@ import check_local_inference
 
 class LocalInferenceSmokeTests(unittest.TestCase):
     def test_smoke_test_uses_fixed_prompt_and_reports_local_backend(self):
-        fake_core = type("FakeCore", (), {
-            "ultimo_diagnostico_roteamento": {
-                "backend": "ollama", "fallback": "OpenJarvis indisponível"
-            },
-            "perguntar": staticmethod(lambda prompt: (
-                "SERMAX_LOCAL_OK" if prompt == check_local_inference.PROMPT else "prompt incorreto"
-            )),
-        })()
+        fake_core = types.ModuleType("sermax_core")
+        fake_core.ultimo_diagnostico_roteamento = {
+            "backend": "ollama", "fallback": "OpenJarvis indisponível"
+        }
+        fake_core.perguntar = lambda prompt: (
+            "SERMAX_LOCAL_OK" if prompt == check_local_inference.PROMPT else "prompt incorreto"
+        )
         output = io.StringIO()
         with patch.dict(sys.modules, {"sermax_core": fake_core}), \
              patch.object(check_local_inference.run_homologation, "apply_safety_guards"), \
@@ -30,7 +30,7 @@ class LocalInferenceSmokeTests(unittest.TestCase):
             result = check_local_inference.main()
 
         self.assertEqual(result, 0)
-        report = json.loads(output.getvalue().splitlines()[-1]) if output.getvalue().strip().endswith("}") else json.loads(output.getvalue()[output.getvalue().index("{"):])
+        report = json.loads(output.getvalue()[output.getvalue().index("{"):])
         self.assertEqual(report["status"], "passed")
         self.assertEqual(report["backend"], "ollama")
         self.assertFalse(report["personal_memory_accessed"])
@@ -41,10 +41,11 @@ class LocalInferenceSmokeTests(unittest.TestCase):
         def fail(_prompt):
             raise RuntimeError("Ollama local indisponível")
 
-        fake_core = type("FakeCore", (), {
-            "ultimo_diagnostico_roteamento": {"backend": "ollama", "fallback": "OpenJarvis indisponível"},
-            "perguntar": staticmethod(fail),
-        })()
+        fake_core = types.ModuleType("sermax_core")
+        fake_core.ultimo_diagnostico_roteamento = {
+            "backend": "ollama", "fallback": "OpenJarvis indisponível"
+        }
+        fake_core.perguntar = fail
         output = io.StringIO()
         with patch.dict(sys.modules, {"sermax_core": fake_core}), \
              patch.object(check_local_inference.run_homologation, "apply_safety_guards"), \
