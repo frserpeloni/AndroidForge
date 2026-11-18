@@ -78,3 +78,42 @@ O teste nativo criou arquivo em diretório temporário no runner Windows, valido
 ### Próxima etapa
 
 Integrar o escritor ao fluxo de staging por handles. A função antiga `stage_verified_release()` continua baseada em caminhos e não deve ser tratada como fluxo final de produção. Ainda faltam diretórios de staging exclusivos criados por handle, escrita de toda a árvore por handles, backup verificável, journal durável, instalação transacional, recuperação e rollback.
+## Staging integral por handles, primeira integração
+
+Foi adicionada a função `stage_verified_release_by_handle()`.
+
+Contrato:
+- Valida novamente o pacote ZIP contra o manifesto autenticado e rejeita colisões de caixa e conflitos entre arquivo e diretório antes de criar a árvore.
+- Exige handle pai privado, regular, sem reparse point ou DeletePending.
+- Revalida owner, DACL, diretório vazio e direitos Authz pelo mesmo handle antes de iniciar.
+- Cria diretório raiz exclusivo com nome aleatório por handle relativo e SECURITY_DESCRIPTOR explícito.
+- Cria cada subdiretório da release por handle relativo, com ACL aplicada durante a criação.
+- Cria cada arquivo por `write_verified_file_component()`, sem construir caminhos de destino.
+- Mantém os handles de diretórios pais abertos durante as gravações e fecha os handles filhos após a extração.
+- Retorna o handle da raiz de staging ao chamador. O chamador deve fechá-lo.
+- Em falha, preserva a árvore parcial e fecha os handles. Não remove arquivos nem diretórios.
+- A função path-based antiga continua disponível como implementação intermediária, mas não é o fluxo de staging por handles.
+
+Foi incluída a função `validate_empty_private_directory_handle()` para exigir ACL/Authz válidas e diretório pai vazio antes de iniciar a operação. O contrato atual prevê um pai privado vazio por operação de staging.
+
+### Testes e evidência CI
+
+- Run `44394857061`, commit `0ccfa72dbe0fd6272c2997d0caa96a43d3fc8c4a`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 71 testes aprovados em sete etapas de execução:
+  - escritor por handle: 6;
+  - staging e staging por handles: 9;
+  - leitor de segurança: 5;
+  - inspeção/política de `_update`: 11;
+  - criação e validação da área privada: 19;
+  - inspeção ACL: 5;
+  - política ACL: 15;
+  - integração nativa da política ACL: 1.
+- O grupo de staging inclui teste nativo end-to-end: cria `_update` temporário, valida a ACL, cria a árvore de release por handles, grava arquivos com ACL/Authz e confirma o conteúdo final.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44394857061).
+
+Os testes nativos foram executados em diretórios temporários no Windows Server 2025, com o token do processo do runner. Não substituem homologação no Windows 11 local nem testes com sessões separadas de usuário padrão, Administradores e SYSTEM.
+
+### Próximo gate
+
+O staging integral por handles passou no CI. Ainda não existe instalação transacional. Próximas etapas: validar a raiz `_update` preexistente em fluxo de atualização, backup verificável por handles, journal durável, troca controlada, recuperação e rollback em sandbox. A allowlist oficial da chave pública de release continua pendente. Nenhum arquivo foi instalado em `C:\\SERMAX`.
