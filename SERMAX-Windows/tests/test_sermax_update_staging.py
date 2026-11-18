@@ -8,6 +8,7 @@ from unittest import mock
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 
 from sermax_update_staging import (
     StagingError, stage_verified_release, stage_verified_release_by_handle,
@@ -135,7 +136,13 @@ class HandleReleaseStagingTests(unittest.TestCase):
             ),
             mock.patch(
                 "sermax_windows_directory_handle.enumerate_stable_directory_handle",
-                return_value=(),
+                return_value=(
+                    SimpleNamespace(
+                        name="stage-" + "a" * 24,
+                        is_directory=True,
+                        is_reparse_point=False,
+                    ),
+                ),
             ),
             mock.patch(
                 "sermax_windows_file_writer.write_verified_file_component",
@@ -154,6 +161,34 @@ class HandleReleaseStagingTests(unittest.TestCase):
             self.assertEqual(close_handle.call_count, 2)  # nested directories only
             staged.close()
             self.assertEqual(close_handle.call_count, 3)  # root closed by owner
+
+
+    def test_rejects_unknown_existing_staging_entry_before_creating_new_stage(self):
+        files, manifest, archive = make_fixture()
+        with (
+            mock.patch(
+                "sermax_windows_private_area.validate_private_directory_handle",
+                return_value={"valid": True},
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(
+                    SimpleNamespace(
+                        name="unexpected.bin",
+                        is_directory=False,
+                        is_reparse_point=False,
+                    ),
+                ),
+            ),
+            mock.patch(
+                "sermax_windows_private_area.create_staging_directory_component"
+            ) as create_directory,
+        ):
+            with self.assertRaisesRegex(StagingError, "objeto desconhecido"):
+                stage_verified_release_by_handle(
+                    archive, manifest, staging_parent_handle=object()
+                )
+        create_directory.assert_not_called()
 
     def test_rejects_file_directory_prefix_collision_before_creating_stage(self):
         payload = b"x"
