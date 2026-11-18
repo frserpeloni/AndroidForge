@@ -172,9 +172,11 @@ def stage_verified_release_by_handle(
                 pass
         if isinstance(exc, StagingError):
             raise
-        raise StagingError(
-            f"Falha no staging por handles; árvore parcial preservada: {stage_component}"
-        ) from exc
+        if root_handle is not None:
+            detail = f"árvore parcial preservada: {stage_component}"
+        else:
+            detail = "a pasta de staging não chegou a ser criada"
+        raise StagingError(f"Falha no staging por handles; {detail}") from exc
 
 
 class StagingError(RuntimeError):
