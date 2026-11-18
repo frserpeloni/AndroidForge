@@ -82,6 +82,14 @@ class ReadSecurityByHandleTests(unittest.TestCase):
         self.assertEqual(result["aces"][1]["trustee_sid"], "S-1-5-21-1000")
         self.win32security.GetSecurityInfo.assert_called_once()
 
+    def test_reads_sid_from_callback_ace_with_trailing_application_data(self):
+        dacl = FakeDacl([
+            ((9, 0x00), 0x00000002, "S-1-5-21-1000", b"callback-data"),
+        ])
+        result = self._run(FakeDescriptor(dacl))
+        self.assertEqual(result["aces"][0]["trustee_sid"], "S-1-5-21-1000")
+        self.assertFalse(result["aces"][0]["supported_for_policy"])
+
     def test_reports_null_or_absent_dacl_as_unsafe_state_for_later_policy(self):
         result = self._run(FakeDescriptor(None, control=0))
         self.assertEqual(result["dacl_state"], "null_or_absent")
