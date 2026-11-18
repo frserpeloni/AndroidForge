@@ -677,7 +677,11 @@ def open_existing_private_area_layout(
         )
         if update_validation.get("valid") is not True:
             raise PrivateAreaError("ACL/Authz de _update não foi confirmada.")
-        update_entries = enumerate_stable_directory_handle(update_handle)
+        update_entries = tuple(
+            entry
+            for entry in enumerate_stable_directory_handle(update_handle)
+            if entry.name not in {".", ".."}
+        )
         observed_names = {entry.name for entry in update_entries}
         if observed_names != set(_PRIVATE_LAYOUT_COMPONENTS):
             raise PrivateAreaError(
@@ -712,7 +716,11 @@ def open_existing_private_area_layout(
             child_validation = _validate_created_private_directory(
                 child, metadata, token, require_empty=False
             )
-            child_entries = enumerate_stable_directory_handle(child)
+            child_entries = tuple(
+                child_entry
+                for child_entry in enumerate_stable_directory_handle(child)
+                if child_entry.name not in {".", ".."}
+            )
             for child_entry in child_entries:
                 try:
                     _validate_component(child_entry.name)
