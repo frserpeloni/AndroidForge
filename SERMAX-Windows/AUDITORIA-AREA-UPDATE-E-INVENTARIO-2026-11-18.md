@@ -129,3 +129,38 @@ Continuam pendentes:
 5. Chave pública oficial de release e homologação em VM Windows 11.
 
 Nenhuma alteração em `C:\\SERMAX`, `main` ou backups foi realizada.
+
+
+## Integração nativa do fluxo completo de inspeção de _update
+
+Foi adicionado um teste Windows x64 que:
+1. Cria um diretório temporário `_update`.
+2. Define, somente nesse diretório descartável, proprietário e DACL com as três ACEs da política.
+3. Fecha o handle de escrita usado para preparar a ACL.
+4. Abre `_update` por enumeração e handle relativo a SERMAX.
+5. Mantém o handle de inspeção aberto durante leitura ACL, validação da política e Authz.
+6. Confirma os sete direitos exigidos para o token real do processo.
+7. Fecha todos os handles e remove a árvore temporária.
+
+A enumeração da pasta privada agora desconsidera as entradas especiais `.` e `..` antes de aplicar a regra de diretório vazio. A validação preexistente também rejeita a grafia não canônica `_UPDATE`.
+
+## CI consolidado mais recente
+
+- Run push `44350076532`, commit `7756216336c4f2bcd70e3c0bf94a4d4d300a3630`.
+- Windows Server 2025, Python 3.14.10.
+- 61 testes aprovados em sete grupos:
+  - staging: 5;
+  - protótipo de leitura de segurança: 5;
+  - inspeção/política retida de `_update`: 11;
+  - criação e validação preexistente da área privada: 19;
+  - inspeção ACL: 5;
+  - política ACL: 15;
+  - integração nativa da política ACL: 1.
+- Os testes nativos também cobriram criação exclusiva relativa a handle, leitura de ACL real, validação de _update com handle retido e Authz.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44350076532).
+
+A execução nativa usa diretórios temporários e o token do processo do runner. Não substitui teste com contas Windows distintas, nem homologação na máquina local do mantenedor.
+
+## Próximo gate técnico
+
+O próximo trabalho é projetar e testar criação atômica da pasta privada com SECURITY_DESCRIPTOR explícito. A rotina atual `create_private_directory_component()` ainda passa descritor nulo para `NtCreateFile`; por isso, não deve criar a área privada de produção. Nenhum staging ou dado de atualização será gravado antes desse gate.
