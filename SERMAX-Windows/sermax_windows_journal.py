@@ -21,6 +21,8 @@ FILE_ADD_FILE = 0x0002
 FILE_READ_DATA = 0x0001
 READ_CONTROL = 0x00020000
 MAX_JOURNAL_EVENT_BYTES = 1024 * 1024
+MAX_JOURNAL_EVENTS = 4096
+MAX_JOURNAL_TOTAL_BYTES = 64 * 1024 * 1024
 _TRANSACTION_NAME = re.compile(r"^txn-[0-9a-f]{24}$")
 _EVENT_NAME = re.compile(r"^event-([0-9]{6})\.json$")
 _ZERO_HASH = "0" * 64
@@ -240,6 +242,11 @@ def read_journal_events_by_handle(
         raise JournalError("Handle da transação não é diretório regular.")
 
     entries = _real_entries(transaction_handle)
+    if len(entries) > MAX_JOURNAL_EVENTS:
+        raise JournalError("Quantidade de eventos excede o limite do journal.")
+    total_declared = sum(entry.end_of_file for entry in entries)
+    if total_declared > MAX_JOURNAL_TOTAL_BYTES:
+        raise JournalError("Tamanho total do journal excede o limite de segurança.")
     indexed = []
     for entry in entries:
         match = _EVENT_NAME.fullmatch(entry.name)
@@ -365,7 +372,7 @@ class JournalSession:
 
         current = self.read_events()
         sequence = len(current) + 1
-        if sequence > 999999:
+        if sequence > MAX_JOURNAL_EVENTS:
             raise JournalError("Limite de eventos por transação excedido.")
         previous_event = current[-1]["event"] if current else None
         _validate_transition(previous_event, event)
