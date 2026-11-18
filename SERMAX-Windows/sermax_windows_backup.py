@@ -16,7 +16,6 @@ from dataclasses import dataclass
 
 from sermax_windows_handle_io import close_handle, query_handle_metadata
 from sermax_update_inventory import (
-    InventoryError,
     PROTECTED_FILES,
     PROTECTED_DIRECTORY_SEGMENTS,
     _normalize_relative,
@@ -313,9 +312,9 @@ def backup_existing_files_by_handle(
                 raise BackupError(
                     f"Destino protegido não entra no fluxo de backup: {normalized}"
                 )
-    except (InventoryError, Exception) as exc:
-        if isinstance(exc, BackupError):
-            raise
+    except BackupError:
+        raise
+    except Exception as exc:
         raise BackupError(f"Manifesto contém caminhos incompatíveis: {exc}") from exc
 
     active_metadata = query_handle_metadata(active_root_handle)
