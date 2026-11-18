@@ -494,7 +494,6 @@ def scan_journal_transactions_by_handle(
     terminal são marcadas como exigindo recuperação, sem alterar arquivos.
     """
     from sermax_windows_directory_handle import open_verified_child_component
-    from sermax_windows_private_area import validate_private_directory_handle
 
     _validate_journal_parent(journal_parent_handle)
     entries = _real_entries(journal_parent_handle)
@@ -508,15 +507,8 @@ def scan_journal_transactions_by_handle(
             transaction_handle = open_verified_child_component(
                 journal_parent_handle,
                 entry,
-                desired_access=FILE_LIST_DIRECTORY | FILE_ADD_FILE | READ_CONTROL,
+                desired_access=FILE_LIST_DIRECTORY | READ_CONTROL,
             )
-            validation = validate_private_directory_handle(
-                transaction_handle, require_empty=False
-            )
-            if validation.get("valid") is not True:
-                raise JournalError(
-                    f"ACL/Authz da transação {entry.name} não foi confirmada."
-                )
             events = read_journal_events_by_handle(
                 transaction_handle, entry.name
             )
