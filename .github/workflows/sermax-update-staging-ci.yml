@@ -10,7 +10,9 @@ on:
       - "SERMAX-Windows/sermax_update_manifest.py"
       - "SERMAX-Windows/sermax_update_inventory.py"
       - "SERMAX-Windows/sermax_windows_security.py"
+      - "SERMAX-Windows/sermax_windows_update_area.py"
       - "SERMAX-Windows/tests/test_sermax_windows_security.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
       - "SERMAX-Windows/tests/test_sermax_update_staging.py"
       - ".github/workflows/sermax-update-staging-ci.yml"
   pull_request:
@@ -44,7 +46,13 @@ jobs:
           python-version: "3.14"
 
       - name: Compile updater modules
-        run: python -m compileall -q sermax_update_staging.py sermax_update_package.py sermax_update_manifest.py sermax_update_inventory.py sermax_windows_security.py
+        run: python -m compileall -q sermax_update_staging.py sermax_update_package.py sermax_update_manifest.py sermax_update_inventory.py sermax_windows_security.py sermax_windows_update_area.py
 
       - name: Run staging tests
         run: python -m unittest discover -s tests -p "test_sermax_update_*.py" -v
+
+      - name: Run handle security tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_security.py" -v
+
+      - name: Run private update area tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_update_area.py" -v
