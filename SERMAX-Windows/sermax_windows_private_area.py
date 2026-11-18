@@ -1,12 +1,15 @@
-"""Criação exclusiva de diretórios internos por handle no Windows.
+"""Criação exclusiva de diretórios internos com ACL definida atomicamente.
 
-Esta camada cria um único componente relativo a um diretório pai validado.
-Não cria caminhos recursivos, não altera ACL e não autoriza instalação.
+Cada componente é criado relativamente a um handle pai validado. O descritor
+de segurança é enviado em OBJECT_ATTRIBUTES durante NtCreateFile, antes de o
+novo diretório ficar disponível a outros fluxos. A ACL é lida e validada pelo
+handle retornado antes de a função liberar esse handle ao chamador.
 """
 from __future__ import annotations
 
 import ctypes
 import os
+import sys
 from ctypes import wintypes
 
 from sermax_windows_handle_io import (
@@ -28,6 +31,10 @@ FILE_LIST_DIRECTORY = 0x00000001
 FILE_ADD_SUBDIRECTORY = 0x00000004
 FILE_SHARE_READ = 0x00000001
 READ_CONTROL = 0x00020000
+SE_DACL_PROTECTED = 0x1000
+TOKEN_QUERY = 0x0008
+FILE_ALL_ACCESS = 0x001F01FF
+MAX_SECURITY_DESCRIPTOR_SIZE = 1024 * 1024
 
 ALLOWED_PRIVATE_COMPONENTS = frozenset({
     "_update", "staging", "backups", "journal", "logs", "locks",
@@ -38,18 +45,135 @@ class PrivateAreaError(RuntimeError):
     """Falha fechada ao criar ou validar um diretório interno."""
 
 
+def _prepare_private_security_descriptor():
+    """Monta descriptor self-relative com owner e DACL privada explícitos."""
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise PrivateAreaError("A preparação de ACL exige Windows x64.")
+
+    try:
+        import win32api
+        import win32security
+    except ImportError as exc:
+        raise PrivateAreaError("A criação protegida exige pywin32.") from exc
+
+    token = None
+    try:
+        token = win32security.OpenProcessToken(
+            win32api.GetCurrentProcess(), TOKEN_QUERY
+        )
+        owner_sid = win32security.GetTokenInformation(
+            token, win32security.TokenUser
+        )[0]
+        owner_sid_text = win32security.ConvertSidToStringSid(owner_sid)
+        system_sid = win32security.ConvertStringSidToSid("S-1-5-18")
+        admins_sid = win32security.ConvertStringSidToSid("S-1-5-32-544")
+        expected_sids = {
+            owner_sid_text, "S-1-5-18", "S-1-5-32-544"
+        }
+        if len(expected_sids) != 3:
+            raise PrivateAreaError(
+                "O SID do processo colide com trustee reservado da política."
+            )
+
+        dacl = win32security.ACL()
+        ace_flags = 0x01 | 0x02  # OBJECT_INHERIT | CONTAINER_INHERIT
+        for sid in (owner_sid, system_sid, admins_sid):
+            dacl.AddAccessAllowedAceEx(
+                win32security.ACL_REVISION,
+                ace_flags,
+                FILE_ALL_ACCESS,
+                sid,
+            )
+        if dacl.GetAceCount() != 3:
+            raise PrivateAreaError("A DACL preparada não contém três ACEs.")
+
+        descriptor = win32security.SECURITY_DESCRIPTOR()
+        descriptor.Initialize()
+        descriptor.SetSecurityDescriptorOwner(owner_sid, False)
+        descriptor.SetSecurityDescriptorDacl(True, dacl, False)
+        descriptor.SetSecurityDescriptorControl(
+            SE_DACL_PROTECTED, SE_DACL_PROTECTED
+        )
+
+        if not descriptor.IsValid() or not descriptor.IsSelfRelative():
+            raise PrivateAreaError(
+                "O descritor de segurança não é válido e self-relative."
+            )
+        control, _revision = descriptor.GetSecurityDescriptorControl()
+        if not (control & SE_DACL_PROTECTED):
+            raise PrivateAreaError("A DACL não ficou protegida contra herança.")
+
+        raw = memoryview(descriptor).tobytes()
+        if not raw or len(raw) > MAX_SECURITY_DESCRIPTOR_SIZE:
+            raise PrivateAreaError("Tamanho do descritor de segurança inválido.")
+        descriptor_buffer = ctypes.create_string_buffer(raw, len(raw))
+
+        return token, win32api.CloseHandle, descriptor_buffer, owner_sid_text
+    except Exception as exc:
+        if token is not None:
+            try:
+                win32api.CloseHandle(token)
+            except Exception as close_error:
+                if hasattr(exc, "add_note"):
+                    exc.add_note(
+                        f"Falha ao fechar token após erro na ACL: {close_error}"
+                    )
+        if isinstance(exc, PrivateAreaError):
+            raise
+        raise PrivateAreaError(
+            f"Não foi possível preparar a ACL privada: {exc}"
+        ) from exc
+
+
+def _validate_created_private_directory(
+    child_handle, metadata: dict[str, object], token_handle
+) -> dict[str, object]:
+    """Valida DACL e Authz no mesmo handle antes de liberar o diretório."""
+    try:
+        from sermax_windows_acl_inspection import inspect_directory_acl
+        from sermax_windows_directory_handle import enumerate_stable_directory_handle
+        from sermax_windows_update_area import (
+            UpdateAreaInspection,
+            validate_update_area_acl_policy,
+        )
+
+        acl = inspect_directory_acl(child_handle)
+        contents = [
+            entry
+            for entry in enumerate_stable_directory_handle(child_handle)
+            if entry.name not in {".", ".."}
+        ]
+        inspection = UpdateAreaInspection(
+            handle=child_handle,
+            metadata=metadata,
+            acl_inspection=acl,
+            directory_entries=contents,
+        )
+        result = validate_update_area_acl_policy(
+            inspection, token_handle=token_handle
+        )
+        if result.get("valid") is not True or result.get("mutated") is not False:
+            raise PrivateAreaError(
+                "A política ACL não confirmou o diretório recém-criado."
+            )
+        return result
+    except PrivateAreaError:
+        raise
+    except Exception as exc:
+        raise PrivateAreaError(
+            f"O diretório foi criado, mas a validação ACL falhou: {exc}"
+        ) from exc
+
+
 def create_private_directory_component(parent_handle, component: str):
-    """Cria um diretório filho com semântica exclusiva, relativo ao handle pai.
+    """Cria um diretório interno com DACL privada aplicada na própria criação.
 
-    O pai deve permanecer aberto durante a operação e ter sido aberto com
-    FILE_ADD_SUBDIRECTORY (0x00000004), além dos direitos de leitura de
-    diretório/metadados exigidos pelo chamador. O componente precisa pertencer
-    à lista fixa de nomes internos. A função falha se o nome já
-    existir, se o pai não for diretório regular ou se a identidade do volume
-    divergir. O handle retornado pertence ao chamador.
-
-    Esta função não cria ACL restritiva. O chamador ainda precisa executar
-    provisionamento e validação de ACL antes de armazenar qualquer dado.
+    O pai deve permanecer aberto e conceder FILE_ADD_SUBDIRECTORY. O componente
+    precisa pertencer à allowlist fixa. O SECURITY_DESCRIPTOR self-relative é
+    anexado a OBJECT_ATTRIBUTES.SecurityDescriptor durante NtCreateFile.
+    Depois da criação, a função valida owner, DACL, trustees, identidade, estado
+    vazio e direitos Authz pelo mesmo handle. Se a validação falhar, fecha o
+    handle e preserva o diretório recém-criado para inspeção, sem gravar dados.
     """
     if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
         raise PrivateAreaError("A criação exige Windows x64.")
@@ -71,63 +195,74 @@ def create_private_directory_component(parent_handle, component: str):
     ):
         raise PrivateAreaError("O handle pai não é um diretório regular validado.")
 
-    create, _, _ = _native_api()
-    name_buffer = ctypes.create_unicode_buffer(component)
-    encoded_length = len(component.encode("utf-16-le"))
-
-    from sermax_windows_handle_abi import (
-        IO_STATUS_BLOCK,
-        OBJECT_ATTRIBUTES,
-        OBJ_CASE_INSENSITIVE,
-        UNICODE_STRING,
-    )
-
-    unicode_name = UNICODE_STRING(
-        Length=encoded_length,
-        MaximumLength=encoded_length + 2,
-        Buffer=ctypes.cast(name_buffer, wintypes.LPWSTR),
-    )
-    attributes = OBJECT_ATTRIBUTES()
-    attributes.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
-    attributes.RootDirectory = parent_handle
-    attributes.ObjectName = ctypes.pointer(unicode_name)
-    attributes.Attributes = OBJ_CASE_INSENSITIVE
-
-    result_handle = wintypes.HANDLE()
-    io_status = IO_STATUS_BLOCK()
-    desired_access = (
-        FILE_LIST_DIRECTORY
-        | FILE_ADD_SUBDIRECTORY
-        | FILE_READ_ATTRIBUTES
-        | SYNCHRONIZE
-    )
-    options = (
-        FILE_DIRECTORY_FILE
-        | FILE_OPEN_REPARSE_POINT
-        | FILE_SYNCHRONOUS_IO_NONALERT
-    )
-
-    status = create(
-        ctypes.byref(result_handle),
-        desired_access,
-        ctypes.byref(attributes),
-        ctypes.byref(io_status),
-        None,
-        FILE_ATTRIBUTE_DIRECTORY,
-        FILE_SHARE_READ,
-        FILE_CREATE,
-        options,
-        None,
-        0,
-    )
-    if status < 0:
-        raise PrivateAreaError(
-            "NtCreateFile não criou o componente exclusivamente, "
-            f"NTSTATUS=0x{status & 0xffffffff:08X}"
+    token = None
+    close_token = None
+    child_handle = None
+    try:
+        token, close_token, descriptor_buffer, _owner_sid = (
+            _prepare_private_security_descriptor()
         )
 
-    child_handle = result_handle
-    try:
+        create, _, _ = _native_api()
+        name_buffer = ctypes.create_unicode_buffer(component)
+        encoded_length = len(component.encode("utf-16-le"))
+
+        from sermax_windows_handle_abi import (
+            IO_STATUS_BLOCK,
+            OBJECT_ATTRIBUTES,
+            OBJ_CASE_INSENSITIVE,
+            UNICODE_STRING,
+        )
+
+        unicode_name = UNICODE_STRING(
+            Length=encoded_length,
+            MaximumLength=encoded_length + 2,
+            Buffer=ctypes.cast(name_buffer, wintypes.LPWSTR),
+        )
+        attributes = OBJECT_ATTRIBUTES()
+        attributes.Length = ctypes.sizeof(OBJECT_ATTRIBUTES)
+        attributes.RootDirectory = parent_handle
+        attributes.ObjectName = ctypes.pointer(unicode_name)
+        attributes.Attributes = OBJ_CASE_INSENSITIVE
+        attributes.SecurityDescriptor = ctypes.cast(
+            descriptor_buffer, ctypes.c_void_p
+        )
+
+        result_handle = wintypes.HANDLE()
+        io_status = IO_STATUS_BLOCK()
+        desired_access = (
+            FILE_LIST_DIRECTORY
+            | FILE_ADD_SUBDIRECTORY
+            | FILE_READ_ATTRIBUTES
+            | READ_CONTROL
+            | SYNCHRONIZE
+        )
+        options = (
+            FILE_DIRECTORY_FILE
+            | FILE_OPEN_REPARSE_POINT
+            | FILE_SYNCHRONOUS_IO_NONALERT
+        )
+
+        status = create(
+            ctypes.byref(result_handle),
+            desired_access,
+            ctypes.byref(attributes),
+            ctypes.byref(io_status),
+            None,
+            FILE_ATTRIBUTE_DIRECTORY,
+            FILE_SHARE_READ,
+            FILE_CREATE,
+            options,
+            None,
+            0,
+        )
+        if status < 0:
+            raise PrivateAreaError(
+                "NtCreateFile não criou o componente exclusivamente, "
+                f"NTSTATUS=0x{status & 0xffffffff:08X}"
+            )
+
+        child_handle = result_handle
         child = query_handle_metadata(child_handle)
         if (
             not child["is_directory"]
@@ -139,15 +274,46 @@ def create_private_directory_component(parent_handle, component: str):
             raise PrivateAreaError("O diretório criado está em volume divergente.")
         if not child["file_id_128"] or len(child["file_id_128"]) != 32:
             raise PrivateAreaError("O diretório criado não forneceu FileId de 128 bits.")
+
+        _validate_created_private_directory(child_handle, child, token)
         return child_handle
-    except Exception:
-        try:
-            close_handle(child_handle)
-        except Exception as close_error:
-            raise PrivateAreaError(
-                f"Falha na validação e também ao fechar o handle: {close_error}"
-            ) from close_error
-        raise
+    except Exception as exc:
+        if child_handle is not None:
+            try:
+                close_handle(child_handle)
+            except Exception as close_error:
+                if hasattr(exc, "add_note"):
+                    exc.add_note(
+                        f"Falha ao fechar handle do diretório após erro: {close_error}"
+                    )
+        if isinstance(exc, PrivateAreaError):
+            raise
+        raise PrivateAreaError(
+            f"Falha ao criar diretório privado com ACL: {exc}"
+        ) from exc
+    finally:
+        if token is not None and close_token is not None:
+            active_error = sys.exc_info()[1]
+            try:
+                close_token(token)
+            except Exception as close_error:
+                if active_error is not None:
+                    if hasattr(active_error, "add_note"):
+                        active_error.add_note(
+                            f"Falha ao fechar token após erro: {close_error}"
+                        )
+                else:
+                    if child_handle is not None:
+                        try:
+                            close_handle(child_handle)
+                        except Exception as handle_error:
+                            if hasattr(close_error, "add_note"):
+                                close_error.add_note(
+                                    f"Falha ao fechar diretório após erro do token: {handle_error}"
+                                )
+                    raise PrivateAreaError(
+                        f"Falha ao liberar token de criação: {close_error}"
+                    ) from close_error
 
 
 
