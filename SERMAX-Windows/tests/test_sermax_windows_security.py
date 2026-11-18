@@ -55,10 +55,6 @@ class ReadSecurityByHandleTests(unittest.TestCase):
         )
         self.modules.start()
         self.addCleanup(self.modules.stop)
-        self.platform = mock.patch.multiple(
-            security, create=True
-        )
-        self.platform.stop()
 
     def _run(self, descriptor):
         self.win32security.GetSecurityInfo.return_value = descriptor
