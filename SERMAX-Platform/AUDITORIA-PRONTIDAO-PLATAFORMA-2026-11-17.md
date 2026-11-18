@@ -532,3 +532,15 @@ Foi adicionado `SERMAX-Platform/tools/check_local_inference.py` para executar um
 - O script não chama serviços remotos. A inferência real exige que Ollama e/ou OpenJarvis estejam instalados e operacionais.
 
 Os testes automatizados simulam a resposta do núcleo e verificam os relatórios de sucesso e falha. Eles não executam inferência. A homologação com modelos locais continua pendente.
+
+
+## 35. CI do teste isolado de inferência local, 2026-11-17
+
+A execução GitHub Actions `44226873486`, evento `pull_request`, commit `2e820d642d00019dd5ee4ce585fbc825f8f0ebe0`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes automatizados verificaram o uso do prompt fixo, o relatório do backend e o caminho de erro sem acesso à memória pessoal. A execução real de inferência não foi feita pelo CI; o script deve ser executado no computador com Ollama/OpenJarvis instalados.
