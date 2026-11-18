@@ -40,6 +40,8 @@ on:
       - "SERMAX-Windows/sermax_windows_file_writer.py"
       - "SERMAX-Windows/sermax_windows_backup.py"
       - "SERMAX-Windows/sermax_windows_journal.py"
+      - "SERMAX-Windows/sermax_windows_directory_handle.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_directory_handle.py"
       - "SERMAX-Windows/tests/test_sermax_windows_journal.py"
       - "SERMAX-Windows/tests/test_sermax_windows_backup.py"
       - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
