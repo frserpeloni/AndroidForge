@@ -48,7 +48,7 @@ class AclInspectionTests(unittest.TestCase):
         self.pointer_size.start()
         self.addCleanup(self.pointer_size.stop)
         self.metadata = mock.patch(
-            "sermax_windows_handle_io.query_handle_metadata",
+            "sermax_windows_acl_inspection.query_handle_metadata",
             return_value={
                 "is_directory": True,
                 "is_reparse_point": False,
