@@ -163,7 +163,7 @@ class UpdateAreaPolicyValidationTests(unittest.TestCase):
             update_area, "validate_private_area_acl",
             return_value={"valid": True},
         )
-        self.policy.start()
+        self.policy_mock = self.policy.start()
         self.addCleanup(self.policy.stop)
         self.descriptor = mock.patch.object(
             update_area, "read_security_descriptor_binary",
@@ -205,9 +205,9 @@ class UpdateAreaPolicyValidationTests(unittest.TestCase):
         )
         self.assertFalse(result["mutated"])
         self.assertFalse(result["performed_io"])
-        self.policy.assert_called_once()
+        self.policy_mock.assert_called_once()
         self.assertEqual(
-            self.policy.call_args.kwargs["expected_owner_sid"], self.token_sid
+            self.policy_mock.call_args.kwargs["expected_owner_sid"], self.token_sid
         )
 
     def test_rejects_token_when_a_required_effective_right_is_denied(self):
