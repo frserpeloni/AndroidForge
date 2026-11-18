@@ -117,3 +117,58 @@ Os testes nativos foram executados em diretórios temporários no Windows Server
 ### Próximo gate
 
 O staging integral por handles passou no CI. Ainda não existe instalação transacional. Próximas etapas: validar a raiz `_update` preexistente em fluxo de atualização, backup verificável por handles, journal durável, troca controlada, recuperação e rollback em sandbox. A allowlist oficial da chave pública de release continua pendente. Nenhum arquivo foi instalado em `C:\\SERMAX`.
+## Validação da estrutura persistente e staging reutilizável
+
+Foi adicionada `open_existing_private_area_layout()`, que:
+- Abre `_update` por handle relativo ao diretório SERMAX.
+- Exige exatamente `staging`, `backups`, `journal`, `logs` e `locks`.
+- Abre cada pasta pelo FileId enumerado de 128 bits.
+- Revalida owner, DACL protegida e Authz pelo mesmo handle.
+- Mantém os handles retidos em `ExistingPrivateAreaLayout` e fecha em ordem inversa.
+- Preserva referências a handles cujo fechamento falhou, permitindo nova tentativa de limpeza.
+- Rejeita estrutura incompleta, arquivos inesperados, reparse points e nomes de staging fora do padrão.
+
+A política ACL agora separa a validação de segurança da exigência de diretório vazio. O padrão continua exigindo vazio para novas áreas. Diretórios persistentes usam `require_empty=False`, sempre com validação separada e estrita do conteúdo.
+
+`stage_verified_release_by_handle()` passou a aceitar a pasta `staging` persistente, desde que a ACL/Authz seja válida e os itens existentes sejam diretórios `stage-<24 hex>` sem reparse point. Cada nova extração continua usando nome exclusivo por `FILE_CREATE`.
+
+## Backup verificável por handles
+
+Foi adicionado `sermax_windows_backup.py`, com `backup_existing_files_by_handle()`.
+
+Contrato implementado:
+- Valida caminhos do manifesto e bloqueia destinos protegidos, inclusive `_update` e nomes reservados.
+- Exige que destinos `create` estejam ausentes e destinos `replace` existam.
+- Abre arquivos ativos por handles relativos, vinculados ao FileId enumerado.
+- Rejeita reparse points, hardlinks, volumes divergentes e arquivos marcados para exclusão.
+- Exige `READ_CONTROL` para preservar o descritor de segurança original.
+- Calcula SHA-256 da origem, grava por `write_verified_file_component()` e relê a origem para confirmar estabilidade.
+- Grava o backup com ACL protegida, `FlushFileBuffers`, readback e verificação de hash.
+- Persiste `__sermax_backup_catalog__.json`, com FileId, volume, atributos, tamanho, hash e descritor de segurança original em Base64.
+- O catálogo também é gravado e relido pelo escritor verificado.
+- Falhas preservam a área de backup parcial para inspeção. Não removem nem alteram arquivos ativos.
+
+Limites atuais do backup: o catálogo preserva conteúdo, atributos e descritor de segurança. Ainda não registra timestamps originais, não implementa restauração e não substitui o journal transacional. A instalação ativa permanece somente leitura.
+
+### CI consolidado
+
+- Run `44410616224`, commit `c0118ee1ccffa5d2286a6bcc6a03d773d081cac8`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 88 testes aprovados em nove grupos:
+  - backup por handles: 9;
+  - escritor por handles: 7;
+  - staging: 10;
+  - segurança de handles: 5;
+  - inspeção/política de `_update`: 11;
+  - criação e validação da área privada: 19;
+  - layout persistente: 5;
+  - inspeção ACL: 5;
+  - política ACL: 17.
+- Inclui testes nativos end-to-end de staging e backup em diretórios temporários Windows.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44410616224).
+
+Os testes nativos foram executados em Windows Server 2025, com token do processo do runner. Ainda faltam homologação no Windows 11 local e testes com contas Windows distintas.
+
+### Próxima etapa
+
+Implementar journal durável append-only com sequência monotônica, hash encadeado, eventos de transação, leitura de recuperação e validação por handles. Depois integrar backup, journal e staging em um fluxo transacional de instalação/rollback em sandbox. Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
