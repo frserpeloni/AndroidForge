@@ -34,6 +34,8 @@ on:
     paths:
       - "SERMAX-Windows/sermax_update_staging.py"
       - "SERMAX-Windows/sermax_windows_file_writer.py"
+      - "SERMAX-Windows/sermax_windows_backup.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_backup.py"
       - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
       - "SERMAX-Windows/sermax_update_package.py"
       - "SERMAX-Windows/sermax_update_manifest.py"
