@@ -220,3 +220,30 @@ A etapa está validada no runner Windows com diretórios temporários. Ainda nã
 ### Próxima etapa
 
 Implementar escrita de arquivos por handle, com criação exclusiva, validação de FileId, rejeição de hardlinks/reparse points, hash durante a gravação e FlushFileBuffers. Só então substituir o staging baseado em caminhos pelo fluxo integral baseado em handles.
+
+## Atualização: staging integral por handles
+
+Em 18/11/2026 foi concluída a primeira integração de staging sem caminhos de destino:
+- `sermax_windows_file_writer.py` cria arquivos com `NtCreateFile(FILE_CREATE)` relativo ao handle pai, SECURITY_DESCRIPTOR explícito, validação ACL/Authz, FileId, volume, número de links, hash, FlushFileBuffers e readback.
+- `stage_verified_release_by_handle()` valida o ZIP e o manifesto, rejeita colisões de caixa e conflitos arquivo/diretório, valida o pai privado vazio por ACL/Authz e cria a árvore inteira por handles relativos.
+- A criação de subdiretórios também aplica SECURITY_DESCRIPTOR durante a criação.
+- A função retorna o handle da raiz de staging. O chamador mantém e fecha esse handle.
+- Falhas preservam a árvore parcial para inspeção. Não há exclusão automática.
+- O pai de cada operação deve ser um diretório privado vazio com DACL validada. Para operações futuras, o chamador deverá reservar um pai exclusivo por handle, sem reutilizar um pai preenchido.
+
+### CI consolidado
+
+- Run `44394857061`, commit de código/testes `0ccfa72dbe0fd6272c2997d0caa96a43d3fc8c4a`.
+- Windows Server 2025, Python 3.14.10, pywin32.
+- 71 testes aprovados em oito grupos.
+- O teste nativo end-to-end criou `_update` temporário, validou ACL/Authz, construiu diretórios e arquivos por handles relativos e conferiu o conteúdo gravado.
+- [Execução CI](https://github.com/frserpeloni/AndroidForge/actions/runs/44394857061).
+
+### Limites remanescentes
+
+- O teste foi executado em Windows Server 2025 e token do runner, não no Windows 11 local.
+- Ainda faltam testes com contas Windows distintas, usuário padrão, Administradores e SYSTEM.
+- A função path-based `stage_verified_release()` permanece no código como implementação intermediária; o fluxo novo é `stage_verified_release_by_handle()`.
+- Ainda não existe backup verificável, journal durável, troca transacional, recuperação ou rollback.
+- A chave pública oficial de release permanece pendente.
+- Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
