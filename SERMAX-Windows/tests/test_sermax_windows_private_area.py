@@ -13,6 +13,23 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.platform = mock.patch.object(private_area.os, "name", "nt")
         self.platform.start()
         self.addCleanup(self.platform.stop)
+        self.security_buffer = ctypes.create_string_buffer(b"test-security-descriptor")
+        self.token_closer = mock.Mock()
+        self.security_setup = mock.patch.object(
+            private_area,
+            "_prepare_private_security_descriptor",
+            return_value=(
+                777, self.token_closer, self.security_buffer,
+                "S-1-5-21-100",
+            ),
+        )
+        self.security_setup.start()
+        self.addCleanup(self.security_setup.stop)
+        self.created_policy = mock.patch.object(
+            private_area, "_validate_created_private_directory"
+        )
+        self.created_policy.start()
+        self.addCleanup(self.created_policy.stop)
         self.pointer_size = mock.patch.object(
             private_area.ctypes, "sizeof", return_value=8
         )
@@ -90,6 +107,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
                 "share": share,
                 "disposition": disposition,
                 "options": options,
+                "security_descriptor": attributes._obj.SecurityDescriptor,
             })
             out_handle._obj.value = child_handle
             return 0
@@ -116,11 +134,15 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["root"], parent_handle)
         self.assertEqual(calls[0]["name"], "_update")
+        self.assertIsNotNone(calls[0]["security_descriptor"])
+        self.created_policy.assert_called_once()
+        self.token_closer.assert_called_once_with(777)
         self.assertEqual(
             calls[0]["access"],
             private_area.FILE_LIST_DIRECTORY
             | private_area.FILE_ADD_SUBDIRECTORY
             | private_area.FILE_READ_ATTRIBUTES
+            | private_area.READ_CONTROL
             | private_area.SYNCHRONIZE,
         )
         self.assertEqual(calls[0]["disposition"], private_area.FILE_CREATE)
