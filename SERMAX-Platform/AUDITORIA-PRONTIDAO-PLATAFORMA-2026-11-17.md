@@ -476,3 +476,16 @@ A execução GitHub Actions `44214779229`, evento `pull_request`, commit `fbb191
 - `frontend-interaction`: sucesso.
 
 O teste final incluiu o redirecionamento de memória e banco para diretório temporário, cópia do worker, preservação das variáveis de caminho dos motores, bloqueio de comandos e planos e desativação de gravação de bytecode no processo e nos subprocessos. A validação não executou modelos reais nem OCR real.
+
+
+## 31. OCR sem bloqueio do event loop e controle de concorrência, 2026-11-17
+
+A revisão de desempenho identificou que o OCR e a extração de documentos eram chamados diretamente dentro da rota assíncrona de upload. Como cada página digitalizada tem timeout de até oito segundos e o PDF admite até cinco páginas OCR, esse processamento síncrono poderia bloquear o event loop e atrasar conversas SSE e outras rotas.
+
+Correção aplicada:
+- `_validate_and_extract` agora roda por `starlette.concurrency.run_in_threadpool`.
+- O OCR de imagens e PDFs compartilha `OCR_JOB_LOCK`, serializando renderização e reconhecimento para limitar trabalhos simultâneos e picos de memória.
+- O bloqueio interno de Tesseract continua protegendo a alteração temporária do caminho do executável.
+- Novo teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
+
+CI `44226228270`, commit `59c01cdc224e0f92e583cffd1b59525eb18ed677`, concluiu com sucesso nos cinco jobs: Python 3.12, Python 3.14, Windows, frontend-check e frontend-interaction. A homologação real de OCR e inferência local continua pendente.
