@@ -24,7 +24,7 @@ def main() -> int:
     print("SERMAX, teste real de inferência local")
     print("Será enviada uma pergunta fixa aos motores locais configurados.")
     print("Memória e banco temporários. Comandos e planos operacionais bloqueados.")
-    print("Nenhum arquivo pessoal será lido ou alterado. Nenhum serviço externo será chamado.")
+    print("Nenhum arquivo pessoal será lido ou alterado. Somente motores locais serão chamados, sem serviços remotos.")
 
     with tempfile.TemporaryDirectory(prefix="sermax-inferencia-local-") as temporary:
         temp_root = Path(temporary)
@@ -52,10 +52,10 @@ def main() -> int:
                 "agent": route.get("agent"),
                 "fallback": route.get("fallback"),
                 "response": answer[:1200] if isinstance(answer, str) else str(answer)[:1200],
-                "temporary_memory": str(temp_root / "memoria_sermax.json"),
+                "temporary_memory_scope": "temporary directory, removed after test",
                 "personal_memory_accessed": False,
                 "operational_actions_blocked": True,
-                "external_services_called": False,
+                "remote_services_called": False,
             }
             print(json.dumps(report, ensure_ascii=False, indent=2))
             return 0 if passed else 1
@@ -63,7 +63,7 @@ def main() -> int:
             report = {
                 "status": "error",
                 "error": f"{type(exc).__name__}: {str(exc)[:500]}",
-                "temporary_root": str(temp_root),
+                "temporary_storage_scope": "temporary directory, removed after test",
                 "personal_memory_accessed": False,
                 "operational_actions_blocked": True,
                 "external_services_called": False,
