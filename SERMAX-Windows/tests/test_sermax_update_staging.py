@@ -130,6 +130,9 @@ class HandleReleaseStagingTests(unittest.TestCase):
                 side_effect=create_directory,
             ),
             mock.patch(
+                "sermax_windows_private_area.validate_empty_private_directory_handle"
+            ),
+            mock.patch(
                 "sermax_windows_file_writer.write_verified_file_component",
                 side_effect=write_file,
             ) as writer_mock,
@@ -189,6 +192,9 @@ class HandleReleaseStagingTests(unittest.TestCase):
                 side_effect=create_directory,
             ),
             mock.patch(
+                "sermax_windows_private_area.validate_empty_private_directory_handle"
+            ),
+            mock.patch(
                 "sermax_windows_file_writer.write_verified_file_component",
                 side_effect=RuntimeError("simulated write failure"),
             ),
@@ -239,14 +245,14 @@ class HandleReleaseStagingWindowsTests(unittest.TestCase):
             staging_parent = None
             staged = None
             try:
-                staging_parent = create_private_directory_component(parent, "staging")
+                staging_parent = create_private_directory_component(parent, "_update")
                 staged = stage_verified_release_by_handle(
                     archive, manifest, staging_parent_handle=staging_parent
                 )
                 self.assertEqual(len(staged.files), len(files))
                 for relative, expected in files.items():
                     target = os.path.join(
-                        parent_path, "staging", staged.component,
+                        parent_path, "_update", staged.component,
                         *relative.split("/"),
                     )
                     with open(target, "rb") as created:
