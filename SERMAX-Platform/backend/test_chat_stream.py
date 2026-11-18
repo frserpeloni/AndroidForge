@@ -209,6 +209,22 @@ class ChatStreamApiTests(unittest.TestCase):
         self.assertIn("OCR local indisponível neste computador", combined)
         self.assertLessEqual(len(combined), MAX_ATTACHMENT_CONTEXT_CHARS + 1800)
 
+
+    def test_ocr_attachment_context_identifies_source_and_accuracy_limit(self):
+        from server import build_attachment_context
+        rows = [{
+            "original_name": "foto.png",
+            "extracted_text": "Texto reconhecido por OCR.",
+            "extraction_method": "ocr",
+            "extraction_status": "completed",
+        }]
+        context = build_attachment_context(rows, "texto reconhecido")
+        self.assertIsNotNone(context)
+        payload = context[1]["content"]
+        self.assertIn("Texto reconhecido por OCR local", payload)
+        self.assertIn("pode conter erros", payload)
+        self.assertIn("foto.png", payload)
+
     def test_empty_stream_message_is_rejected(self):
         response = self.client.post(
             "/api/chat/stream", json={"message": " "}, headers=self.headers
