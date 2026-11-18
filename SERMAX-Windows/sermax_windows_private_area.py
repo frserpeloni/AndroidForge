@@ -127,7 +127,11 @@ def _prepare_private_security_descriptor():
 
 
 def _validate_created_private_directory(
-    child_handle, metadata: dict[str, object], token_handle
+    child_handle,
+    metadata: dict[str, object],
+    token_handle,
+    *,
+    require_empty: bool = True,
 ) -> dict[str, object]:
     """Valida DACL e Authz no mesmo handle antes de liberar o diretório."""
     try:
@@ -151,7 +155,9 @@ def _validate_created_private_directory(
             directory_entries=contents,
         )
         result = validate_update_area_acl_policy(
-            inspection, token_handle=token_handle
+            inspection,
+            token_handle=token_handle,
+            require_empty=require_empty,
         )
         if result.get("valid") is not True or result.get("mutated") is not False:
             raise PrivateAreaError(
@@ -335,13 +341,17 @@ def create_staging_directory_component(parent_handle, component: str):
     )
 
 
-def validate_empty_private_directory_handle(directory_handle) -> dict[str, object]:
-    """Revalida ACL/Authz e exige diretório privado vazio pelo mesmo handle.
+def validate_private_directory_handle(
+    directory_handle, *, require_empty: bool = True
+) -> dict[str, object]:
+    """Revalida ACL/Authz de um diretório privado pelo handle retido.
 
-    Destinado ao diretório pai de uma nova operação de staging. O handle deve
-    permanecer aberto durante toda a operação. A função não altera ACL nem
-    enumera caminhos por nome.
+    require_empty=True é obrigatório para uma nova área de operação. False
+    permite diretórios estruturais persistentes, desde que o chamador valide
+    separadamente o namespace interno e seus filhos.
     """
+    if type(require_empty) is not bool:
+        raise PrivateAreaError("require_empty deve ser booleano.")
     token = None
     close_token = None
     try:
@@ -351,12 +361,15 @@ def validate_empty_private_directory_handle(directory_handle) -> dict[str, objec
             or metadata["is_reparse_point"]
             or metadata["delete_pending"]
         ):
-            raise PrivateAreaError("O handle de staging não é diretório regular.")
+            raise PrivateAreaError("O handle não representa diretório regular.")
         token, close_token, _descriptor_buffer, _owner_sid = (
             _prepare_private_security_descriptor()
         )
         policy = _validate_created_private_directory(
-            directory_handle, metadata, token
+            directory_handle,
+            metadata,
+            token,
+            require_empty=require_empty,
         )
         return {
             "valid": True,
@@ -368,7 +381,7 @@ def validate_empty_private_directory_handle(directory_handle) -> dict[str, objec
         raise
     except Exception as exc:
         raise PrivateAreaError(
-            f"Diretório pai de staging não passou na validação ACL/Authz: {exc}"
+            f"Diretório privado não passou na validação ACL/Authz: {exc}"
         ) from exc
     finally:
         if token is not None and close_token is not None:
@@ -379,12 +392,19 @@ def validate_empty_private_directory_handle(directory_handle) -> dict[str, objec
                 if active_error is not None:
                     if hasattr(active_error, "add_note"):
                         active_error.add_note(
-                            f"Falha ao fechar token após validação do staging: {exc}"
+                            f"Falha ao fechar token após validação privada: {exc}"
                         )
                 else:
                     raise PrivateAreaError(
-                        f"Falha ao fechar token após validação do staging: {exc}"
+                        f"Falha ao fechar token após validação privada: {exc}"
                     ) from exc
+
+
+def validate_empty_private_directory_handle(directory_handle) -> dict[str, object]:
+    """Compatibilidade explícita: valida ACL/Authz e exige diretório vazio."""
+    return validate_private_directory_handle(
+        directory_handle, require_empty=True
+    )
 
 
 
