@@ -1,5 +1,6 @@
 import io
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -258,6 +259,29 @@ class AttachmentApiTests(unittest.TestCase):
         self.assertEqual(len(pages), 5)
         self.assertEqual(recognize.call_count, 5)
         self.assertEqual(status, "partial")
+
+
+    def test_document_extraction_runs_outside_async_event_loop(self):
+        original_run_in_threadpool = attachment_service.run_in_threadpool
+        original_extract = attachment_service._validate_and_extract
+        observed = {}
+
+        async def tracked_run(func, *args, **kwargs):
+            observed["event_loop_thread"] = threading.get_ident()
+            return await original_run_in_threadpool(func, *args, **kwargs)
+
+        def tracked_extract(*args, **kwargs):
+            observed["worker_thread"] = threading.get_ident()
+            return original_extract(*args, **kwargs)
+
+        with patch.object(attachment_service, "run_in_threadpool", side_effect=tracked_run), \
+             patch.object(attachment_service, "_validate_and_extract", side_effect=tracked_extract):
+            response = self.upload("thread-check.txt", b"extraido fora do event loop")
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertIn("event_loop_thread", observed)
+        self.assertIn("worker_thread", observed)
+        self.assertNotEqual(observed["event_loop_thread"], observed["worker_thread"])
 
     def test_sixth_attachment_is_rejected(self):
         for index in range(5):
