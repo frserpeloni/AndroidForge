@@ -23,6 +23,7 @@ READ_CONTROL = 0x00020000
 MAX_JOURNAL_EVENT_BYTES = 1024 * 1024
 MAX_JOURNAL_EVENTS = 4096
 MAX_JOURNAL_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_JOURNAL_TRANSACTIONS = 1024
 _TRANSACTION_NAME = re.compile(r"^txn-[0-9a-f]{24}$")
 _EVENT_NAME = re.compile(r"^event-([0-9]{6})\.json$")
 _ZERO_HASH = "0" * 64
@@ -480,3 +481,71 @@ def open_journal_transaction_by_handle(
     except Exception:
         close_handle(handle)
         raise
+
+
+
+def scan_journal_transactions_by_handle(
+    journal_parent_handle,
+) -> tuple[dict[str, object], ...]:
+    """Enumera transações e identifica quais exigem recuperação.
+
+    A função é somente leitura. Qualquer transação corrompida ou com namespace
+    inválido interrompe a varredura. Transações sem PREPARED ou sem evento
+    terminal são marcadas como exigindo recuperação, sem alterar arquivos.
+    """
+    from sermax_windows_directory_handle import open_verified_child_component
+    from sermax_windows_private_area import validate_private_directory_handle
+
+    _validate_journal_parent(journal_parent_handle)
+    entries = _real_entries(journal_parent_handle)
+    if len(entries) > MAX_JOURNAL_TRANSACTIONS:
+        raise JournalError("Quantidade de transações excede o limite de segurança.")
+
+    summaries = []
+    for entry in sorted(entries, key=lambda item: item.name):
+        transaction_handle = None
+        try:
+            transaction_handle = open_verified_child_component(
+                journal_parent_handle,
+                entry,
+                desired_access=FILE_LIST_DIRECTORY | FILE_ADD_FILE | READ_CONTROL,
+            )
+            validation = validate_private_directory_handle(
+                transaction_handle, require_empty=False
+            )
+            if validation.get("valid") is not True:
+                raise JournalError(
+                    f"ACL/Authz da transação {entry.name} não foi confirmada."
+                )
+            events = read_journal_events_by_handle(
+                transaction_handle, entry.name
+            )
+            last_event = events[-1]["event"] if events else None
+            terminal = last_event in {"COMMITTED", "ROLLED_BACK"}
+            summaries.append({
+                "transaction_id": entry.name,
+                "event_count": len(events),
+                "last_event": last_event,
+                "last_record_sha256": (
+                    events[-1]["record_sha256"] if events else None
+                ),
+                "state": (
+                    "EMPTY" if not events
+                    else "TERMINAL" if terminal
+                    else "RECOVERY_REQUIRED"
+                    if last_event == "RECOVERY_REQUIRED"
+                    else "IN_PROGRESS"
+                ),
+                "requires_recovery": not terminal,
+            })
+        except JournalError:
+            raise
+        except Exception as exc:
+            raise JournalError(
+                f"Falha ao inspecionar transação {entry.name}: {exc}"
+            ) from exc
+        finally:
+            if transaction_handle is not None:
+                close_handle(transaction_handle)
+
+    return tuple(summaries)
