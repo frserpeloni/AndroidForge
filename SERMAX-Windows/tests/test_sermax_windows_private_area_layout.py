@@ -100,8 +100,8 @@ class ExistingPrivateAreaLayoutTests(unittest.TestCase):
             layout.close()
         self.assertEqual(
             closer.call_args_list,
-            [mock.call(206), mock.call(205), mock.call(204),
-             mock.call(203), mock.call(202), mock.call(201), mock.call(200)],
+            [mock.call(205), mock.call(204), mock.call(203),
+             mock.call(202), mock.call(201), mock.call(200)],
         )
         self.api.CloseHandle.assert_called_once_with(777)
 
