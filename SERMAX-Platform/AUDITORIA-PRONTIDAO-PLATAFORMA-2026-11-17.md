@@ -449,6 +449,6 @@ Foi adicionado SERMAX-Platform/tools/run_homologation.py para permitir testes lo
 - O banco SQLite da Plataforma e os arquivos de memória do núcleo ficam na pasta temporária, removida após o encerramento.
 - As funções sermax_executor.executar e sermax_tarefas.executar_plano são substituídas em memória por bloqueios, impedindo comandos operacionais e execução de planos durante a homologação.
 - Consultas locais somente de leitura continuam habilitadas.
-- O launcher não instala dependências, não baixa modelos e não altera C:\SERMAX.
+- O launcher desativa gravação de bytecode no processo e nos subprocessos, não instala dependências, não baixa modelos e não altera C:\SERMAX.
 
 Testes automatizados verificam redirecionamento de memória e banco, preservação dos caminhos de motores, cópia do worker e bloqueio das ações operacionais. A execução real do launcher e a homologação com modelos locais dependem do computador de execução e permanecem pendentes.
