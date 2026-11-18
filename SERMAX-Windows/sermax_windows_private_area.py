@@ -165,7 +165,9 @@ def _validate_created_private_directory(
         ) from exc
 
 
-def create_private_directory_component(parent_handle, component: str):
+def create_private_directory_component(
+    parent_handle, component: str, *, _allow_staging_component: bool = False
+):
     """Cria um diretório interno com DACL privada aplicada na própria criação.
 
     O pai deve permanecer aberto e conceder FILE_ADD_SUBDIRECTORY. O componente
@@ -181,7 +183,7 @@ def create_private_directory_component(parent_handle, component: str):
         _validate_component(component)
     except Exception as exc:
         raise PrivateAreaError(f"Componente inválido: {exc}") from exc
-    if component not in ALLOWED_PRIVATE_COMPONENTS:
+    if not _allow_staging_component and component not in ALLOWED_PRIVATE_COMPONENTS:
         raise PrivateAreaError("Componente fora da lista privada permitida.")
 
     try:
@@ -314,6 +316,19 @@ def create_private_directory_component(parent_handle, component: str):
                     raise PrivateAreaError(
                         f"Falha ao liberar token de criação: {close_error}"
                     ) from close_error
+
+
+def create_staging_directory_component(parent_handle, component: str):
+    """Cria diretório de pacote sob staging com a mesma ACL atômica.
+
+    O componente deve vir de manifesto autenticado ou do gerador interno de
+    identificador. A validação de componente único continua obrigatória.
+    Esta função não aceita caminhos nem altera a allowlist dos diretórios
+    estruturais (_update, staging, backups, journal, logs e locks).
+    """
+    return create_private_directory_component(
+        parent_handle, component, _allow_staging_component=True
+    )
 
 
 
