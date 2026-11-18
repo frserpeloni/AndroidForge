@@ -416,3 +416,12 @@ A execução GitHub Actions `44213281399`, evento `pull_request`, commit `60c9f6
 A bateria validou a migração dos metadados de extração, upload quando Tesseract não está disponível, integração simulada de OCR em imagem, renderização PDF pelo PDFium com reconhecimento simulado, limite de cinco páginas OCR, indicação de origem e incerteza do OCR no contexto do MAX, além dos testes anteriores de anexos, conversa, memória, streaming e interface.
 
 A validação não executou o binário Tesseract nem mediu precisão de reconhecimento. A homologação local com Tesseract real e os dados de idioma `por` e `eng` continua pendente. Nenhuma inferência real com Ollama/OpenJarvis foi executada. PR #15 permanece aberta, em rascunho e sem merge.
+
+
+## 26. Diagnóstico de prontidão do Tesseract, 2026-11-17
+
+O painel Motores da Plataforma passou a apresentar o estado do OCR local. O endpoint GET /api/engines/status chama uma consulta limitada de Tesseract --list-langs, com timeout de 2 segundos, sem processar arquivos ou iniciar reconhecimento.
+
+O diagnóstico diferencia executável ausente, timeout, falha ao listar idiomas e ausência dos dados obrigatórios por e eng. O painel apresenta o estado e os idiomas encontrados. O caminho completo do executável não é exposto na API.
+
+Testes adicionados cobrem executável ausente sem subprocesso, Tesseract pronto com por e eng, ausência do idioma português e timeout. A interface também verifica a apresentação do cartão OCR local. A homologação com binário real permanece pendente.
