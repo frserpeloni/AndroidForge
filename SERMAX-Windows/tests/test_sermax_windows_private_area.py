@@ -140,6 +140,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.assertEqual(
             calls[0]["access"],
             private_area.FILE_LIST_DIRECTORY
+            | private_area.FILE_ADD_FILE
             | private_area.FILE_ADD_SUBDIRECTORY
             | private_area.FILE_READ_ATTRIBUTES
             | private_area.READ_CONTROL
