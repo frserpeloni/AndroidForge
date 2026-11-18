@@ -17,6 +17,7 @@ from fastapi.responses import FileResponse
 from PIL import Image, UnidentifiedImageError
 from docx import Document
 from pypdf import PdfReader
+from ocr_service import ocr_image_bytes, ocr_pdf_pages
 
 router = APIRouter()
 UPLOAD_LOCK = threading.Lock()
@@ -64,9 +65,17 @@ def initialize_attachment_schema() -> None:
                 sha256 TEXT NOT NULL,
                 storage_name TEXT NOT NULL UNIQUE,
                 extracted_text TEXT,
+                extraction_method TEXT NOT NULL DEFAULT 'native',
+                extraction_status TEXT NOT NULL DEFAULT 'completed',
                 created_at TEXT NOT NULL
             )
         """)
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(attachments)").fetchall()}
+        if "extraction_method" not in columns:
+            conn.execute("ALTER TABLE attachments ADD COLUMN extraction_method TEXT NOT NULL DEFAULT 'native'")
+        if "extraction_status" not in columns:
+            conn.execute("ALTER TABLE attachments ADD COLUMN extraction_status TEXT NOT NULL DEFAULT 'completed'")
+        conn.execute("UPDATE attachments SET extraction_method='none', extraction_status='not_processed' WHERE extension IN ('.jpg','.jpeg','.png') AND extracted_text IS NULL")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attachments_conversation ON attachments(conversation_id, created_at)")
 
 
@@ -96,22 +105,49 @@ def _kind_from_bytes(data: bytes) -> str:
     raise HTTPException(status_code=415, detail="Formato não permitido ou assinatura inválida.")
 
 
-def _extract_pdf(data: bytes) -> str:
+def _extract_pdf(data: bytes) -> tuple[str, str, str]:
     try:
         reader = PdfReader(io.BytesIO(data), strict=True)
         if reader.is_encrypted:
             raise HTTPException(status_code=422, detail="PDF criptografado não é aceito.")
         if len(reader.pages) > MAX_PDF_PAGES:
             raise HTTPException(status_code=413, detail="PDF excede o limite de 100 páginas.")
-        chunks, total = [], 0
-        for page in reader.pages:
-            text = page.extract_text() or ""
+        native_by_page: dict[int, str] = {}
+        scanned_pages = []
+        for index, page in enumerate(reader.pages):
+            page_text = page.extract_text() or ""
+            if page_text.strip():
+                native_by_page[index] = page_text[:MAX_EXTRACTED_CHARS]
+            else:
+                scanned_pages.append(index)
+        recognized, ocr_status = ocr_pdf_pages(data, scanned_pages)
+        chunks = []
+        total = 0
+        for index in range(len(reader.pages)):
+            page_text = native_by_page.get(index)
+            if page_text is None and index in recognized:
+                page_text = f"[OCR página {index + 1}]\\n{recognized[index]}"
+            if not page_text:
+                continue
             remaining = MAX_EXTRACTED_CHARS - total
             if remaining <= 0:
                 break
-            chunks.append(text[:remaining])
-            total += min(len(text), remaining)
-        return "\n".join(chunks)
+            chunks.append(page_text[:remaining])
+            total += min(len(page_text), remaining)
+        extracted = "\\n".join(chunks)
+        if recognized and native_by_page:
+            method = "mixed"
+        elif recognized:
+            method = "ocr"
+        elif native_by_page:
+            method = "native"
+        else:
+            method = "none"
+        if scanned_pages:
+            status = ocr_status
+        else:
+            status = "completed" if extracted else "no_text"
+        return extracted, method, status
     except HTTPException:
         raise
     except Exception as exc:
@@ -155,7 +191,7 @@ def _extract_docx(data: bytes) -> str:
         raise HTTPException(status_code=422, detail="DOCX inválido ou corrompido.") from exc
 
 
-def _validate_and_extract(data: bytes, display_name: str) -> tuple[str, str | None]:
+def _validate_and_extract(data: bytes, display_name: str) -> tuple[str, str | None, str, str]:
     kind = _kind_from_bytes(data)
     suffix = Path(display_name).suffix.casefold()
     if suffix not in ALLOWED_SUFFIXES:
@@ -164,17 +200,18 @@ def _validate_and_extract(data: bytes, display_name: str) -> tuple[str, str | No
     if suffix != expected:
         raise HTTPException(status_code=415, detail="A extensão não corresponde ao conteúdo do arquivo.")
     if kind == "pdf":
-        return MIME_BY_KIND[kind], _extract_pdf(data)
+        extracted, method, status = _extract_pdf(data)
+        return MIME_BY_KIND[kind], extracted or None, method, status
     if kind == "docx":
-        return MIME_BY_KIND[kind], _extract_docx(data)
+        return MIME_BY_KIND[kind], _extract_docx(data), "native", "completed"
     if kind == "txt":
         try:
             text = data.decode("utf-8", errors="strict")
         except UnicodeDecodeError as exc:
             raise HTTPException(status_code=415, detail="TXT deve estar codificado em UTF-8.") from exc
-        if "\x00" in text:
+        if "\\x00" in text:
             raise HTTPException(status_code=415, detail="TXT contém bytes NUL.")
-        return MIME_BY_KIND[kind], text[:MAX_EXTRACTED_CHARS]
+        return MIME_BY_KIND[kind], text[:MAX_EXTRACTED_CHARS], "native", "completed"
     try:
         with Image.open(io.BytesIO(data)) as image:
             expected_format = "JPEG" if kind == "jpg" else "PNG"
@@ -188,7 +225,8 @@ def _validate_and_extract(data: bytes, display_name: str) -> tuple[str, str | No
         raise
     except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise HTTPException(status_code=422, detail="Imagem inválida ou corrompida.") from exc
-    return MIME_BY_KIND[kind], None
+    extracted, status = ocr_image_bytes(data)
+    return MIME_BY_KIND[kind], extracted, "ocr" if extracted else "none", status
 
 
 def _stored_path(storage_name: str) -> Path:
@@ -205,6 +243,8 @@ def _metadata(row: Any) -> dict[str, Any]:
         "name": row["original_name"], "extension": row["extension"],
         "mime": row["detected_mime"], "size_bytes": row["size_bytes"],
         "sha256": row["sha256"], "has_extracted_text": row["extracted_text"] is not None,
+        "extraction_method": row["extraction_method"],
+        "extraction_status": row["extraction_status"],
         "created_at": row["created_at"],
     }
 
@@ -224,7 +264,7 @@ async def upload_attachment(conversation_id: str, request: Request):
         raise HTTPException(status_code=422, detail="Arquivo vazio.")
     if len(data) > MAX_FILE_BYTES:
         raise HTTPException(status_code=413, detail="Cada arquivo deve ter no máximo 10 MiB.")
-    mime, extracted = _validate_and_extract(data, display_name)
+    mime, extracted, extraction_method, extraction_status = _validate_and_extract(data, display_name)
     extension = Path(display_name).suffix.casefold()
     attachment_id, storage_name = str(uuid.uuid4()), str(uuid.uuid4())
     root = _storage_root()
@@ -250,9 +290,10 @@ async def upload_attachment(conversation_id: str, request: Request):
                     os.fsync(handle.fileno())
                 os.replace(temporary, target)
                 conn.execute(
-                    "INSERT INTO attachments(id,conversation_id,original_name,extension,detected_mime,size_bytes,sha256,storage_name,extracted_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO attachments(id,conversation_id,original_name,extension,detected_mime,size_bytes,sha256,storage_name,extracted_text,extraction_method,extraction_status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                     (attachment_id, conversation_id, display_name, extension, mime, len(data),
-                     hashlib.sha256(data).hexdigest(), storage_name, extracted, server.utc_now()),
+                     hashlib.sha256(data).hexdigest(), storage_name, extracted, extraction_method,
+                     extraction_status, server.utc_now()),
                 )
                 row = conn.execute("SELECT * FROM attachments WHERE id=?", (attachment_id,)).fetchone()
         except Exception:
@@ -295,7 +336,12 @@ def read_attachment_content(conversation_id: str, attachment_id: str):
     row, _ = _get_attachment(conversation_id, attachment_id)
     if row["extracted_text"] is None:
         raise HTTPException(status_code=415, detail="Este formato não possui texto extraído nesta versão.")
-    return {"attachment_id": attachment_id, "name": row["original_name"], "text": row["extracted_text"], "read_only": True}
+    return {
+        "attachment_id": attachment_id, "name": row["original_name"],
+        "text": row["extracted_text"], "read_only": True,
+        "extraction_method": row["extraction_method"],
+        "extraction_status": row["extraction_status"],
+    }
 
 
 @router.delete("/api/conversations/{conversation_id}/attachments/{attachment_id}", status_code=204)
