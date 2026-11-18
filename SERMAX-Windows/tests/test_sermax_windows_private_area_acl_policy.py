@@ -117,6 +117,18 @@ class PrivateAreaAclPolicyTests(unittest.TestCase):
         with self.assertRaisesRegex(PrivateAreaAclPolicyError, "vazio"):
             self.validate(entries=[{"name": "unexpected.dat"}])
 
+
+    def test_accepts_nonempty_persistent_directory_when_explicitly_allowed(self):
+        entries = [{"name": "staging"}, {"name": "backups"}]
+        result = self.validate(entries=entries, require_empty=False)
+        self.assertTrue(result["valid"])
+        self.assertFalse(result["directory_empty"])
+        self.assertEqual(result["entry_count"], 2)
+
+    def test_rejects_non_boolean_require_empty(self):
+        with self.assertRaisesRegex(PrivateAreaAclPolicyError, "booleano"):
+            self.validate(require_empty=1)
+
     def test_rejects_volume_mismatch(self):
         with self.assertRaisesRegex(PrivateAreaAclPolicyError, "Volume"):
             self.validate(expected_volume_serial=VOLUME + 1)
