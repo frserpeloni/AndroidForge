@@ -6,8 +6,11 @@ relativos com ACL explícita e readback. Não altera a instalação ativa.
 """
 from __future__ import annotations
 
+import base64
 import ctypes
 import hashlib
+import io
+import json
 import os
 import re
 import secrets
@@ -24,6 +27,8 @@ from sermax_update_inventory import (
 FILE_LIST_DIRECTORY = 0x0001
 FILE_READ_DATA = 0x0001
 READ_CONTROL = 0x00020000
+_BACKUP_CATALOG = "__sermax_backup_catalog__.json"
+MAX_BACKUP_CATALOG_BYTES = 64 * 1024 * 1024
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 MAX_CHUNK_SIZE = 16 * 1024 * 1024
 _BACKUP_NAME = re.compile(r"^backup-[0-9a-f]{24}$")
@@ -91,6 +96,7 @@ class BackupSnapshot:
     component: str | None
     root_handle: object | None
     files: tuple[dict[str, object], ...]
+    catalog: dict[str, object] | None = None
 
     def close(self) -> None:
         if self.root_handle is not None:
@@ -187,7 +193,7 @@ def _open_source_file(root_handle, relative_path: str, expected_volume: int):
         file_handle = open_verified_child_component(
             parent_handle,
             entry,
-            desired_access=FILE_READ_DATA,
+            desired_access=FILE_READ_DATA | READ_CONTROL,
         )
         metadata = query_handle_metadata(file_handle)
         _validate_regular_source(metadata, expected_volume)
@@ -294,6 +300,7 @@ def backup_existing_files_by_handle(
         validate_private_directory_handle,
     )
     from sermax_windows_file_writer import write_verified_file_component
+    from sermax_windows_effective_access import read_security_descriptor_binary
     from sermax_windows_handle_io import close_handle
     from sermax_update_staging import _preflight_handle_paths
 
@@ -302,6 +309,8 @@ def backup_existing_files_by_handle(
         protected_files = {name.casefold() for name in PROTECTED_FILES}
         for item in manifest.files:
             normalized = _normalize_relative(item.path)
+            if normalized.casefold() == _BACKUP_CATALOG.casefold():
+                raise BackupError("Caminho reservado para o catálogo interno de backup.")
             if (
                 normalized.rsplit("/", 1)[-1].casefold() in protected_files
                 or any(
@@ -399,6 +408,12 @@ def backup_existing_files_by_handle(
                     )
 
                 reader = NativeHandleReader(source_handle)
+                original_security_descriptor = read_security_descriptor_binary(
+                    source_handle, require_directory=False
+                )
+                original_security_descriptor_b64 = base64.b64encode(
+                    original_security_descriptor
+                ).decode("ascii")
                 source_hash = _hash_and_rewind(
                     reader, source_metadata["end_of_file"]
                 )
@@ -436,6 +451,11 @@ def backup_existing_files_by_handle(
                     "path": item.path,
                     "source_file_id_128": source_metadata["file_id_128"],
                     "source_volume_serial_number": source_metadata["volume_serial_number"],
+                    "source_attributes": source_metadata["attributes"],
+                    "source_security_descriptor_b64": original_security_descriptor_b64,
+                    "source_security_descriptor_sha256": hashlib.sha256(
+                        original_security_descriptor
+                    ).hexdigest(),
                     "size": source_metadata["end_of_file"],
                     "sha256": source_hash,
                     "backup": backup_result,
@@ -444,6 +464,43 @@ def backup_existing_files_by_handle(
             finally:
                 _close_source(source_handle, source_parents)
 
+        catalog_document = {
+            "schema_version": 1,
+            "backup_component": component,
+            "files": [
+                {
+                    "path": item["path"],
+                    "source_file_id_128": item["source_file_id_128"],
+                    "source_volume_serial_number": item["source_volume_serial_number"],
+                    "source_attributes": item["source_attributes"],
+                    "source_security_descriptor_b64": item["source_security_descriptor_b64"],
+                    "source_security_descriptor_sha256": item["source_security_descriptor_sha256"],
+                    "size": item["size"],
+                    "sha256": item["sha256"],
+                    "backup_file_id_128": item["backup"]["file_id_128"],
+                    "backup_sha256": item["backup"]["sha256"],
+                }
+                for item in results
+            ],
+        }
+        catalog_bytes = json.dumps(
+            catalog_document,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if len(catalog_bytes) > MAX_BACKUP_CATALOG_BYTES:
+            raise BackupError("Catálogo de backup excede o limite de segurança.")
+        catalog_hash = hashlib.sha256(catalog_bytes).hexdigest()
+        catalog_result = write_verified_file_component(
+            root_handle,
+            _BACKUP_CATALOG,
+            io.BytesIO(catalog_bytes),
+            expected_size=len(catalog_bytes),
+            expected_sha256=catalog_hash,
+        )
+
         for handle in reversed(nested_handles):
             close_handle(handle)
         nested_handles.clear()
@@ -451,6 +508,7 @@ def backup_existing_files_by_handle(
             component=component,
             root_handle=root_handle,
             files=tuple(results),
+            catalog=catalog_result,
         )
     except Exception as exc:
         for handle in reversed(nested_handles):
