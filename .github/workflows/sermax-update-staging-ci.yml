@@ -1,0 +1,47 @@
+name: SERMAX Update Staging Validation
+
+on:
+  push:
+    branches:
+      - sermax-installer-staging-20261118
+    paths:
+      - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_update_package.py"
+      - "SERMAX-Windows/sermax_update_manifest.py"
+      - "SERMAX-Windows/sermax_update_inventory.py"
+      - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - ".github/workflows/sermax-update-staging-ci.yml"
+  pull_request:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_update_package.py"
+      - "SERMAX-Windows/sermax_update_manifest.py"
+      - "SERMAX-Windows/sermax_update_inventory.py"
+      - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - ".github/workflows/sermax-update-staging-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  staging-tests:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Compile updater modules
+        run: python -m compileall -q sermax_update_staging.py sermax_update_package.py sermax_update_manifest.py sermax_update_inventory.py
+
+      - name: Run staging tests
+        run: python -m unittest discover -s tests -p "test_sermax_update_staging.py" -v
