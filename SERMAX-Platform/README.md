@@ -166,3 +166,14 @@ O launcher não instala dependências nem modelos. Se os módulos Python estiver
 
 
 A validação e extração dos anexos agora ocorre fora do event loop assíncrono da API, em worker thread. Os trabalhos de OCR são serializados por um bloqueio local para evitar renderizações e reconhecimentos simultâneos concorrentes, reduzindo picos de CPU e memória. O teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
+
+
+### Teste real do OCR local
+
+Antes de iniciar a Plataforma, execute:
+
+```powershell
+python SERMAX-Platform/tools/check_local_ocr.py
+```
+
+O teste gera em memória uma imagem sintética com o texto `SERMAX OCR TESTE 2026 12345`, executa o Tesseract real na imagem e em um PDF digitalizado montado em memória e verifica se os marcadores foram reconhecidos. Não lê arquivos pessoais, não grava arquivos e não envia dados à rede. Resultado `passed` confirma o funcionamento básico do motor e do renderizador naquele ambiente, mas não mede precisão em documentos reais. O teste exige Tesseract com `por` e `eng`, `pytesseract` e `pypdfium2` instalados.
