@@ -116,8 +116,10 @@ class ExistingPrivateAreaLayoutTests(unittest.TestCase):
     def test_rejects_unrecognized_staging_object_and_closes_all_handles(self):
         parent_entries = (entry("_update"),)
         update_entries = tuple(entry(name) for name in LAYOUT)
-        child_entries = [tuple(), (entry("unexpected.bin", is_directory=False),),
-                         tuple(), tuple(), tuple()]
+        child_entries = [
+            (entry("unexpected.bin", is_directory=False),),
+            tuple(), tuple(), tuple(), tuple(),
+        ]
         query_values = [self.parent_meta, self.update_meta, *self.child_meta]
         open_values = iter(self.handles)
         with (
