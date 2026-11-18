@@ -4,6 +4,8 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import subprocess
+import re
 import threading
 from pathlib import Path
 from typing import Iterable
@@ -27,6 +29,71 @@ def _tesseract_path() -> str | None:
             return str(candidate.resolve())
         return None
     return shutil.which("tesseract")
+
+
+
+def get_ocr_engine_status() -> dict[str, object]:
+    """Consulta o executável e os idiomas instalados, sem processar documentos."""
+    executable = _tesseract_path()
+    if not executable:
+        return {
+            "status": "engine_unavailable",
+            "languages": [],
+            "missing_languages": ["por", "eng"],
+            "detail": "Tesseract não encontrado. Instale o motor local.",
+        }
+    options = {
+        "capture_output": True,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "timeout": 2,
+        "check": False,
+    }
+    if os.name == "nt":
+        options["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    try:
+        result = subprocess.run([executable, "--list-langs"], **options)
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "timeout",
+            "languages": [],
+            "missing_languages": ["por", "eng"],
+            "detail": "Tesseract não respondeu ao diagnóstico em 2 segundos.",
+        }
+    except OSError:
+        return {
+            "status": "failed",
+            "languages": [],
+            "missing_languages": ["por", "eng"],
+            "detail": "Não foi possível iniciar o executável Tesseract configurado.",
+        }
+    if result.returncode != 0:
+        return {
+            "status": "failed",
+            "languages": [],
+            "missing_languages": ["por", "eng"],
+            "detail": "Tesseract retornou erro ao listar os idiomas.",
+        }
+    languages = sorted({
+        line.strip()
+        for line in result.stdout.splitlines()
+        if re.fullmatch(r"[A-Za-z0-9_]+", line.strip())
+    })
+    missing = sorted({"por", "eng"} - set(languages))
+    if missing:
+        return {
+            "status": "language_unavailable",
+            "languages": languages,
+            "missing_languages": missing,
+            "detail": "Tesseract encontrado, mas faltam dados de idioma: " + ", ".join(missing) + ".",
+        }
+    return {
+        "status": "ready",
+        "languages": languages,
+        "missing_languages": [],
+        "detail": "Tesseract pronto. Idiomas português e inglês encontrados.",
+    }
 
 
 def _run_tesseract(image: Image.Image) -> tuple[str, str]:
