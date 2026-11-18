@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+import types
 from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
@@ -47,6 +48,21 @@ class HomologationLauncherTests(unittest.TestCase):
             self.assertEqual(copied_worker.read_bytes(), run_homologation.WORKER_SOURCE.read_bytes())
             self.assertFalse((temp_root / "memoria_sermax.json").exists())
             self.assertFalse((temp_root / "memoria_neural_pestinha.json").exists())
+
+    def test_launcher_blocks_commands_and_plan_execution(self):
+        executor = types.ModuleType("sermax_executor")
+        tasks = types.ModuleType("sermax_tarefas")
+        executor.executar = lambda *_args, **_kwargs: "executado"
+        tasks.executar_plano = lambda *_args, **_kwargs: "executado"
+        with unittest.mock.patch.dict(sys.modules, {
+            "sermax_executor": executor,
+            "sermax_tarefas": tasks,
+        }):
+            run_homologation.apply_safety_guards()
+            with self.assertRaisesRegex(RuntimeError, "bloqueadas"):
+                executor.executar("comando")
+            with self.assertRaisesRegex(RuntimeError, "bloqueadas"):
+                tasks.executar_plano("plano")
 
 
 if __name__ == "__main__":
