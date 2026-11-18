@@ -585,6 +585,8 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
     for row in rows[:5]:
         name = str(row["original_name"])[:180]
         extracted = row["extracted_text"]
+        if extracted is not None and not str(extracted).strip():
+            extracted = None
         row_keys = row.keys()
         method = str(row["extraction_method"] or "native") if "extraction_method" in row_keys else "native"
         status = str(row["extraction_status"] or "completed") if "extraction_status" in row_keys else "completed"
