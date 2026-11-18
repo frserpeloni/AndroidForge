@@ -1,6 +1,7 @@
 """OCR local opcional para imagens e páginas PDF digitalizadas."""
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import threading
@@ -83,7 +84,7 @@ def _prepare_image(image: Image.Image) -> Image.Image:
 def ocr_image_bytes(data: bytes) -> tuple[str | None, str]:
     """Executa OCR local em JPEG/PNG, sem falhar o upload se o motor faltar."""
     try:
-        with Image.open(__import__("io").BytesIO(data)) as source:
+        with Image.open(io.BytesIO(data)) as source:
             source.load()
             prepared = _prepare_image(source)
             try:
