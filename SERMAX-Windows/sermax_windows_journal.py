@@ -36,6 +36,7 @@ _ALLOWED_EVENTS = {
     "COMMITTED",
     "ROLLBACK_STARTED",
     "FILE_RESTORED",
+    "FILE_REMOVED",
     "ROLLED_BACK",
     "RECOVERY_REQUIRED",
 }
@@ -48,8 +49,9 @@ _TRANSITIONS = {
     "INSTALL_STARTED": {"FILE_REPLACED", "COMMITTED", "ROLLBACK_STARTED", "RECOVERY_REQUIRED"},
     "FILE_REPLACED": {"FILE_REPLACED", "COMMITTED", "ROLLBACK_STARTED", "RECOVERY_REQUIRED"},
     "COMMITTED": set(),
-    "ROLLBACK_STARTED": {"FILE_RESTORED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
-    "FILE_RESTORED": {"FILE_RESTORED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
+    "ROLLBACK_STARTED": {"FILE_RESTORED", "FILE_REMOVED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
+    "FILE_RESTORED": {"FILE_RESTORED", "FILE_REMOVED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
+    "FILE_REMOVED": {"FILE_RESTORED", "FILE_REMOVED", "ROLLED_BACK", "RECOVERY_REQUIRED"},
     "ROLLED_BACK": set(),
     "RECOVERY_REQUIRED": {"RECOVERY_REQUIRED", "ROLLBACK_STARTED"},
 }
@@ -61,10 +63,11 @@ def _validate_event_payload(event: str, payload: dict) -> None:
         "BACKUP_COMPLETE": ("backup_component", "catalog_sha256"),
         "STAGING_COMPLETE": ("staging_component", "archive_sha256"),
         "INSTALL_STARTED": (),
-        "FILE_REPLACED": ("path", "sha256"),
+        "FILE_REPLACED": ("path", "sha256", "file_id_128"),
         "COMMITTED": ("release_version",),
         "ROLLBACK_STARTED": ("reason",),
         "FILE_RESTORED": ("path", "sha256"),
+        "FILE_REMOVED": ("path", "sha256", "file_id_128"),
         "ROLLED_BACK": ("reason",),
         "RECOVERY_REQUIRED": ("reason",),
     }[event]
@@ -79,6 +82,12 @@ def _validate_event_payload(event: str, payload: dict) -> None:
                 or any(ch not in "0123456789abcdef" for ch in value)
             ):
                 raise JournalError(f"Hash inválido no payload: {key}.")
+    for key in ("file_id_128",):
+        if key in payload and (
+            not isinstance(payload[key], str)
+            or not re.fullmatch(r"[0-9a-fA-F]{32}", payload[key])
+        ):
+            raise JournalError(f"FileId inválido no payload: {key}.")
     for key in ("release_version", "reason"):
         if key in payload and (
             not isinstance(payload[key], str) or not payload[key].strip()
