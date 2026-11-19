@@ -1243,6 +1243,45 @@ def recover_interrupted_update_by_handle(
             item["payload"]["path"]: item["payload"]
             for item in events if item["event"] == "FILE_REPLACED"
         }
+        manifest_by_path = {item.path: item for item in manifest.files}
+        for event in events:
+            event_name = event["event"]
+            if event_name not in {
+                "FILE_INSTALL_INTENT", "FILE_REPLACED",
+                "FILE_REMOVED", "FILE_RESTORED",
+            }:
+                continue
+            payload = event["payload"]
+            path = payload["path"]
+            manifest_item = manifest_by_path.get(path)
+            if manifest_item is None:
+                raise TransactionPreparationError(
+                    f"Journal contém caminho ausente do manifesto: {path}"
+                )
+            if event_name in {"FILE_INSTALL_INTENT", "FILE_REPLACED"}:
+                if payload["sha256"] != manifest_item.sha256:
+                    raise TransactionPreparationError(
+                        f"Hash do journal diverge do manifesto: {path}"
+                    )
+            elif event_name == "FILE_REMOVED" and manifest_item.action != "create":
+                raise TransactionPreparationError(
+                    f"FILE_REMOVED não corresponde a ação create: {path}"
+                )
+            elif event_name == "FILE_RESTORED" and manifest_item.action != "replace":
+                raise TransactionPreparationError(
+                    f"FILE_RESTORED não corresponde a ação replace: {path}"
+                )
+
+        for path in set(intents).intersection(replaced):
+            if (
+                intents[path]["sha256"] != replaced[path]["sha256"]
+                or intents[path]["file_id_128"].lower()
+                != replaced[path]["file_id_128"].lower()
+            ):
+                raise TransactionPreparationError(
+                    f"FILE_INSTALL_INTENT diverge de FILE_REPLACED: {path}"
+                )
+
         stage_results = {}
         expected_files = {item.path: item for item in manifest.files}
         expected_directories = set()
