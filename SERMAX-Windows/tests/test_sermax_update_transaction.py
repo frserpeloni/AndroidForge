@@ -325,5 +325,77 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 self.assertTrue(close(root_handle))
 
 
+    def test_rollback_resumes_when_interrupted_after_create_deletion_before_journal(self):
+        from sermax_windows_handle_io import close_handle
+        from sermax_windows_private_area import create_private_directory_component
+
+        archive, manifest, files = make_release()
+        with tempfile.TemporaryDirectory(prefix="sermax-transaction-rollback-resume-") as root:
+            active_path = os.path.join(root, "active")
+            os.makedirs(os.path.join(active_path, "bin"))
+            original = b"SERMAX original active payload"
+            active_file = os.path.join(active_path, "bin", "engine.dll")
+            with open(active_file, "wb") as stream:
+                stream.write(original)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+            invalid = ctypes.c_void_p(-1).value
+            share = 0x00000001 | 0x00000002 | 0x00000004
+            flags = 0x02000000 | 0x00200000
+
+            root_handle = create_file(
+                root, 0x0001 | 0x0004 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(root_handle, (None, 0, invalid))
+            active_handle = create_file(
+                active_path, 0x0001 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(active_handle, (None, 0, invalid))
+
+            private_handles = []
+            prepared = None
+            try:
+                backups_handle = create_private_directory_component(root_handle, "backups")
+                private_handles.append(backups_handle)
+                staging_handle = create_private_directory_component(root_handle, "staging")
+                private_handles.append(staging_handle)
+                journal_handle = create_private_directory_component(root_handle, "journal")
+                private_handles.append(journal_handle)
+
+                prepared = transaction.prepare_update_transaction_by_handle(
+                    archive,
+                    manifest,
+                    active_root_handle=active_handle,
+                    backups_parent_handle=backups_handle,
+                    staging_parent_handle=staging_handle,
+                    journal_parent_handle=journal_handle,
+                )
+                prepared.begin_install()
+                installed = transaction.install_prepared_update_by_handle(
+                    prepared, active_handle, backups_handle
+                )
+                self.assertTrue(installed["valid"])
+                self.assertEqual(installed["journal_last_event"], "COMMITTED")
+            finally:
+                if prepared is not None:
+                    prepared.close()
+                for handle in reversed(private_handles):
+                    close_handle(handle)
+                self.assertTrue(close(active_handle))
+                self.assertTrue(close(root_handle))
+
+
 if __name__ == "__main__":
     unittest.main()
