@@ -426,10 +426,21 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 with open(created_file, "rb") as active:
                     self.assertEqual(active.read(), files["bin/new-engine.dll"])
 
-                rolled_back = transaction.rollback_prepared_update_by_handle(
-                    prepared, active_handle, backups_handle
+                transaction_id = prepared.transaction_id
+                prepared.close()
+                prepared = None
+
+                rolled_back = transaction.recover_interrupted_update_by_handle(
+                    transaction_id,
+                    manifest,
+                    active_root_handle=active_handle,
+                    backups_parent_handle=backups_handle,
+                    staging_parent_handle=staging_handle,
+                    journal_parent_handle=journal_handle,
                 )
                 self.assertTrue(rolled_back["valid"])
+                self.assertTrue(rolled_back["recovered_after_restart"])
+                self.assertEqual(rolled_back["preflight_file_count"], 2)
                 self.assertEqual(rolled_back["journal_last_event"], "ROLLED_BACK")
                 self.assertEqual(rolled_back["removed_count"], 1)
                 self.assertEqual(rolled_back["restored_count"], 1)
