@@ -336,3 +336,32 @@ A rotina também trata repetição após evento de remoção já persistido. Se 
 **Limite importante:** o CI atual compila o novo orquestrador e valida a máquina de estados do journal, mas ainda não executa um teste nativo de ponta a ponta da nova rotina de rollback. Essa homologação permanece pendente. A recuperação após reinício do processo também não está implementada.
 
 **Segurança operacional:** a função foi exercitada em diretório temporário de CI. Não foi chamada em `C:\SERMAX`, não houve instalação real, merge ou publicação.
+
+
+## Testes nativos do rollback integral, 2026-11-19
+
+A suíte tests/test_sermax_update_transaction.py agora executa três cenários nativos em diretórios temporários no Windows:
+
+1. **Instalação parcial e rollback completo:** instala um destino replace e um create, injeta interrupção depois dos dois eventos FILE_REPLACED, executa rollback, confirma restauração do conteúdo anterior, remoção do arquivo novo e sequência final FILE_REMOVED, FILE_RESTORED, ROLLED_BACK.
+2. **Interrupção entre exclusão e journal:** injeta falha depois da exclusão física do destino create, mas antes da gravação de FILE_REMOVED. A segunda chamada retoma o rollback, registra o evento ausente, restaura o destino replace e termina em ROLLED_BACK.
+3. **Objeto externo no caminho create:** substitui o arquivo instalado por outro objeto com conteúdo diferente. O rollback rejeita a identidade/hash divergente, preserva o objeto externo e mantém a transação em RECOVERY_REQUIRED.
+
+### Evidência CI
+
+- Commit: 1a81c33ab5c053971cfe94fa9b2c47e4ff54374c.
+- Run: 44635507877.
+- Windows Server 2025, Python 3.14.
+- Compilação dos módulos e todas as etapas do workflow concluídas com sucesso.
+- Os três testes nativos de rollback passaram.
+- Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44635507877.
+
+### Limites ainda pendentes
+
+- Recuperação automática depois de reinício do processo ou queda de energia. A função atual exige os objetos e handles da transação ainda abertos.
+- Recuperação de uma restauração in-place interrompida no meio da escrita.
+- Testes de falhas em todos os pontos de restauração, inclusive entre gravação de conteúdo, ACL, atributos e evento FILE_RESTORED.
+- Preservação e restauração de timestamps originais.
+- Testes com identidades Windows distintas e homologação no Windows 11.
+- Chave pública oficial e pacote assinado de produção.
+
+Os testes ocorreram somente em diretórios temporários do runner Windows. Nenhuma instalação foi executada em C:\\SERMAX. Não houve merge ou publicação.
