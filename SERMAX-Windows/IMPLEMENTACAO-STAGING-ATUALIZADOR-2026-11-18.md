@@ -306,11 +306,33 @@ A renomeação é atômica por arquivo no sistema de arquivos. A atualização i
 O teste integrado em Windows Server 2025 prepara uma release com um arquivo `replace` e outro `create`, executa a instalação em diretório temporário, confere os dois conteúdos e confirma `COMMITTED`. O teste também confirma que a preparação, antes da chamada de instalação, não alterou a instalação ativa.
 
 **Limites ainda pendentes:**
-- Rollback dos arquivos de ação `create`, com exclusão por handle e verificação de identidade.
-- Recuperação automática após queda do processo ou energia.
-- Orquestração de rollback completo, incluindo todos os eventos de recuperação.
+- Teste nativo integrado do novo rollback, incluindo interrupções entre exclusão, restauração e gravação dos eventos.
+- Recuperação automática após queda do processo ou energia. A rotina atual exige os objetos e handles da transação ainda abertos.
+- Protocolo específico para interrupção durante a restauração in-place.
 - Homologação local no Windows 11.
 - Chave pública oficial de release e validação com pacote assinado de produção.
 - Preservação de timestamps originais.
+
+## Rollback integral inicial, 2026-11-19
+
+Foram adicionados ao journal:
+- Evento `FILE_REMOVED`, com caminho, SHA-256 e FileId de 128 bits.
+- Transições para permitir alternância entre `FILE_REMOVED` e `FILE_RESTORED` até `ROLLED_BACK`.
+- Obrigatoriedade de FileId nos eventos `FILE_REPLACED`, vinculando o registro à identidade do arquivo instalado.
+
+A rotina `rollback_prepared_update_by_handle()` foi adicionada ao módulo `sermax_update_transaction.py`. Ela:
+1. Exige uma transação em estado recuperável, sem aceitar `COMMITTED`.
+2. Inicia ou continua o rollback pelo journal.
+3. Para cada ação `create` registrada como instalada, confere FileId, SHA-256, tamanho, volume, tipo regular, ausência de reparse point e quantidade de hardlinks.
+4. Marca exclusão pelo handle e confirma que o destino deixou de existir.
+5. Registra `FILE_REMOVED` após a confirmação.
+6. Restaura ações `replace` pelo backup verificado e registra `FILE_RESTORED`.
+7. Registra `ROLLED_BACK` somente após conferir todos os destinos previstos.
+
+A rotina também trata repetição após evento de remoção já persistido. Se encontrar um objeto diferente no destino, interrompe o rollback.
+
+**Validação disponível:** o CI `44631569467`, no commit `2d7d19c6efe3df12255fe10be84efa2b29257e82`, concluiu com sucesso. Todas as etapas do workflow passaram, incluindo compilação dos módulos, testes do journal, backup, staging, preparação transacional e políticas ACL.
+
+**Limite importante:** o CI atual compila o novo orquestrador e valida a máquina de estados do journal, mas ainda não executa um teste nativo de ponta a ponta da nova rotina de rollback. Essa homologação permanece pendente. A recuperação após reinício do processo também não está implementada.
 
 **Segurança operacional:** a função foi exercitada em diretório temporário de CI. Não foi chamada em `C:\SERMAX`, não houve instalação real, merge ou publicação.
