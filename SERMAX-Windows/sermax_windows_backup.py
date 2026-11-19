@@ -871,6 +871,10 @@ def verify_backup_by_handle(
             "catalog_sha256": catalog_hash,
             "file_count": len(records),
             "directory_count": len(expected_dirs),
+            "source_file_ids": {
+                record["path"]: record["source_file_id_128"]
+                for record in records
+            },
             "acl_validated": True,
             "authz_validated": True,
             "namespace_exact": True,
