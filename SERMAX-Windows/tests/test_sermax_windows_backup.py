@@ -24,6 +24,14 @@ class Manifest:
 
 
 class HandleBackupUnitTests(unittest.TestCase):
+    def test_catalog_duplicate_json_keys_are_rejected(self):
+        with self.assertRaisesRegex(backup.BackupError, "duplicada"):
+            backup._reject_duplicate_json_keys((("schema_version", 1), ("schema_version", 1)))
+
+    def test_catalog_rejects_nonstandard_json_constants(self):
+        with self.assertRaisesRegex(backup.BackupError, "não permitida"):
+            backup._reject_json_constant("NaN")
+
     def test_rejects_source_with_multiple_hardlinks(self):
         metadata = {
             "is_directory": False,
@@ -223,6 +231,20 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(
                     catalog["files"][0]["source_security_descriptor_b64"]
                 )
+
+                expected_catalog_hash = snapshot.catalog["sha256"]
+                snapshot.close()
+                verified = backup.verify_backup_by_handle(
+                    backups_handle,
+                    snapshot.component,
+                    expected_catalog_sha256=expected_catalog_hash,
+                )
+                self.assertTrue(verified["valid"])
+                self.assertTrue(verified["namespace_exact"])
+                self.assertTrue(verified["acl_validated"])
+                self.assertTrue(verified["authz_validated"])
+                self.assertTrue(verified["read_only"])
+                self.assertEqual(verified["file_count"], 1)
             finally:
                 if snapshot is not None:
                     snapshot.close()
