@@ -39,6 +39,7 @@ on:
       - sermax-windows-integration-20261029
     paths:
       - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_update_transaction.py"
       - "SERMAX-Windows/sermax_windows_file_writer.py"
       - "SERMAX-Windows/sermax_windows_backup.py"
       - "SERMAX-Windows/sermax_windows_journal.py"
@@ -57,6 +58,7 @@ on:
       - "SERMAX-Windows/sermax_windows_effective_access.py"
       - "SERMAX-Windows/sermax_windows_private_area_acl_policy.py"
       - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - "SERMAX-Windows/tests/test_sermax_update_transaction.py"
       - "SERMAX-Windows/tests/test_sermax_windows_security.py"
       - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area.py"
@@ -105,7 +107,10 @@ jobs:
 
       - name: Run staging tests
         run: python -m unittest discover -s tests -p "test_sermax_update_staging.py" -v
-\n      - name: Run integrated transaction preparation tests\n        run: python -m unittest discover -s tests -p "test_sermax_update_transaction.py" -v\n
+
+      - name: Run integrated transaction preparation tests
+        run: python -m unittest discover -s tests -p "test_sermax_update_transaction.py" -v
+
       - name: Run handle security tests
         run: python -m unittest discover -s tests -p "test_sermax_windows_security.py" -v
 
