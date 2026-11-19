@@ -176,7 +176,7 @@ def prepare_update_transaction_by_handle(
         ) from exc
 
 
-_FILE_RENAME_INFO_EX_CLASS = 22
+_FILE_RENAME_INFO_CLASS = 3
 _FILE_RENAME_FLAG_REPLACE_IF_EXISTS = 0x00000001
 _FILE_ADD_FILE = 0x00000002
 _FILE_LIST_DIRECTORY = 0x00000001
@@ -206,7 +206,11 @@ def _rename_handle_to_parent(source_handle, destination_parent_handle, leaf_name
     storage = ctypes.create_string_buffer(buffer_size)
     info = ctypes.cast(storage, ctypes.POINTER(_FILE_RENAME_INFO_EX)).contents
     info.Flags = _FILE_RENAME_FLAG_REPLACE_IF_EXISTS if replace else 0
-    info.RootDirectory = destination_parent_handle
+    info.RootDirectory = (
+        destination_parent_handle.value
+        if isinstance(destination_parent_handle, ctypes.c_void_p)
+        else destination_parent_handle
+    )
     info.FileNameLength = len(encoded_name)
     ctypes.memmove(
         ctypes.addressof(storage) + name_offset,
@@ -222,7 +226,7 @@ def _rename_handle_to_parent(source_handle, destination_parent_handle, leaf_name
     native = source_handle.value if isinstance(source_handle, ctypes.c_void_p) else source_handle
     if not set_info(
         native,
-        _FILE_RENAME_INFO_EX_CLASS,
+        _FILE_RENAME_INFO_CLASS,
         ctypes.byref(storage),
         buffer_size,
     ):
