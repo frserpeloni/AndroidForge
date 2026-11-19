@@ -152,6 +152,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
         import shutil
         from sermax_windows_handle_io import close_handle
         from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_journal import create_journal_transaction_by_handle
 
         with tempfile.TemporaryDirectory(prefix="sermax-backup-native-") as root:
             active_path = os.path.join(root, "active")
@@ -190,6 +191,8 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
             self.assertNotIn(active_handle, (None, 0, invalid))
 
             backups_handle = None
+            journal_handle = None
+            journal_session = None
             snapshot = None
             try:
                 backups_handle = create_private_directory_component(
@@ -245,7 +248,61 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(verified["authz_validated"])
                 self.assertTrue(verified["read_only"])
                 self.assertEqual(verified["file_count"], 1)
+
+                journal_handle = create_private_directory_component(
+                    parent_handle, "journal"
+                )
+                journal_session = create_journal_transaction_by_handle(journal_handle)
+                journal_session.append_event(
+                    "PREPARED",
+                    {"release_version": "test-restore", "manifest_sha256": "a" * 64},
+                )
+                journal_session.append_event(
+                    "BACKUP_COMPLETE",
+                    {
+                        "backup_component": snapshot.component,
+                        "catalog_sha256": expected_catalog_hash,
+                    },
+                )
+                journal_session.append_event(
+                    "STAGING_COMPLETE",
+                    {
+                        "staging_component": "stage-" + "b" * 24,
+                        "archive_sha256": "c" * 64,
+                    },
+                )
+                journal_session.append_event("INSTALL_STARTED", {})
+                journal_session.append_event(
+                    "ROLLBACK_STARTED", {"reason": "native restoration integration test"}
+                )
+
+                changed = b"SERMAX deliberately changed after simulated update"
+                with open(source_path, "wb") as active:
+                    active.write(changed)
+                restored = backup.restore_backup_files_by_handle(
+                    active_handle,
+                    backups_handle,
+                    snapshot.component,
+                    journal_session,
+                )
+                self.assertEqual(restored["restored_count"], 1)
+                self.assertEqual(restored["journal_last_event"], "FILE_RESTORED")
+                with open(source_path, "rb") as active:
+                    self.assertEqual(active.read(), source)
+
+                repeated = backup.restore_backup_files_by_handle(
+                    active_handle,
+                    backups_handle,
+                    snapshot.component,
+                    journal_session,
+                )
+                self.assertEqual(repeated["restored_count"], 0)
+                self.assertEqual(repeated["already_restored_count"], 1)
             finally:
+                if journal_session is not None:
+                    journal_session.close()
+                if journal_handle is not None:
+                    close_handle(journal_handle)
                 if snapshot is not None:
                     snapshot.close()
                 if backups_handle is not None:
