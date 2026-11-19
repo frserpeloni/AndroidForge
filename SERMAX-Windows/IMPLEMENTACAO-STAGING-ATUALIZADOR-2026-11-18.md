@@ -397,3 +397,17 @@ A função é limitada à recuperação por rollback. Não retoma a instalação
 - Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44640770702.
 
 A validação simula a perda dos objetos e handles anteriores no mesmo runner. Não executa um processo filho separado nem comprova recuperação após desligamento físico. Também não cobre interrupção durante a restauração in-place. Esse protocolo segue pendente e a recuperação não deve ser tratada como automática ou pronta para produção.
+
+
+
+### Validação adicional de recuperação fail-closed, 2026-11-19
+
+Foi ampliado o teste nativo para reabrir a transação depois do encerramento dos handles anteriores e substituir o destino create por um objeto externo. A recuperação interrompe o preflight, não remove nem sobrescreve o objeto externo e mantém o journal em RECOVERY_REQUIRED.
+
+- Run 44641017113, commit de código/testes bfac8232cfea02d01b533bd1c32efef26853353c.
+- Windows Server 2025, Python 3.14.
+- Compilação e todas as etapas do workflow concluídas com sucesso.
+- Os quatro testes nativos da suíte transacional passaram, incluindo recuperação após reabertura e rejeição de objeto externo.
+- Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44641017113.
+
+A recuperação continua sendo uma operação explícita chamada com transaction_id e manifesto autenticado. O início automático na inicialização, a política de seleção de transações e a recuperação de escrita in-place interrompida seguem pendentes.
