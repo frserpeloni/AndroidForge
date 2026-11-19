@@ -236,3 +236,30 @@ A operação é somente leitura. Não executa restauração nem altera a instala
 O teste nativo de integração fecha o handle original do snapshot e verifica o backup por nova abertura. A execução CI 44611351890 completou todas as etapas com sucesso em Windows.
 
 **Limite atual:** o hash esperado é recebido como argumento. A integração que lê e fornece esse hash a partir do journal ainda está pendente. A rotina de restauração também permanece pendente.
+
+
+## Restauração de backup por handle, 2026-11-19
+
+Foi adicionada `restore_backup_files_by_handle()` em `sermax_windows_backup.py`.
+
+A rotina:
+- Exige sessão de journal em estado `ROLLBACK_STARTED` ou continuação com `FILE_RESTORED`.
+- Obtém o componente e o SHA-256 do catálogo a partir do evento `BACKUP_COMPLETE` validado.
+- Verifica integralmente o backup antes de escrever no destino.
+- Reabre cada arquivo do backup e confere seu SHA-256.
+- Restaura conteúdo por handle, com escrita em blocos, FlushFileBuffers e readback.
+- Restaura owner, group, DACL e estado de proteção da DACL a partir do descritor original.
+- Restaura atributos de arquivo dentro de uma allowlist explícita.
+- Confere novamente conteúdo, ACL e atributos.
+- Registra cada arquivo concluído como `FILE_RESTORED`.
+- Suporta repetição: arquivos já registrados precisam continuar íntegros e são conferidos sem reescrita.
+
+O teste nativo Windows simula alteração de um arquivo, executa rollback, confere o conteúdo original e repete a chamada para testar idempotência.
+
+**Limites e bloqueios:**
+- A escrita em arquivo existente é in-place, não atômica. Uma interrupção pode deixar o arquivo parcial. O journal fica sem `FILE_RESTORED` para esse arquivo e o chamador deve registrar `RECOVERY_REQUIRED`.
+- A rotina restaura destinos `replace`. A remoção segura dos arquivos introduzidos por ações `create` ainda não foi implementada.
+- Diretórios pais ausentes interrompem a restauração; a rotina não recria hierarquias.
+- Atributos especiais fora da allowlist são recusados antes de iniciar a restauração.
+- Timestamps originais ainda não estão no catálogo e não são restaurados.
+- A função não é chamada por um instalador ativo. A integração completa do fluxo de instalação/rollback permanece pendente.
