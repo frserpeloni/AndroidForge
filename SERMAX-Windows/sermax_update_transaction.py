@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import ctypes
-import re
+import os
 from ctypes import wintypes
 
 from sermax_update_manifest import ValidatedManifest
