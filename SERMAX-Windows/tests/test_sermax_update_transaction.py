@@ -539,7 +539,7 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
 
                 created_file = os.path.join(active_path, "bin", "new-engine.dll")
                 os.remove(created_file)
-                foreign_payload = b"external object must remain untouched"
+                foreign_payload = b"X" * len(files["bin/new-engine.dll"])
                 with open(created_file, "wb") as stream:
                     stream.write(foreign_payload)
 
