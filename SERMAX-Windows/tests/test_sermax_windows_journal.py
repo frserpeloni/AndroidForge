@@ -80,12 +80,12 @@ class JournalUnitTests(unittest.TestCase):
             journal._validate_transition(None, "BACKUP_COMPLETE")
 
     def test_rejects_protected_paths_in_file_events(self):
-        payload = {"path": "_update/journal/event.bin", "sha256": "a" * 64}
+        payload = {"path": "_update/journal/event.bin", "sha256": "a" * 64, "file_id_128": "1" * 32}
         with self.assertRaisesRegex(journal.JournalError, "protegido"):
             journal._validate_event_payload("FILE_REPLACED", payload)
 
     def test_rejects_invalid_hash_in_event_payload(self):
-        payload = {"path": "bin/engine.dll", "sha256": "xyz"}
+        payload = {"path": "bin/engine.dll", "sha256": "xyz", "file_id_128": "1" * 32}
         with self.assertRaisesRegex(journal.JournalError, "Hash inválido"):
             journal._validate_event_payload("FILE_REPLACED", payload)
 
@@ -153,6 +153,7 @@ class JournalWindowsIntegrationTests(unittest.TestCase):
                     ("FILE_REPLACED", {
                         "path": "bin/engine.dll",
                         "sha256": "d" * 64,
+                        "file_id_128": "1" * 32,
                     }),
                     ("COMMITTED", {"release_version": "2.0.0"}),
                 ]
