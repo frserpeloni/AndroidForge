@@ -193,15 +193,15 @@ class VerifiedChildHandleTests(unittest.TestCase):
             result = native_enum.open_verified_child_component(123, entry)
         self.assertEqual(result, 456)
         opened.assert_called_once_with(123, "file.bin", directory=False,
-                                       desired_access=None, share_access=native_enum.FILE_SHARE_READ)
+                                       desired_access=None, share_access=0x00000001)
         closed.assert_not_called()
 
     def test_passes_explicit_share_mode_to_relative_open(self):
         entry = directory_entry(name="subdir", attributes=0x10, size=0)
         share = (
             native_enum.FILE_SHARE_READ
-            | native_enum.FILE_SHARE_WRITE
-            | native_enum.FILE_SHARE_DELETE
+            | 0x00000002
+            | 0x00000004
         )
         with (
             patch.object(
