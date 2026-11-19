@@ -457,5 +457,116 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 self.assertTrue(close(root_handle))
 
 
+    def test_rollback_rejects_foreign_object_at_created_file_path(self):
+        from sermax_windows_handle_io import close_handle
+        from sermax_windows_private_area import create_private_directory_component
+
+        archive, manifest, files = make_release()
+        with tempfile.TemporaryDirectory(prefix="sermax-transaction-rollback-foreign-") as root:
+            active_path = os.path.join(root, "active")
+            os.makedirs(os.path.join(active_path, "bin"))
+            original = b"SERMAX original active payload"
+            active_file = os.path.join(active_path, "bin", "engine.dll")
+            with open(active_file, "wb") as stream:
+                stream.write(original)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+            invalid = ctypes.c_void_p(-1).value
+            share = 0x00000001 | 0x00000002 | 0x00000004
+            flags = 0x02000000 | 0x00200000
+
+            root_handle = create_file(
+                root, 0x0001 | 0x0004 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(root_handle, (None, 0, invalid))
+            active_handle = create_file(
+                active_path, 0x0001 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(active_handle, (None, 0, invalid))
+
+            private_handles = []
+            prepared = None
+            try:
+                backups_handle = create_private_directory_component(root_handle, "backups")
+                private_handles.append(backups_handle)
+                staging_handle = create_private_directory_component(root_handle, "staging")
+                private_handles.append(staging_handle)
+                journal_handle = create_private_directory_component(root_handle, "journal")
+                private_handles.append(journal_handle)
+
+                prepared = transaction.prepare_update_transaction_by_handle(
+                    archive,
+                    manifest,
+                    active_root_handle=active_handle,
+                    backups_parent_handle=backups_handle,
+                    staging_parent_handle=staging_handle,
+                    journal_parent_handle=journal_handle,
+                )
+                prepared.begin_install()
+
+                append_event = prepared.journal.append_event
+
+                def interrupt_after_second_replacement(event, payload):
+                    result = append_event(event, payload)
+                    if event == "FILE_REPLACED" and payload["path"] == "bin/new-engine.dll":
+                        raise RuntimeError("simulated interruption after second FILE_REPLACED")
+                    return result
+
+                with mock.patch.object(
+                    prepared.journal,
+                    "append_event",
+                    side_effect=interrupt_after_second_replacement,
+                ):
+                    with self.assertRaisesRegex(
+                        transaction.TransactionPreparationError,
+                        "Instalação interrompida",
+                    ):
+                        transaction.install_prepared_update_by_handle(
+                            prepared, active_handle, backups_handle
+                        )
+
+                created_file = os.path.join(active_path, "bin", "new-engine.dll")
+                os.remove(created_file)
+                foreign_payload = b"external object must remain untouched"
+                with open(created_file, "wb") as stream:
+                    stream.write(foreign_payload)
+
+                with self.assertRaisesRegex(
+                    transaction.TransactionPreparationError,
+                    "Arquivo create não corresponde à identidade instalada",
+                ):
+                    transaction.rollback_prepared_update_by_handle(
+                        prepared, active_handle, backups_handle
+                    )
+
+                with open(created_file, "rb") as foreign:
+                    self.assertEqual(foreign.read(), foreign_payload)
+                with open(active_file, "rb") as active:
+                    self.assertEqual(active.read(), files["bin/engine.dll"])
+                self.assertEqual(
+                    prepared.journal.read_events()[-1]["event"],
+                    "RECOVERY_REQUIRED",
+                )
+            finally:
+                if prepared is not None:
+                    prepared.close()
+                for handle in reversed(private_handles):
+                    close_handle(handle)
+                self.assertTrue(close(active_handle))
+                self.assertTrue(close(root_handle))
+
+
 if __name__ == "__main__":
     unittest.main()
