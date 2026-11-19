@@ -693,3 +693,235 @@ def _close_handles(file_handle, directory_handles) -> None:
         raise TransactionPreparationError(
             "Falha ao fechar handles: " + "; ".join(map(str, errors))
         )
+
+
+def rollback_prepared_update_by_handle(
+    prepared: PreparedUpdateTransaction,
+    active_root_handle,
+    backups_parent_handle,
+) -> dict[str, object]:
+    """Executa rollback em sandbox usando FileId/hash e journal append-only.
+
+    Remove somente destinos create comprovadamente instalados pela transação.
+    Restaura destinos replace pelo backup autenticado. Exige recursos da
+    transação ainda abertos; recuperação após reinício do processo permanece
+    uma etapa separada.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise TransactionPreparationError("Rollback por handles exige Windows x64.")
+    if not isinstance(prepared, PreparedUpdateTransaction):
+        raise TransactionPreparationError("Objeto de transação preparada inválido.")
+    events = prepared.journal.read_events()
+    if not events or events[-1]["event"] not in {
+        "INSTALL_STARTED", "FILE_REPLACED", "RECOVERY_REQUIRED",
+        "ROLLBACK_STARTED", "FILE_REMOVED", "FILE_RESTORED",
+    }:
+        raise TransactionPreparationError("Journal não está em estado recuperável.")
+    if events[-1]["event"] != "ROLLBACK_STARTED" and events[-1]["event"] not in {
+        "FILE_REMOVED", "FILE_RESTORED",
+    }:
+        prepared.journal.append_event(
+            "ROLLBACK_STARTED", {"reason": "Rollback solicitado pelo orquestrador"}
+        )
+
+    from sermax_windows_backup import (
+        NativeHandleReader,
+        _hash_and_rewind,
+        restore_backup_files_by_handle,
+    )
+    from sermax_windows_directory_handle import open_verified_child_component
+
+    active_meta = query_handle_metadata(active_root_handle)
+    if (
+        not active_meta["is_directory"] or active_meta["is_reparse_point"]
+        or active_meta["delete_pending"]
+    ):
+        raise TransactionPreparationError("Raiz ativa inválida para rollback.")
+
+    try:
+        journal_events = prepared.journal.read_events()
+        replaced = {
+            item["payload"]["path"]: item["payload"]
+            for item in journal_events if item["event"] == "FILE_REPLACED"
+        }
+        removed = {
+            item["payload"]["path"]: item["payload"]
+            for item in journal_events if item["event"] == "FILE_REMOVED"
+        }
+
+        removed_count = 0
+        already_removed_count = 0
+        for item in prepared.manifest.files:
+            if item.action != "create" or item.path not in replaced:
+                continue
+            evidence = replaced[item.path]
+            expected_id = evidence["file_id_128"].lower()
+            if evidence["sha256"] != item.sha256:
+                raise TransactionPreparationError(
+                    f"Journal create diverge do manifesto: {item.path}"
+                )
+            parent_path, leaf_name = (
+                item.path.rsplit("/", 1) if "/" in item.path else ("", item.path)
+            )
+            parent_handle, parent_handles = _open_active_parent(
+                active_root_handle, parent_path, active_meta["volume_serial_number"]
+            )
+            target_handle = None
+            try:
+                entry = _find_active_leaf(parent_handle, leaf_name)
+                if entry is None:
+                    if item.path in removed:
+                        if (
+                            removed[item.path]["file_id_128"].lower() != expected_id
+                            or removed[item.path]["sha256"] != item.sha256
+                        ):
+                            raise TransactionPreparationError(
+                                f"FILE_REMOVED diverge do registro de instalação: {item.path}"
+                            )
+                    else:
+                        prepared.journal.append_event(
+                            "FILE_REMOVED",
+                            {
+                                "path": item.path,
+                                "sha256": item.sha256,
+                                "file_id_128": expected_id,
+                            },
+                        )
+                    already_removed_count += 1
+                    continue
+
+                target_handle = open_verified_child_component(
+                    parent_handle,
+                    entry,
+                    desired_access=(
+                        _FILE_READ_DATA | _FILE_READ_CONTROL | _FILE_DELETE
+                    ),
+                )
+                metadata = query_handle_metadata(target_handle)
+                digest = _hash_and_rewind(
+                    NativeHandleReader(target_handle), item.size
+                )
+                if (
+                    metadata["is_directory"] or metadata["is_reparse_point"]
+                    or metadata["delete_pending"]
+                    or metadata["number_of_links"] != 1
+                    or metadata["volume_serial_number"] != active_meta["volume_serial_number"]
+                    or metadata["file_id_128"].lower() != expected_id
+                    or metadata["end_of_file"] != item.size
+                    or digest != item.sha256
+                    or metadata["attributes"] & 0x00000001
+                ):
+                    raise TransactionPreparationError(
+                        f"Arquivo create não corresponde à identidade instalada: {item.path}"
+                    )
+
+                class _FILE_DISPOSITION_INFO(ctypes.Structure):
+                    _fields_ = [("DeleteFile", ctypes.c_ubyte)]
+
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                set_info = kernel32.SetFileInformationByHandle
+                set_info.argtypes = [
+                    wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD,
+                ]
+                set_info.restype = wintypes.BOOL
+                native = (
+                    target_handle.value
+                    if isinstance(target_handle, ctypes.c_void_p)
+                    else target_handle
+                )
+                disposition = _FILE_DISPOSITION_INFO(1)
+                if not set_info(
+                    native, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)
+                ):
+                    raise TransactionPreparationError(
+                        f"Marcação de exclusão por handle falhou para {item.path}, "
+                        f"WinError={ctypes.get_last_error()}."
+                    )
+                close_handle(target_handle)
+                target_handle = None
+                if _find_active_leaf(parent_handle, leaf_name) is not None:
+                    raise TransactionPreparationError(
+                        f"Destino continua presente após exclusão: {item.path}"
+                    )
+                prepared.journal.append_event(
+                    "FILE_REMOVED",
+                    {
+                        "path": item.path,
+                        "sha256": item.sha256,
+                        "file_id_128": expected_id,
+                    },
+                )
+                removed_count += 1
+            finally:
+                if target_handle is not None:
+                    close_handle(target_handle)
+                for handle in reversed(parent_handles):
+                    close_handle(handle)
+
+        backup_events = [
+            event for event in prepared.journal.read_events()
+            if event["event"] == "BACKUP_COMPLETE"
+        ]
+        if not backup_events:
+            raise TransactionPreparationError("Journal sem BACKUP_COMPLETE.")
+        backup_component = backup_events[-1]["payload"]["backup_component"]
+        replacement_items = [
+            item for item in prepared.manifest.files if item.action == "replace"
+        ]
+        restored = {"restored_count": 0, "already_restored_count": 0}
+        if replacement_items:
+            if backup_component is None:
+                raise TransactionPreparationError("Backup ausente para ações replace.")
+            restored = restore_backup_files_by_handle(
+                active_root_handle,
+                backups_parent_handle,
+                backup_component,
+                prepared.journal,
+            )
+
+        final_events = prepared.journal.read_events()
+        restored_paths = {
+            event["payload"]["path"]
+            for event in final_events if event["event"] == "FILE_RESTORED"
+        }
+        removed_paths = {
+            event["payload"]["path"]
+            for event in final_events if event["event"] == "FILE_REMOVED"
+        }
+        for item in prepared.manifest.files:
+            if item.action == "replace" and item.path not in restored_paths:
+                raise TransactionPreparationError(
+                    f"Rollback não confirmou restauração: {item.path}"
+                )
+            if item.action == "create" and item.path in replaced and item.path not in removed_paths:
+                raise TransactionPreparationError(
+                    f"Rollback não confirmou remoção: {item.path}"
+                )
+
+        prepared.journal.append_event(
+            "ROLLED_BACK", {"reason": "Todos os destinos foram verificados"}
+        )
+        return {
+            "valid": True,
+            "transaction_id": prepared.transaction_id,
+            "removed_count": removed_count,
+            "already_removed_count": already_removed_count,
+            "restored_count": restored.get("restored_count", 0),
+            "already_restored_count": restored.get("already_restored_count", 0),
+            "journal_last_event": "ROLLED_BACK",
+        }
+    except Exception as exc:
+        try:
+            current = prepared.journal.read_events()
+            if current and current[-1]["event"] not in {"COMMITTED", "ROLLED_BACK"}:
+                prepared.journal.append_event(
+                    "RECOVERY_REQUIRED",
+                    {"reason": f"Falha no rollback: {exc}"[:2000]},
+                )
+        except Exception:
+            pass
+        if isinstance(exc, TransactionPreparationError):
+            raise
+        raise TransactionPreparationError(
+            f"Rollback interrompido; preserve backup e journal: {exc}"
+        ) from exc
