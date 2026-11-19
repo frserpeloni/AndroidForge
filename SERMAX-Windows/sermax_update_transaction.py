@@ -176,19 +176,21 @@ def prepare_update_transaction_by_handle(
         ) from exc
 
 
-_FILE_RENAME_INFO_CLASS = 3
-_FILE_RENAME_FLAG_REPLACE_IF_EXISTS = 0x00000001
-_FILE_ADD_FILE = 0x00000002
+_FILE_RENAME_INFORMATION_CLASS = 10
 _FILE_LIST_DIRECTORY = 0x00000001
-_FILE_READ_DATA = 0x00000001
+_FILE_TRAVERSE = 0x00000020
 _FILE_READ_ATTRIBUTES = 0x00000080
+_FILE_READ_DATA = 0x00000001
 _FILE_DELETE = 0x00010000
 _FILE_READ_CONTROL = 0x00020000
+_FILE_SHARE_READ = 0x00000001
+_FILE_SHARE_WRITE = 0x00000002
+_FILE_SHARE_DELETE = 0x00000004
 
 
-class _FILE_RENAME_INFO_EX(ctypes.Structure):
+class _FILE_RENAME_INFORMATION(ctypes.Structure):
     _fields_ = [
-        ("Flags", wintypes.DWORD),
+        ("ReplaceIfExists", wintypes.BOOLEAN),
         ("RootDirectory", wintypes.HANDLE),
         ("FileNameLength", wintypes.DWORD),
         ("FileName", wintypes.WCHAR * 1),
@@ -197,15 +199,17 @@ class _FILE_RENAME_INFO_EX(ctypes.Structure):
 
 def _rename_handle_to_parent(source_handle, destination_parent_handle, leaf_name: str, *, replace: bool) -> None:
     from sermax_windows_handle_io import _validate_component
+    from sermax_windows_handle_abi import IO_STATUS_BLOCK
+
     _validate_component(leaf_name)
     if type(replace) is not bool:
         raise TransactionPreparationError("replace precisa ser booleano.")
     encoded_name = leaf_name.encode("utf-16-le", errors="strict")
-    name_offset = _FILE_RENAME_INFO_EX.FileName.offset
-    buffer_size = name_offset + len(encoded_name)
-    storage = ctypes.create_string_buffer(buffer_size)
-    info = ctypes.cast(storage, ctypes.POINTER(_FILE_RENAME_INFO_EX)).contents
-    info.Flags = _FILE_RENAME_FLAG_REPLACE_IF_EXISTS if replace else 0
+    name_offset = _FILE_RENAME_INFORMATION.FileName.offset
+    storage_size = ctypes.sizeof(_FILE_RENAME_INFORMATION) + len(encoded_name)
+    storage = ctypes.create_string_buffer(storage_size)
+    info = ctypes.cast(storage, ctypes.POINTER(_FILE_RENAME_INFORMATION)).contents
+    info.ReplaceIfExists = 1 if replace else 0
     info.RootDirectory = (
         destination_parent_handle.value
         if isinstance(destination_parent_handle, ctypes.c_void_p)
@@ -217,22 +221,30 @@ def _rename_handle_to_parent(source_handle, destination_parent_handle, leaf_name
         encoded_name,
         len(encoded_name),
     )
-    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    set_info = kernel32.SetFileInformationByHandle
+
+    ntdll = ctypes.WinDLL("ntdll", use_last_error=True)
+    set_info = ntdll.NtSetInformationFile
     set_info.argtypes = [
-        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD
+        wintypes.HANDLE,
+        ctypes.POINTER(IO_STATUS_BLOCK),
+        ctypes.c_void_p,
+        wintypes.ULONG,
+        ctypes.c_int,
     ]
-    set_info.restype = wintypes.BOOL
+    set_info.restype = ctypes.c_long
     native = source_handle.value if isinstance(source_handle, ctypes.c_void_p) else source_handle
-    if not set_info(
+    io_status = IO_STATUS_BLOCK()
+    status = set_info(
         native,
-        _FILE_RENAME_INFO_CLASS,
+        ctypes.byref(io_status),
         ctypes.byref(storage),
-        buffer_size,
-    ):
+        storage_size,
+        _FILE_RENAME_INFORMATION_CLASS,
+    )
+    if status < 0:
         raise TransactionPreparationError(
-            "Renomeação atômica por FileRenameInfoEx falhou, "
-            f"WinError={ctypes.get_last_error()}."
+            "NtSetInformationFile(FileRenameInformation) falhou, "
+            f"NTSTATUS=0x{status & 0xFFFFFFFF:08X}."
         )
 
 
@@ -264,7 +276,13 @@ def _open_active_parent(root_handle, relative_parent: str, expected_volume: int)
             child = open_verified_child_component(
                 current,
                 entry,
-                desired_access=_FILE_LIST_DIRECTORY | _FILE_ADD_FILE | _FILE_READ_CONTROL,
+                desired_access=(
+                    _FILE_LIST_DIRECTORY | _FILE_TRAVERSE
+                    | _FILE_READ_ATTRIBUTES | _FILE_READ_CONTROL
+                ),
+                share_access=(
+                    _FILE_SHARE_READ | _FILE_SHARE_WRITE | _FILE_SHARE_DELETE
+                ),
             )
             metadata = query_handle_metadata(child)
             if (
