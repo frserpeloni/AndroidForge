@@ -106,6 +106,7 @@ def open_relative_component(
     *,
     directory: bool = False,
     desired_access: int | None = None,
+    share_access: int = FILE_SHARE_READ,
 ):
     """Abre um componente sob parent_handle sem seguir reparse point.
 
@@ -143,6 +144,9 @@ def open_relative_component(
     else:
         raise HandleIoError("desired_access deve ser uma máscara inteira não negativa.")
 
+    if type(share_access) is not int or share_access < 0 or share_access > 0xFFFFFFFF:
+        raise HandleIoError("share_access deve ser uma máscara DWORD não negativa.")
+
     status = create(
         ctypes.byref(result_handle),
         access_mask,
@@ -150,7 +154,7 @@ def open_relative_component(
         ctypes.byref(io_status),
         None,
         0,
-        FILE_SHARE_READ,
+        share_access,
         FILE_OPEN,
         options,
         None,
