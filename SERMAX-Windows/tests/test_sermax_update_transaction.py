@@ -608,6 +608,7 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
     def test_rollback_rejects_foreign_object_at_created_file_path(self):
         from sermax_windows_handle_io import close_handle
         from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_journal import open_journal_transaction_by_handle
 
         archive, manifest, files = make_release()
         with tempfile.TemporaryDirectory(prefix="sermax-transaction-rollback-foreign-") as root:
@@ -691,22 +692,38 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 with open(created_file, "wb") as stream:
                     stream.write(foreign_payload)
 
+                transaction_id = prepared.transaction_id
+                backup_component = prepared.backup.component
+                prepared.close()
+                prepared = None
+
                 with self.assertRaisesRegex(
                     transaction.TransactionPreparationError,
-                    "Arquivo create não corresponde à identidade instalada",
+                    "Destino create não corresponde à intenção persistida",
                 ):
-                    transaction.rollback_prepared_update_by_handle(
-                        prepared, active_handle, backups_handle
+                    transaction.recover_interrupted_update_by_handle(
+                        transaction_id,
+                        manifest,
+                        active_root_handle=active_handle,
+                        backups_parent_handle=backups_handle,
+                        staging_parent_handle=staging_handle,
+                        journal_parent_handle=journal_handle,
                     )
 
                 with open(created_file, "rb") as foreign:
                     self.assertEqual(foreign.read(), foreign_payload)
                 with open(active_file, "rb") as active:
                     self.assertEqual(active.read(), files["bin/engine.dll"])
-                self.assertEqual(
-                    prepared.journal.read_events()[-1]["event"],
-                    "RECOVERY_REQUIRED",
+                reopened_journal = open_journal_transaction_by_handle(
+                    journal_handle, transaction_id
                 )
+                try:
+                    self.assertEqual(
+                        reopened_journal.read_events()[-1]["event"],
+                        "RECOVERY_REQUIRED",
+                    )
+                finally:
+                    reopened_journal.close()
             finally:
                 if prepared is not None:
                     prepared.close()
