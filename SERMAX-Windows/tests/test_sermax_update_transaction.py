@@ -325,6 +325,131 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 self.assertTrue(close(root_handle))
 
 
+    def test_rollback_recovers_rename_after_intent_before_file_replaced_event(self):
+        from sermax_windows_handle_io import close_handle
+        from sermax_windows_private_area import create_private_directory_component
+
+        archive, manifest, files = make_release()
+        with tempfile.TemporaryDirectory(prefix="sermax-transaction-rollback-") as root:
+            active_path = os.path.join(root, "active")
+            os.makedirs(os.path.join(active_path, "bin"))
+            original = b"SERMAX original active payload"
+            active_file = os.path.join(active_path, "bin", "engine.dll")
+            with open(active_file, "wb") as stream:
+                stream.write(original)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+            invalid = ctypes.c_void_p(-1).value
+            share = 0x00000001 | 0x00000002 | 0x00000004
+            flags = 0x02000000 | 0x00200000
+
+            root_handle = create_file(
+                root, 0x0001 | 0x0004 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(root_handle, (None, 0, invalid))
+            active_handle = create_file(
+                active_path, 0x0001 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(active_handle, (None, 0, invalid))
+
+            private_handles = []
+            prepared = None
+            try:
+                backups_handle = create_private_directory_component(root_handle, "backups")
+                private_handles.append(backups_handle)
+                staging_handle = create_private_directory_component(root_handle, "staging")
+                private_handles.append(staging_handle)
+                journal_handle = create_private_directory_component(root_handle, "journal")
+                private_handles.append(journal_handle)
+
+                prepared = transaction.prepare_update_transaction_by_handle(
+                    archive,
+                    manifest,
+                    active_root_handle=active_handle,
+                    backups_parent_handle=backups_handle,
+                    staging_parent_handle=staging_handle,
+                    journal_parent_handle=journal_handle,
+                )
+                prepared.begin_install()
+
+                append_event = prepared.journal.append_event
+                def interrupt_before_second_replaced_event(event, payload):
+                    if event == "FILE_REPLACED" and payload["path"] == "bin/new-engine.dll":
+                        raise RuntimeError("simulated crash after rename before FILE_REPLACED")
+                    return append_event(event, payload)
+
+                with mock.patch.object(
+                    prepared.journal,
+                    "append_event",
+                    side_effect=interrupt_before_second_replaced_event,
+                ):
+                    with self.assertRaisesRegex(
+                        transaction.TransactionPreparationError,
+                        "Instalação interrompida",
+                    ):
+                        transaction.install_prepared_update_by_handle(
+                            prepared, active_handle, backups_handle
+                        )
+
+                interrupted_events = prepared.journal.read_events()
+                self.assertEqual(interrupted_events[-1]["event"], "RECOVERY_REQUIRED")
+                names_before_recovery = [event["event"] for event in interrupted_events]
+                self.assertEqual(names_before_recovery.count("FILE_INSTALL_INTENT"), 2)
+                self.assertEqual(names_before_recovery.count("FILE_REPLACED"), 1)
+                self.assertEqual(
+                    [
+                        event["payload"]["path"] for event in interrupted_events
+                        if event["event"] == "FILE_INSTALL_INTENT"
+                    ],
+                    ["bin/engine.dll", "bin/new-engine.dll"],
+                )
+                with open(active_file, "rb") as active:
+                    self.assertEqual(active.read(), files["bin/engine.dll"])
+                created_file = os.path.join(active_path, "bin", "new-engine.dll")
+                with open(created_file, "rb") as active:
+                    self.assertEqual(active.read(), files["bin/new-engine.dll"])
+
+                rolled_back = transaction.rollback_prepared_update_by_handle(
+                    prepared, active_handle, backups_handle
+                )
+                self.assertTrue(rolled_back["valid"])
+                self.assertEqual(rolled_back["journal_last_event"], "ROLLED_BACK")
+                self.assertEqual(rolled_back["removed_count"], 1)
+                self.assertEqual(rolled_back["restored_count"], 1)
+
+                with open(active_file, "rb") as active:
+                    self.assertEqual(active.read(), original)
+                self.assertFalse(os.path.exists(created_file))
+                final_events = prepared.journal.read_events()
+                final_names = [event["event"] for event in final_events]
+                self.assertIn("FILE_REMOVED", final_names)
+                self.assertIn("FILE_RESTORED", final_names)
+                self.assertEqual(final_names[-1], "ROLLED_BACK")
+                self.assertIsNone(prepared.backup.root_handle)
+                self.assertTrue(
+                    os.path.isdir(os.path.join(root, "backups", prepared.backup.component))
+                )
+            finally:
+                if prepared is not None:
+                    prepared.close()
+                for handle in reversed(private_handles):
+                    close_handle(handle)
+                self.assertTrue(close(active_handle))
+                self.assertTrue(close(root_handle))
+
+
     def test_rollback_resumes_when_interrupted_after_create_deletion_before_journal(self):
         from sermax_windows_handle_io import close_handle
         from sermax_windows_private_area import create_private_directory_component
