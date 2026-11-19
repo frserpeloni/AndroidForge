@@ -575,7 +575,7 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
     if document["backup_component"] != component:
         raise BackupError("O catálogo pertence a outro componente de backup.")
     records = document["files"]
-    if not isinstance(records, list) or len(records) > 100000:
+    if not isinstance(records, list) or not records or len(records) > 100000:
         raise BackupError("Lista de arquivos do catálogo inválida ou excessiva.")
 
     required = {
@@ -597,6 +597,12 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
             raise BackupError(f"Caminho inválido no catálogo: {path!r}") from exc
         if not isinstance(path, str) or normalized != path or path.casefold() == _BACKUP_CATALOG.casefold():
             raise BackupError("Caminho não canônico ou reservado no catálogo.")
+        protected_files = {name.casefold() for name in PROTECTED_FILES}
+        if (
+            normalized.rsplit("/", 1)[-1].casefold() in protected_files
+            or any(part.casefold() in PROTECTED_DIRECTORY_SEGMENTS for part in normalized.split("/"))
+        ):
+            raise BackupError("Catálogo contém caminho protegido.")
         folded = path.casefold()
         if folded in seen:
             raise BackupError("Caminho duplicado no catálogo.")
@@ -619,6 +625,8 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
             raise BackupError("Catálogo registra backup com hardlinks.")
         if record["backup_size"] != record["size"]:
             raise BackupError("Tamanho do backup diverge do arquivo de origem.")
+        if record["sha256"].lower() != record["backup_sha256"].lower():
+            raise BackupError("Hash do backup diverge do hash da origem.")
         for key in ("sha256", "backup_sha256", "source_security_descriptor_sha256"):
             value = record[key]
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
