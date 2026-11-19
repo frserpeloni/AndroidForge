@@ -345,3 +345,19 @@ Limites conhecidos:
 - Timestamps não são restaurados.
 - Atributos fora da allowlist são recusados.
 - Não há ainda orquestrador que integre todas as etapas da instalação, recuperação e rollback.
+
+
+## Atualização da auditoria, preparação transacional, 2026-11-19
+
+Novo módulo `sermax_update_transaction.py`, com coordenação de validação de pacote, backup, staging e journal.
+
+A integração registra:
+- `PREPARED`, com versão e hash do manifesto.
+- `BACKUP_COMPLETE`, com componente e hash do catálogo, inclusive backup vazio.
+- `STAGING_COMPLETE`, com componente e hash do ZIP.
+
+A falha na preparação tenta registrar `RECOVERY_REQUIRED` e preserva os dados parciais. `begin_install()` registra `INSTALL_STARTED`, sem escrever na instalação ativa.
+
+Teste nativo Windows confirmou a sequência e verificou que os arquivos ativos permaneceram intactos. A execução CI 44619532422 aprovou a compilação e todas as etapas, incluindo o novo teste integrado.
+
+Pendente: instalação efetiva, substituição segura, evento `FILE_REPLACED`, confirmação `COMMITTED`, recuperação automática e rollback completo.
