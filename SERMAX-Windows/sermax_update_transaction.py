@@ -380,65 +380,95 @@ def install_prepared_update_by_handle(
         # Preflight completo antes da primeira renomeação.
         for item in prepared.manifest.files:
             staged_result = stage_results[item.path]
-            staged_handle, staged_parents, staged_file_meta = _open_source_file(
-                prepared.staging.root_handle,
-                item.path,
-                active_meta["volume_serial_number"],
-                desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL | _FILE_DELETE,
-            )
-            if staged_handle is None or staged_file_meta is None:
-                raise TransactionPreparationError(f"Arquivo de staging ausente: {item.path}")
-            try:
-                staged_hash = _hash_and_rewind(
-                    NativeHandleReader(staged_handle), item.size
-                )
-                if (
-                    staged_file_meta["file_id_128"].lower()
-                    != staged_result["file_id_128"].lower()
-                    or staged_file_meta["end_of_file"] != item.size
-                    or staged_hash != item.sha256
-                ):
-                    raise TransactionPreparationError(
-                        f"Arquivo de staging diverge do manifesto: {item.path}"
-                    )
-            finally:
-                _close_handles(staged_handle, staged_parents)
-
             parent_path, leaf_name = (
                 item.path.rsplit("/", 1) if "/" in item.path else ("", item.path)
             )
             parent_handle, parent_handles = _open_active_parent(
                 active_root_handle, parent_path, active_meta["volume_serial_number"]
             )
+            staged_handle = None
+            staged_parents = []
             try:
                 entry = _find_active_leaf(parent_handle, leaf_name)
-                if item.action == "create" and entry is not None:
-                    if entry.file_id.lower() != staged_result["file_id_128"].lower():
+                staged_handle, staged_parents, staged_file_meta = _open_source_file(
+                    prepared.staging.root_handle,
+                    item.path,
+                    active_meta["volume_serial_number"],
+                    desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL | _FILE_DELETE,
+                )
+                if staged_handle is None:
+                    if entry is None or entry.file_id.lower() != staged_result["file_id_128"].lower():
                         raise TransactionPreparationError(
-                            f"Destino create já existe: {item.path}"
+                            f"Staging ausente sem FileId instalado correspondente: {item.path}"
                         )
-                elif item.action == "replace" and entry is None:
-                    raise TransactionPreparationError(
-                        f"Destino replace ausente: {item.path}"
-                    )
-                elif entry is not None:
-                    target = open_verified_child_component(
+                    active_file = open_verified_child_component(
                         parent_handle,
                         entry,
                         desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL,
                     )
                     try:
-                        target_meta = query_handle_metadata(target)
+                        active_file_meta = query_handle_metadata(active_file)
+                        active_hash = _hash_and_rewind(
+                            NativeHandleReader(active_file), item.size
+                        )
                         if (
-                            target_meta["number_of_links"] != 1
-                            or target_meta["volume_serial_number"] != active_meta["volume_serial_number"]
+                            active_file_meta["end_of_file"] != item.size
+                            or active_hash != item.sha256
                         ):
                             raise TransactionPreparationError(
-                                f"Destino possui hardlink/volume divergente: {item.path}"
+                                f"Arquivo ativo não corresponde ao staging movido: {item.path}"
                             )
                     finally:
-                        close_handle(target)
+                        close_handle(active_file)
+                else:
+                    if staged_file_meta is None:
+                        raise TransactionPreparationError(
+                            f"Metadados do staging ausentes: {item.path}"
+                        )
+                    staged_hash = _hash_and_rewind(
+                        NativeHandleReader(staged_handle), item.size
+                    )
+                    if (
+                        staged_file_meta["file_id_128"].lower()
+                        != staged_result["file_id_128"].lower()
+                        or staged_file_meta["end_of_file"] != item.size
+                        or staged_hash != item.sha256
+                    ):
+                        raise TransactionPreparationError(
+                            f"Arquivo de staging diverge do manifesto: {item.path}"
+                        )
+
+                    if item.action == "create" and entry is not None:
+                        raise TransactionPreparationError(
+                            f"Destino create já existe: {item.path}"
+                        )
+                    if item.action == "replace" and entry is None:
+                        raise TransactionPreparationError(
+                            f"Destino replace ausente: {item.path}"
+                        )
+                    if entry is not None:
+                        target = open_verified_child_component(
+                            parent_handle,
+                            entry,
+                            desired_access=(
+                                _FILE_READ_DATA | _FILE_READ_CONTROL | _FILE_DELETE
+                            ),
+                        )
+                        try:
+                            target_meta = query_handle_metadata(target)
+                            if (
+                                target_meta["number_of_links"] != 1
+                                or target_meta["volume_serial_number"] != active_meta["volume_serial_number"]
+                                or target_meta["attributes"] & 0x00000001
+                            ):
+                                raise TransactionPreparationError(
+                                    f"Destino possui hardlink, volume divergente ou atributo somente leitura: {item.path}"
+                                )
+                        finally:
+                            close_handle(target)
             finally:
+                if staged_handle is not None:
+                    _close_handles(staged_handle, staged_parents)
                 for handle in reversed(parent_handles):
                     close_handle(handle)
 
