@@ -26,7 +26,25 @@ from sermax_update_inventory import (
 
 FILE_LIST_DIRECTORY = 0x0001
 FILE_READ_DATA = 0x0001
+FILE_WRITE_DATA = 0x0002
+FILE_READ_ATTRIBUTES = 0x00000080
+FILE_WRITE_ATTRIBUTES = 0x00000100
+WRITE_DAC = 0x00040000
+WRITE_OWNER = 0x00080000
 READ_CONTROL = 0x00020000
+SYNCHRONIZE = 0x00100000
+FILE_ATTRIBUTE_NORMAL = 0x00000080
+FILE_ATTRIBUTE_READONLY = 0x00000001
+FILE_ATTRIBUTE_HIDDEN = 0x00000002
+FILE_ATTRIBUTE_SYSTEM = 0x00000004
+FILE_ATTRIBUTE_ARCHIVE = 0x00000020
+FILE_ATTRIBUTE_TEMPORARY = 0x00000100
+FILE_ATTRIBUTE_NOT_CONTENT_INDEXED = 0x00002000
+RESTORABLE_FILE_ATTRIBUTES = (
+    FILE_ATTRIBUTE_READONLY | FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM
+    | FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_TEMPORARY
+    | FILE_ATTRIBUTE_NOT_CONTENT_INDEXED
+)
 _BACKUP_CATALOG = "__sermax_backup_catalog__.json"
 MAX_BACKUP_CATALOG_BYTES = 64 * 1024 * 1024
 DEFAULT_CHUNK_SIZE = 1024 * 1024
@@ -138,7 +156,10 @@ def _validate_regular_source(metadata, expected_volume: int) -> None:
         raise BackupError("FileId de origem inválido.")
 
 
-def _open_source_file(root_handle, relative_path: str, expected_volume: int):
+def _open_source_file(
+    root_handle, relative_path: str, expected_volume: int, *,
+    desired_access: int = FILE_READ_DATA | READ_CONTROL,
+):
     from sermax_windows_directory_handle import open_verified_child_component
 
     parts = relative_path.split("/")
@@ -193,7 +214,7 @@ def _open_source_file(root_handle, relative_path: str, expected_volume: int):
         file_handle = open_verified_child_component(
             parent_handle,
             entry,
-            desired_access=FILE_READ_DATA | READ_CONTROL,
+            desired_access=desired_access,
         )
         metadata = query_handle_metadata(file_handle)
         _validate_regular_source(metadata, expected_volume)
@@ -884,5 +905,433 @@ def verify_backup_by_handle(
         if close_errors:
             raise BackupError(
                 "Falha ao fechar handles durante verificação: "
+                + "; ".join(map(str, close_errors))
+            )
+
+
+class _FILE_BASIC_INFO(ctypes.Structure):
+    _fields_ = [
+        ("CreationTime", ctypes.c_longlong),
+        ("LastAccessTime", ctypes.c_longlong),
+        ("LastWriteTime", ctypes.c_longlong),
+        ("ChangeTime", ctypes.c_longlong),
+        ("FileAttributes", wintypes.DWORD),
+    ]
+
+
+def _set_file_attributes_by_handle(handle, attributes: int) -> None:
+    if type(attributes) is not int or attributes < 0 or attributes > 0xFFFFFFFF:
+        raise BackupError("Atributos originais inválidos.")
+    unsupported = attributes & ~RESTORABLE_FILE_ATTRIBUTES
+    if unsupported and attributes != FILE_ATTRIBUTE_NORMAL:
+        raise BackupError(
+            f"Atributos de arquivo não suportados para restauração: 0x{unsupported:08X}"
+        )
+    if attributes == 0:
+        attributes = FILE_ATTRIBUTE_NORMAL
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    set_info = kernel32.SetFileInformationByHandle
+    set_info.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD
+    ]
+    set_info.restype = wintypes.BOOL
+    info = _FILE_BASIC_INFO()
+    info.FileAttributes = attributes
+    if not set_info(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+        raise BackupError(
+            "SetFileInformationByHandle(FileBasicInfo) falhou, "
+            f"WinError={ctypes.get_last_error()}."
+        )
+
+
+def _restore_security_descriptor_by_handle(handle, descriptor_bytes: bytes) -> None:
+    if not isinstance(descriptor_bytes, bytes) or not 20 <= len(descriptor_bytes) <= 1024 * 1024:
+        raise BackupError("Descritor de segurança para restauração inválido.")
+    try:
+        import win32security
+        descriptor = win32security.SECURITY_DESCRIPTOR(descriptor_bytes)
+        if not descriptor.IsValid() or not descriptor.IsSelfRelative():
+            raise BackupError("Descritor original não é válido/self-relative.")
+        owner = descriptor.GetSecurityDescriptorOwner()
+        group = descriptor.GetSecurityDescriptorGroup()
+        control, _revision = descriptor.GetSecurityDescriptorControl()
+        dacl_present = bool(control & 0x0004)
+        if owner is None or group is None or not dacl_present:
+            raise BackupError(
+                "Descritor original sem owner, group ou DACL presente; restauração recusada."
+            )
+        dacl = descriptor.GetSecurityDescriptorDacl()
+        flags = (
+            win32security.OWNER_SECURITY_INFORMATION
+            | win32security.GROUP_SECURITY_INFORMATION
+            | win32security.DACL_SECURITY_INFORMATION
+        )
+        if control & 0x1000:
+            flags |= 0x80000000
+        else:
+            flags |= 0x20000000
+        native = handle.value if isinstance(handle, ctypes.c_void_p) else int(handle)
+        win32security.SetSecurityInfo(
+            native, win32security.SE_FILE_OBJECT, flags,
+            owner, group, dacl, None,
+        )
+    except BackupError:
+        raise
+    except Exception as exc:
+        raise BackupError(f"Falha ao restaurar ACL original por handle: {exc}") from exc
+
+
+def _security_descriptor_matches(handle, expected_bytes: bytes) -> bool:
+    try:
+        import win32security
+        expected = win32security.SECURITY_DESCRIPTOR(expected_bytes)
+        native = handle.value if isinstance(handle, ctypes.c_void_p) else int(handle)
+        actual = win32security.GetSecurityInfo(
+            native,
+            win32security.SE_FILE_OBJECT,
+            win32security.OWNER_SECURITY_INFORMATION
+            | win32security.GROUP_SECURITY_INFORMATION
+            | win32security.DACL_SECURITY_INFORMATION,
+        )
+
+        def sid_text(sid):
+            return None if sid is None else win32security.ConvertSidToStringSid(sid)
+
+        expected_control, _ = expected.GetSecurityDescriptorControl()
+        actual_control, _ = actual.GetSecurityDescriptorControl()
+        control_mask = 0x0004 | 0x1000
+        if (expected_control & control_mask) != (actual_control & control_mask):
+            return False
+        if sid_text(expected.GetSecurityDescriptorOwner()) != sid_text(actual.GetSecurityDescriptorOwner()):
+            return False
+        if sid_text(expected.GetSecurityDescriptorGroup()) != sid_text(actual.GetSecurityDescriptorGroup()):
+            return False
+
+        expected_dacl = expected.GetSecurityDescriptorDacl()
+        actual_dacl = actual.GetSecurityDescriptorDacl()
+        if (expected_dacl is None) != (actual_dacl is None):
+            return False
+        if expected_dacl is None:
+            return True
+
+        def canonical_ace(ace):
+            def canonical(value):
+                if isinstance(value, (tuple, list)):
+                    return tuple(canonical(item) for item in value)
+                if isinstance(value, (bytes, str, int, bool)) or value is None:
+                    return value
+                try:
+                    return ("sid", win32security.ConvertSidToStringSid(value))
+                except Exception:
+                    return repr(value)
+            return canonical(ace)
+
+        if expected_dacl.GetAceCount() != actual_dacl.GetAceCount():
+            return False
+        return all(
+            canonical_ace(expected_dacl.GetAce(index))
+            == canonical_ace(actual_dacl.GetAce(index))
+            for index in range(expected_dacl.GetAceCount())
+        )
+    except Exception as exc:
+        raise BackupError(f"Falha ao conferir ACL restaurada: {exc}") from exc
+
+
+def _restore_file_content_by_handle(
+    destination_handle,
+    backup_reader: NativeHandleReader,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+    original_attributes: int,
+    original_security_descriptor: bytes,
+) -> dict[str, object]:
+    from sermax_windows_file_writer import _write_apis, _write_all, _readback
+
+    _set_file_attributes_by_handle(destination_handle, FILE_ATTRIBUTE_NORMAL)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    seek = kernel32.SetFilePointerEx
+    seek.argtypes = [
+        wintypes.HANDLE, ctypes.c_longlong,
+        ctypes.POINTER(ctypes.c_longlong), wintypes.DWORD,
+    ]
+    seek.restype = wintypes.BOOL
+    set_eof = kernel32.SetEndOfFile
+    set_eof.argtypes = [wintypes.HANDLE]
+    set_eof.restype = wintypes.BOOL
+    native = destination_handle.value if isinstance(destination_handle, ctypes.c_void_p) else destination_handle
+    position = ctypes.c_longlong()
+    if not seek(native, ctypes.c_longlong(0), ctypes.byref(position), 0) or position.value != 0:
+        raise BackupError(f"Não foi possível posicionar o destino, WinError={ctypes.get_last_error()}.")
+    if not set_eof(native):
+        raise BackupError(f"Não foi possível truncar o destino, WinError={ctypes.get_last_error()}.")
+
+    write_file, read_file, flush, seek = _write_apis()
+    digest = hashlib.sha256()
+    measured = 0
+    backup_reader.seek_start()
+    while True:
+        chunk = backup_reader.read(DEFAULT_CHUNK_SIZE)
+        if not chunk:
+            break
+        measured += len(chunk)
+        if measured > expected_size:
+            raise BackupError("Backup excedeu o tamanho autenticado durante restauração.")
+        digest.update(chunk)
+        _write_all(native, chunk, write_file)
+    if measured != expected_size or digest.hexdigest().lower() != expected_sha256.lower():
+        raise BackupError("Conteúdo do backup divergiu durante restauração.")
+    if not flush(native):
+        raise BackupError(f"FlushFileBuffers falhou, WinError={ctypes.get_last_error()}.")
+
+    readback_hash, readback_size = _readback(
+        native, expected_size, read_file, seek
+    )
+    if readback_size != expected_size or readback_hash.lower() != expected_sha256.lower():
+        raise BackupError("Readback do arquivo restaurado divergiu.")
+
+    _restore_security_descriptor_by_handle(
+        destination_handle, original_security_descriptor
+    )
+    if not _security_descriptor_matches(destination_handle, original_security_descriptor):
+        raise BackupError("ACL/owner/group restaurados divergem do descritor original.")
+
+    _set_file_attributes_by_handle(destination_handle, original_attributes)
+    metadata = query_handle_metadata(destination_handle)
+    if metadata["end_of_file"] != expected_size or metadata["attributes"] != original_attributes:
+        if not (
+            metadata["end_of_file"] == expected_size
+            and original_attributes == FILE_ATTRIBUTE_NORMAL
+            and metadata["attributes"] == 0
+        ):
+            raise BackupError("Tamanho ou atributos finais divergem do catálogo.")
+    return {
+        "sha256": readback_hash,
+        "size": readback_size,
+        "attributes": metadata["attributes"],
+        "security_descriptor_verified": True,
+    }
+
+
+def restore_backup_files_by_handle(
+    active_root_handle,
+    backups_parent_handle,
+    backup_component: str,
+    journal_session,
+) -> dict[str, object]:
+    """Restaura arquivos replace e registra cada sucesso no journal.
+
+    Exige evento ROLLBACK_STARTED já persistido. O componente e hash do
+    catálogo são obtidos de BACKUP_COMPLETE na própria cadeia validada.
+    A rotina verifica o backup antes de qualquer escrita. A restauração é
+    feita por handle no arquivo existente; se o destino estiver ausente, ele
+    é recriado exclusivamente e recebe o descritor/atributos originais.
+
+    A escrita in-place não é atômica. Uma falha durante a cópia deixa o
+    journal sem FILE_RESTORED para aquele arquivo; o chamador deve registrar
+    RECOVERY_REQUIRED e executar nova verificação antes de prosseguir.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise BackupError("Restauração verificável exige Windows x64.")
+    if not isinstance(backup_component, str) or not _BACKUP_NAME.fullmatch(backup_component):
+        raise BackupError("Componente de backup inválido.")
+    if journal_session is None or not hasattr(journal_session, "read_events") or not hasattr(journal_session, "append_event"):
+        raise BackupError("Sessão de journal válida é obrigatória.")
+
+    from sermax_windows_directory_handle import open_verified_child_component
+    from sermax_windows_file_writer import write_verified_file_component
+
+    events = journal_session.read_events()
+    if not events or events[-1]["event"] not in {"ROLLBACK_STARTED", "FILE_RESTORED"}:
+        raise BackupError("Journal precisa estar em ROLLBACK_STARTED/FILE_RESTORED.")
+    backup_events = [
+        item for item in events
+        if item["event"] == "BACKUP_COMPLETE"
+    ]
+    if not backup_events:
+        raise BackupError("Journal não contém BACKUP_COMPLETE.")
+    backup_payload = backup_events[-1]["payload"]
+    expected_catalog_sha256 = backup_payload.get("catalog_sha256")
+    if backup_payload.get("backup_component") != backup_component or not expected_catalog_sha256:
+        raise BackupError("Componente/hash do backup diverge do journal.")
+
+    verification = verify_backup_by_handle(
+        backups_parent_handle,
+        backup_component,
+        expected_catalog_sha256=expected_catalog_sha256,
+    )
+    if verification.get("valid") is not True:
+        raise BackupError("Verificação independente do backup não foi confirmada.")
+
+    backup_entries = [
+        entry for entry in _real_entries(backups_parent_handle)
+        if entry.name == backup_component
+    ]
+    if len(backup_entries) != 1 or not backup_entries[0].is_directory:
+        raise BackupError("Raiz do backup desapareceu após verificação.")
+    backup_root = open_verified_child_component(
+        backups_parent_handle,
+        backup_entries[0],
+        desired_access=FILE_LIST_DIRECTORY | READ_CONTROL,
+    )
+    backup_root_metadata = query_handle_metadata(backup_root)
+    active_root_metadata = query_handle_metadata(active_root_handle)
+    if (
+        not active_root_metadata["is_directory"]
+        or active_root_metadata["is_reparse_point"]
+        or active_root_metadata["delete_pending"]
+        or active_root_metadata["volume_serial_number"] != backup_root_metadata["volume_serial_number"]
+    ):
+        close_handle(backup_root)
+        raise BackupError("Raiz ativa e backup não pertencem ao mesmo volume regular.")
+
+    catalog_handle = None
+    catalog_parents = []
+    opened_backup_files = []
+    opened_active_files = []
+    created_count = 0
+    restored_count = 0
+    already_restored_count = 0
+    try:
+        catalog_handle, catalog_parents, catalog_meta = _open_source_file(
+            backup_root, _BACKUP_CATALOG, backup_root_metadata["volume_serial_number"]
+        )
+        if catalog_handle is None or catalog_meta is None:
+            raise BackupError("Catálogo desapareceu após verificação.")
+        raw_catalog = _read_bounded_handle(
+            NativeHandleReader(catalog_handle), catalog_meta["end_of_file"]
+        )
+        document = json.loads(
+            raw_catalog.decode("utf-8", errors="strict"),
+            object_pairs_hook=_reject_duplicate_json_keys,
+            parse_constant=_reject_json_constant,
+        )
+        records = _validate_backup_catalog(
+            document, backup_component, backup_root_metadata["volume_serial_number"]
+        )
+        restored_paths = {
+            item["payload"]["path"]: item["payload"]["sha256"]
+            for item in events if item["event"] == "FILE_RESTORED"
+        }
+        for record in records:
+            path = record["path"]
+            expected_hash = record["sha256"].lower()
+            if path in restored_paths:
+                if restored_paths[path].lower() != expected_hash:
+                    raise BackupError(f"Journal registra hash divergente para {path}.")
+            descriptor_bytes = base64.b64decode(
+                record["source_security_descriptor_b64"], validate=True
+            )
+            source_handle, source_parents, source_meta = _open_source_file(
+                backup_root, path, backup_root_metadata["volume_serial_number"]
+            )
+            if source_handle is None or source_meta is None:
+                raise BackupError(f"Arquivo do backup ausente: {path}")
+            opened_backup_files.append((source_handle, source_parents))
+            source_reader = NativeHandleReader(source_handle)
+            if (
+                source_meta["end_of_file"] != record["backup_size"]
+                or _hash_and_rewind(source_reader, record["backup_size"]).lower() != expected_hash
+            ):
+                raise BackupError(f"Arquivo de backup não confere: {path}")
+
+            target_access = (
+                FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES
+                | FILE_WRITE_ATTRIBUTES | READ_CONTROL | WRITE_DAC
+                | WRITE_OWNER | SYNCHRONIZE
+            )
+            target_handle, target_parents, target_meta = _open_source_file(
+                active_root_handle, path, active_root_metadata["volume_serial_number"],
+                desired_access=target_access,
+            )
+            if target_handle is None:
+                parent_handle = target_parents[-1] if target_parents else active_root_handle
+                leaf_name = path.rsplit("/", 1)[-1]
+                write_verified_file_component(
+                    parent_handle, leaf_name, source_reader,
+                    expected_size=record["size"], expected_sha256=expected_hash,
+                )
+                created_count += 1
+                target_handle, target_parents, target_meta = _open_source_file(
+                    active_root_handle, path, active_root_metadata["volume_serial_number"],
+                    desired_access=target_access,
+                )
+            if target_handle is None or target_meta is None:
+                raise BackupError(f"Não foi possível abrir destino para restauração: {path}")
+            opened_active_files.append((target_handle, target_parents))
+            _validate_regular_source(target_meta, active_root_metadata["volume_serial_number"])
+            if target_meta["number_of_links"] != 1:
+                raise BackupError(f"Destino possui hardlinks: {path}")
+
+            current_hash = _hash_and_rewind(
+                NativeHandleReader(target_handle), target_meta["end_of_file"]
+            )
+            if path in restored_paths:
+                if (
+                    current_hash.lower() != expected_hash
+                    or target_meta["attributes"] != record["source_attributes"]
+                    or not _security_descriptor_matches(target_handle, descriptor_bytes)
+                ):
+                    raise BackupError(
+                        f"Arquivo registrado como restaurado diverge no disco: {path}"
+                    )
+                already_restored_count += 1
+                continue
+
+            result = _restore_file_content_by_handle(
+                target_handle,
+                source_reader,
+                expected_size=record["size"],
+                expected_sha256=expected_hash,
+                original_attributes=record["source_attributes"],
+                original_security_descriptor=descriptor_bytes,
+            )
+            journal_session.append_event(
+                "FILE_RESTORED",
+                {"path": path, "sha256": result["sha256"].lower()},
+            )
+            restored_count += 1
+
+        return {
+            "valid": True,
+            "backup_component": backup_component,
+            "file_count": len(records),
+            "restored_count": restored_count,
+            "already_restored_count": already_restored_count,
+            "recreated_missing_count": created_count,
+            "journal_last_event": journal_session.read_events()[-1]["event"],
+            "read_only_backup": True,
+        }
+    except BackupError:
+        raise
+    except Exception as exc:
+        raise BackupError(
+            "Restauração interrompida. Preserve backup e journal; "
+            "registre RECOVERY_REQUIRED antes de nova tentativa: " + str(exc)
+        ) from exc
+    finally:
+        close_errors = []
+        if catalog_handle is not None:
+            try:
+                _close_source(catalog_handle, catalog_parents)
+            except Exception as exc:
+                close_errors.append(exc)
+        for file_handle, parents in reversed(opened_backup_files):
+            try:
+                _close_source(file_handle, parents)
+            except Exception as exc:
+                close_errors.append(exc)
+        for file_handle, parents in reversed(opened_active_files):
+            try:
+                _close_source(file_handle, parents)
+            except Exception as exc:
+                close_errors.append(exc)
+        try:
+            close_handle(backup_root)
+        except Exception as exc:
+            close_errors.append(exc)
+        if close_errors:
+            raise BackupError(
+                "Falha ao fechar handles da restauração: "
                 + "; ".join(map(str, close_errors))
             )
