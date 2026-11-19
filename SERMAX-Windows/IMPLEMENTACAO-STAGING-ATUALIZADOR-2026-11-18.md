@@ -263,3 +263,24 @@ O teste nativo Windows simula alteração de um arquivo, executa rollback, confe
 - Atributos especiais fora da allowlist são recusados antes de iniciar a restauração.
 - Timestamps originais ainda não estão no catálogo e não são restaurados.
 - A função não é chamada por um instalador ativo. A integração completa do fluxo de instalação/rollback permanece pendente.
+
+
+## Preparação transacional integrada, 2026-11-19
+
+Novo módulo: `sermax_update_transaction.py`.
+
+A função `prepare_update_transaction_by_handle()` coordena as etapas já existentes:
+1. Valida o ZIP completo contra o manifesto recebido.
+2. Cria uma transação no journal e grava `PREPARED`.
+3. Preserva os destinos `replace` e grava `BACKUP_COMPLETE`, incluindo o hash do catálogo.
+4. Extrai e verifica a release no staging privado.
+5. Grava `STAGING_COMPLETE`, com componente e hash do pacote.
+6. Devolve os handles e objetos de backup, staging e journal para a próxima fase.
+
+Em falha, tenta registrar `RECOVERY_REQUIRED`, fecha os handles e preserva as árvores parciais. Não executa rollback automático.
+
+A classe `PreparedUpdateTransaction` mantém os recursos abertos. Seu método `begin_install()` grava `INSTALL_STARTED`, mas não executa instalação.
+
+O teste nativo Windows confirma a sequência PREPARED, BACKUP_COMPLETE, STAGING_COMPLETE, depois INSTALL_STARTED. Também confirma que o arquivo ativo permanece inalterado e que arquivos da nova release não aparecem na instalação.
+
+**Limite:** a preparação está integrada. A substituição real dos arquivos, a confirmação COMMITTED e a recuperação automática após interrupção ainda não foram implementadas.
