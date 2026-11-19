@@ -643,6 +643,14 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
         if hashlib.sha256(descriptor).hexdigest() != record["source_security_descriptor_sha256"].lower():
             raise BackupError("Hash do descritor de segurança original divergente.")
         normalized_records.append(record)
+
+    file_paths = {record["path"].casefold() for record in normalized_records}
+    for record in normalized_records:
+        parts = record["path"].split("/")
+        for index in range(1, len(parts)):
+            parent_path = "/".join(parts[:index]).casefold()
+            if parent_path in file_paths:
+                raise BackupError("Catálogo contém colisão entre arquivo e diretório.")
     return tuple(normalized_records)
 
 
