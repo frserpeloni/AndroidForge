@@ -365,3 +365,35 @@ A suíte tests/test_sermax_update_transaction.py agora executa três cenários n
 - Chave pública oficial e pacote assinado de produção.
 
 Os testes ocorreram somente em diretórios temporários do runner Windows. Nenhuma instalação foi executada em C:\\SERMAX. Não houve merge ou publicação.
+
+
+
+## Intenção prévia e recuperação por reabertura, 2026-11-19
+
+Foi adicionado o evento append-only FILE_INSTALL_INTENT. Antes de cada renomeação, o instalador registra caminho, SHA-256 e FileId do arquivo no staging. FILE_REPLACED continua sendo gravado depois da renomeação e da confirmação do destino.
+
+A intenção persistida fecha a janela em que a renomeação já ocorreu, mas FILE_REPLACED ainda não foi gravado. O rollback passou a reconhecer essa intenção:
+- Para create, remove o destino somente se FileId, hash, volume e metadados corresponderem à intenção.
+- Para replace, aceita somente o FileId original registrado no catálogo de backup ou o FileId da intenção. Outros objetos interrompem a recuperação.
+- Se uma intenção create não tiver FILE_REPLACED e o destino estiver ausente, não inventa um evento de remoção.
+
+Foi adicionada recover_interrupted_update_by_handle(). A função recebe o identificador da transação, um ValidatedManifest reautenticado pelo chamador e handles das áreas privadas já abertas. Ela:
+1. Reabre e valida o journal pelo transaction_id.
+2. Confere release_version e manifest_sha256 contra PREPARED.
+3. Confere BACKUP_COMPLETE e STAGING_COMPLETE.
+4. Verifica o catálogo e os arquivos do backup pelo hash ancorado no journal.
+5. Reabre o staging pelo componente registrado, valida ACL/Authz, namespace, hashes e FileIds dos arquivos ainda presentes.
+6. Classifica cada destino ativo pelo FileId original do backup ou pelo FileId da intenção persistida.
+7. Reconstrói os objetos necessários e chama o rollback existente.
+
+A função é limitada à recuperação por rollback. Não retoma a instalação, não aceita transações COMMITTED ou ROLLED_BACK e não escolhe automaticamente transações. O chamador ainda precisa consultar scan_journal_transactions_by_handle(), resolver o manifesto autenticado correspondente e decidir quais transações elegíveis recuperar.
+
+### Validação CI
+
+- Run 44640770702, commit 576ee40f960042ef39957623414b7c0ea28c35c9.
+- Windows Server 2025, Python 3.14.
+- Compilação e todas as etapas do workflow concluídas com sucesso.
+- O teste nativo fecha os objetos e handles da transação original, reabre journal, staging e backup por handles independentes e recupera o rollback após uma interrupção entre renomeação e FILE_REPLACED.
+- Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44640770702.
+
+A validação simula a perda dos objetos e handles anteriores no mesmo runner. Não executa um processo filho separado nem comprova recuperação após desligamento físico. Também não cobre interrupção durante a restauração in-place. Esse protocolo segue pendente e a recuperação não deve ser tratada como automática ou pronta para produção.
