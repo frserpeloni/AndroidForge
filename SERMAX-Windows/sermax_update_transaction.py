@@ -400,6 +400,10 @@ def install_prepared_update_by_handle(
         item["payload"]["path"]: item["payload"]
         for item in events if item["event"] == "FILE_REPLACED"
     }
+    install_intents = {
+        item["payload"]["path"]: item["payload"]
+        for item in events if item["event"] == "FILE_INSTALL_INTENT"
+    }
     installed_count = 0
     already_installed_count = 0
     try:
@@ -541,6 +545,24 @@ def install_prepared_update_by_handle(
                             )
                     finally:
                         close_handle(current_handle)
+                    intent = install_intents.get(item.path)
+                    if intent is None:
+                        intent = {
+                            "path": item.path,
+                            "sha256": expected_hash,
+                            "file_id_128": expected_file_id,
+                        }
+                        prepared.journal.append_event(
+                            "FILE_INSTALL_INTENT", intent
+                        )
+                        install_intents[item.path] = intent
+                    elif (
+                        intent["sha256"] != expected_hash
+                        or intent["file_id_128"].lower() != expected_file_id
+                    ):
+                        raise TransactionPreparationError(
+                            f"Intenção de instalação diverge do staging: {item.path}"
+                        )
                     if item.path not in replaced_events:
                         prepared.journal.append_event(
                             "FILE_REPLACED",
@@ -566,6 +588,23 @@ def install_prepared_update_by_handle(
                 if staged_file_meta["file_id_128"].lower() != expected_file_id:
                     raise TransactionPreparationError(
                         f"FileId do staging mudou: {item.path}"
+                    )
+
+                intent = install_intents.get(item.path)
+                if intent is None:
+                    intent = {
+                        "path": item.path,
+                        "sha256": expected_hash,
+                        "file_id_128": expected_file_id,
+                    }
+                    prepared.journal.append_event("FILE_INSTALL_INTENT", intent)
+                    install_intents[item.path] = intent
+                elif (
+                    intent["sha256"] != expected_hash
+                    or intent["file_id_128"].lower() != expected_file_id
+                ):
+                    raise TransactionPreparationError(
+                        f"Intenção de instalação diverge do staging: {item.path}"
                     )
 
                 if item.action == "replace":
