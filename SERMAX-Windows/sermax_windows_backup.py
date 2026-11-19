@@ -529,3 +529,344 @@ def backup_existing_files_by_handle(
         raise BackupError(
             f"Falha no backup; área parcial preservada: {component}"
         ) from exc
+
+
+def _reject_duplicate_json_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise BackupError(f"Chave JSON duplicada no catálogo: {key!r}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value):
+    raise BackupError(f"Constante JSON não permitida: {value}")
+
+
+def _read_bounded_handle(reader: NativeHandleReader, expected_size: int) -> bytes:
+    if isinstance(expected_size, bool) or not isinstance(expected_size, int):
+        raise BackupError("Tamanho do catálogo inválido.")
+    if expected_size < 1 or expected_size > MAX_BACKUP_CATALOG_BYTES:
+        raise BackupError("Tamanho do catálogo fora dos limites.")
+    reader.seek_start()
+    chunks = []
+    measured = 0
+    while True:
+        chunk = reader.read(min(DEFAULT_CHUNK_SIZE, MAX_CHUNK_SIZE))
+        if not chunk:
+            break
+        measured += len(chunk)
+        if measured > expected_size or measured > MAX_BACKUP_CATALOG_BYTES:
+            raise BackupError("Catálogo excedeu o tamanho autenticado.")
+        chunks.append(chunk)
+    if measured != expected_size:
+        raise BackupError("Leitura do catálogo terminou com tamanho divergente.")
+    return b"".join(chunks)
+
+
+def _validate_backup_catalog(document: object, component: str, root_volume: int):
+    if not isinstance(document, dict) or set(document) != {
+        "schema_version", "backup_component", "files"
+    }:
+        raise BackupError("Estrutura do catálogo incompatível.")
+    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+        raise BackupError("Versão do catálogo não suportada.")
+    if document["backup_component"] != component:
+        raise BackupError("O catálogo pertence a outro componente de backup.")
+    records = document["files"]
+    if not isinstance(records, list) or len(records) > 100000:
+        raise BackupError("Lista de arquivos do catálogo inválida ou excessiva.")
+
+    required = {
+        "path", "source_file_id_128", "source_volume_serial_number",
+        "source_attributes", "source_security_descriptor_b64",
+        "source_security_descriptor_sha256", "size", "sha256",
+        "backup_file_id_128", "backup_volume_serial_number",
+        "backup_number_of_links", "backup_size", "backup_sha256",
+    }
+    seen = set()
+    normalized_records = []
+    for record in records:
+        if not isinstance(record, dict) or set(record) != required:
+            raise BackupError("Registro do catálogo contém campos ausentes ou extras.")
+        path = record["path"]
+        try:
+            normalized = _normalize_relative(path)
+        except Exception as exc:
+            raise BackupError(f"Caminho inválido no catálogo: {path!r}") from exc
+        if not isinstance(path, str) or normalized != path or path.casefold() == _BACKUP_CATALOG.casefold():
+            raise BackupError("Caminho não canônico ou reservado no catálogo.")
+        folded = path.casefold()
+        if folded in seen:
+            raise BackupError("Caminho duplicado no catálogo.")
+        seen.add(folded)
+
+        for key in ("source_file_id_128", "backup_file_id_128"):
+            value = record[key]
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", value):
+                raise BackupError(f"{key} inválido no catálogo.")
+        for key in (
+            "source_volume_serial_number", "source_attributes", "size",
+            "backup_volume_serial_number", "backup_number_of_links", "backup_size",
+        ):
+            value = record[key]
+            if type(value) is not int or value < 0:
+                raise BackupError(f"{key} inválido no catálogo.")
+        if record["backup_volume_serial_number"] != root_volume:
+            raise BackupError("Arquivo de backup registrado em volume divergente.")
+        if record["backup_number_of_links"] != 1:
+            raise BackupError("Catálogo registra backup com hardlinks.")
+        if record["backup_size"] != record["size"]:
+            raise BackupError("Tamanho do backup diverge do arquivo de origem.")
+        for key in ("sha256", "backup_sha256", "source_security_descriptor_sha256"):
+            value = record[key]
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", value):
+                raise BackupError(f"{key} inválido no catálogo.")
+        encoded = record["source_security_descriptor_b64"]
+        if not isinstance(encoded, str):
+            raise BackupError("Descritor de segurança original ausente.")
+        try:
+            descriptor = base64.b64decode(encoded, validate=True)
+        except Exception as exc:
+            raise BackupError("Descritor de segurança original não é Base64 válido.") from exc
+        if not 20 <= len(descriptor) <= 1024 * 1024:
+            raise BackupError("Descritor de segurança original fora dos limites.")
+        if hashlib.sha256(descriptor).hexdigest() != record["source_security_descriptor_sha256"].lower():
+            raise BackupError("Hash do descritor de segurança original divergente.")
+        normalized_records.append(record)
+    return tuple(normalized_records)
+
+
+def verify_backup_by_handle(
+    backups_parent_handle,
+    component: str,
+    *,
+    expected_catalog_sha256: str,
+) -> dict[str, object]:
+    """Reabre e verifica integralmente um backup sem confiar no snapshot de criação.
+
+    expected_catalog_sha256 deve vir de um evento previamente validado do
+    journal. A função não consulta caminhos absolutos, não altera arquivos e
+    não restaura conteúdo. Confere catálogo canônico, namespace exato, FileIds,
+    volumes, links, tamanhos, hashes e ACL/Authz de diretórios e arquivos.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise BackupError("Verificação independente exige Windows x64.")
+    if not isinstance(component, str) or not _BACKUP_NAME.fullmatch(component):
+        raise BackupError("Nome do componente de backup inválido.")
+    if (
+        not isinstance(expected_catalog_sha256, str)
+        or not re.fullmatch(r"[0-9a-fA-F]{64}", expected_catalog_sha256)
+    ):
+        raise BackupError("Hash do catálogo ancorado no journal é obrigatório.")
+
+    from sermax_windows_directory_handle import (
+        enumerate_stable_directory_handle,
+        open_verified_child_component,
+    )
+    from sermax_windows_private_area import validate_private_directory_handle
+    from sermax_windows_file_writer import _validate_file_acl
+    from sermax_windows_handle_io import close_handle
+    from sermax_windows_private_area import _prepare_private_security_descriptor
+
+    parent_meta = query_handle_metadata(backups_parent_handle)
+    if (
+        not parent_meta["is_directory"] or parent_meta["is_reparse_point"]
+        or parent_meta["delete_pending"]
+    ):
+        raise BackupError("Handle pai de backups não é diretório regular.")
+    parent_acl = validate_private_directory_handle(
+        backups_parent_handle, require_empty=False
+    )
+    if parent_acl.get("valid") is not True or parent_acl.get("mutated") is not False:
+        raise BackupError("ACL/Authz do diretório pai de backups inválida.")
+
+    matches = [
+        entry for entry in _real_entries(backups_parent_handle)
+        if entry.name.casefold() == component.casefold()
+    ]
+    if len(matches) != 1 or matches[0].name != component:
+        raise BackupError("Componente de backup ausente, ambíguo ou com caixa divergente.")
+    root_entry = matches[0]
+    if not root_entry.is_directory or root_entry.is_reparse_point:
+        raise BackupError("Raiz do backup não é diretório regular.")
+
+    root_handle = None
+    token = None
+    close_token = None
+    opened_directories = []
+    opened_files = []
+    try:
+        root_handle = open_verified_child_component(
+            backups_parent_handle, root_entry,
+            desired_access=0x0001 | 0x00020000,
+        )
+        root_meta = query_handle_metadata(root_handle)
+        if (
+            not root_meta["is_directory"] or root_meta["is_reparse_point"]
+            or root_meta["delete_pending"]
+            or root_meta["volume_serial_number"] != parent_meta["volume_serial_number"]
+        ):
+            raise BackupError("Identidade ou volume da raiz do backup inválido.")
+        root_acl = validate_private_directory_handle(root_handle, require_empty=False)
+        if root_acl.get("valid") is not True or root_acl.get("mutated") is not False:
+            raise BackupError("ACL/Authz da raiz do backup inválida.")
+
+        token, close_token, _descriptor_buffer, owner_sid = (
+            _prepare_private_security_descriptor()
+        )
+        catalog_handle, catalog_parents, catalog_meta = _open_source_file(
+            root_handle, _BACKUP_CATALOG, root_meta["volume_serial_number"]
+        )
+        if catalog_handle is None or catalog_meta is None:
+            raise BackupError("Catálogo do backup ausente.")
+        opened_files.append((catalog_handle, catalog_parents))
+        _validate_file_acl(catalog_handle, token, owner_sid)
+        catalog_bytes = _read_bounded_handle(
+            NativeHandleReader(catalog_handle), catalog_meta["end_of_file"]
+        )
+        catalog_hash = hashlib.sha256(catalog_bytes).hexdigest()
+        if catalog_hash.lower() != expected_catalog_sha256.lower():
+            raise BackupError("Hash do catálogo diverge do hash ancorado no journal.")
+        try:
+            document = json.loads(
+                catalog_bytes.decode("utf-8", errors="strict"),
+                object_pairs_hook=_reject_duplicate_json_keys,
+                parse_constant=_reject_json_constant,
+            )
+        except BackupError:
+            raise
+        except Exception as exc:
+            raise BackupError(f"Catálogo JSON inválido: {exc}") from exc
+        canonical = json.dumps(
+            document, ensure_ascii=False, sort_keys=True,
+            separators=(",", ":"), allow_nan=False,
+        ).encode("utf-8")
+        if canonical != catalog_bytes:
+            raise BackupError("Catálogo não está serializado em JSON canônico.")
+
+        records = _validate_backup_catalog(
+            document, component, root_meta["volume_serial_number"]
+        )
+        expected_files = {record["path"]: record for record in records}
+        expected_dirs = {""}
+        expected_children: dict[str, dict[str, str]] = {"": {
+            _BACKUP_CATALOG: "file"
+        }}
+        for record in records:
+            path = record["path"]
+            parts = path.split("/")
+            parent = ""
+            for part in parts[:-1]:
+                expected_children.setdefault(parent, {})[part] = "directory"
+                parent = f"{parent}/{part}" if parent else part
+                expected_dirs.add(parent)
+                expected_children.setdefault(parent, {})
+            expected_children.setdefault(parent, {})[parts[-1]] = "file"
+
+        def walk(directory_handle, relative_dir: str):
+            expected = expected_children.get(relative_dir, {})
+            entries = tuple(
+                entry for entry in enumerate_stable_directory_handle(directory_handle)
+                if entry.name not in {".", ".."}
+            )
+            observed = {entry.name: entry for entry in entries}
+            if set(observed) != set(expected):
+                raise BackupError(
+                    f"Árvore do backup contém arquivos ausentes ou extras em {relative_dir!r}."
+                )
+            for name, kind in expected.items():
+                entry = observed[name]
+                if entry.is_reparse_point:
+                    raise BackupError(f"Reparse point no backup: {name}")
+                relative_path = f"{relative_dir}/{name}" if relative_dir else name
+                if kind == "directory":
+                    if not entry.is_directory:
+                        raise BackupError(f"Diretório esperado ausente: {relative_path}")
+                    child = open_verified_child_component(
+                        directory_handle, entry,
+                        desired_access=0x0001 | 0x00020000,
+                    )
+                    opened_directories.append(child)
+                    metadata = query_handle_metadata(child)
+                    if (
+                        not metadata["is_directory"] or metadata["is_reparse_point"]
+                        or metadata["delete_pending"]
+                        or metadata["volume_serial_number"] != root_meta["volume_serial_number"]
+                    ):
+                        raise BackupError(f"Diretório de backup inválido: {relative_path}")
+                    acl = validate_private_directory_handle(child, require_empty=False)
+                    if acl.get("valid") is not True or acl.get("mutated") is not False:
+                        raise BackupError(f"ACL/Authz inválida: {relative_path}")
+                    walk(child, relative_path)
+                    continue
+
+                if entry.is_directory:
+                    raise BackupError(f"Arquivo esperado é diretório: {relative_path}")
+                if relative_path == _BACKUP_CATALOG:
+                    continue
+                record = expected_files[relative_path]
+                file_handle, parent_handles, metadata = _open_source_file(
+                    root_handle, relative_path, root_meta["volume_serial_number"]
+                )
+                if file_handle is None or metadata is None:
+                    raise BackupError(f"Arquivo do backup ausente: {relative_path}")
+                opened_files.append((file_handle, parent_handles))
+                if (
+                    metadata["file_id_128"].lower() != record["backup_file_id_128"].lower()
+                    or metadata["volume_serial_number"] != record["backup_volume_serial_number"]
+                    or metadata["number_of_links"] != record["backup_number_of_links"]
+                    or metadata["end_of_file"] != record["backup_size"]
+                ):
+                    raise BackupError(f"Metadados do backup divergentes: {relative_path}")
+                _validate_file_acl(file_handle, token, owner_sid)
+                digest = _hash_and_rewind(
+                    NativeHandleReader(file_handle), metadata["end_of_file"]
+                )
+                if digest.lower() != record["backup_sha256"].lower():
+                    raise BackupError(f"SHA-256 do backup divergente: {relative_path}")
+
+        walk(root_handle, "")
+        return {
+            "valid": True,
+            "component": component,
+            "catalog_sha256": catalog_hash,
+            "file_count": len(records),
+            "directory_count": len(expected_dirs),
+            "acl_validated": True,
+            "authz_validated": True,
+            "namespace_exact": True,
+            "read_only": True,
+        }
+    except BackupError:
+        raise
+    except Exception as exc:
+        raise BackupError(f"Falha na verificação independente do backup: {exc}") from exc
+    finally:
+        close_errors = []
+        for file_handle, parents in reversed(opened_files):
+            try:
+                _close_source(file_handle, parents)
+            except Exception as exc:
+                close_errors.append(exc)
+        for handle in reversed(opened_directories):
+            try:
+                close_handle(handle)
+            except Exception as exc:
+                close_errors.append(exc)
+        if root_handle is not None:
+            try:
+                close_handle(root_handle)
+            except Exception as exc:
+                close_errors.append(exc)
+        if token is not None and close_token is not None:
+            try:
+                close_token(token)
+            except Exception as exc:
+                close_errors.append(exc)
+        if close_errors:
+            raise BackupError(
+                "Falha ao fechar handles durante verificação: "
+                + "; ".join(map(str, close_errors))
+            )
