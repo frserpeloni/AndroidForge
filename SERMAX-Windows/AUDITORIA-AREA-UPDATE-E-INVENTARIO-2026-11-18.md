@@ -312,3 +312,16 @@ Foi corrigida a validação de filhos por handle: o tamanho do diretório não �
 - Instalação transacional, recuperação após interrupção e rollback em sandbox.
 - Homologação Windows 11 local e testes com identidades Windows distintas.
 - Nenhuma instalação em `C:\\SERMAX`, alteração em `main` ou merge foi realizada.
+
+## Atualização da auditoria, 2026-11-19
+
+A verificação independente de backup foi implementada em `sermax_windows_backup.py`, função `verify_backup_by_handle()`.
+
+O verificador reabre o backup por handle, confere o hash do catálogo contra um valor externo esperado, valida JSON canônico, esquema, caminhos, namespace exato, FileIds, volumes, hardlinks, tamanhos, SHA-256 e ACL/Authz. Também rejeita objetos extras, ausentes e reparse points.
+
+O teste de integração confirma a reabertura após o fechamento do snapshot de criação. A execução CI 44611351890 concluiu com sucesso todas as etapas do workflow Windows.
+
+Pontos ainda não concluídos:
+- O chamador ainda precisa obter o hash esperado de um evento validado do journal.
+- A rotina de restauração de conteúdo, atributos e descritor de segurança ainda não foi implementada.
+- A integração transacional entre journal, backup e staging permanece pendente.
