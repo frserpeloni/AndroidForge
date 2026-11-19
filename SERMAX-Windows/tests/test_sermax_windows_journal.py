@@ -93,6 +93,22 @@ class JournalUnitTests(unittest.TestCase):
         with self.assertRaisesRegex(journal.JournalError, "incompleto"):
             journal._validate_event_payload("PREPARED", {"release_version": "2.0"})
 
+    def test_file_removed_requires_valid_file_identity(self):
+        payload = {
+            "path": "bin/new-engine.dll",
+            "sha256": "a" * 64,
+            "file_id_128": "b" * 32,
+        }
+        journal._validate_event_payload("FILE_REMOVED", payload)
+        invalid = {**payload, "file_id_128": "not-a-file-id"}
+        with self.assertRaisesRegex(journal.JournalError, "FileId inválido"):
+            journal._validate_event_payload("FILE_REMOVED", invalid)
+
+    def test_rollback_state_accepts_removed_then_restored(self):
+        journal._validate_transition("ROLLBACK_STARTED", "FILE_REMOVED")
+        journal._validate_transition("FILE_REMOVED", "FILE_RESTORED")
+        journal._validate_transition("FILE_RESTORED", "ROLLED_BACK")
+
 
 @unittest.skipUnless(
     os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
