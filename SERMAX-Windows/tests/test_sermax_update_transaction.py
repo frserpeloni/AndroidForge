@@ -328,6 +328,7 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
     def test_rollback_recovers_rename_after_intent_before_file_replaced_event(self):
         from sermax_windows_handle_io import close_handle
         from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_journal import open_journal_transaction_by_handle
 
         archive, manifest, files = make_release()
         with tempfile.TemporaryDirectory(prefix="sermax-transaction-rollback-") as root:
@@ -427,6 +428,7 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                     self.assertEqual(active.read(), files["bin/new-engine.dll"])
 
                 transaction_id = prepared.transaction_id
+                backup_component = prepared.backup.component
                 prepared.close()
                 prepared = None
 
@@ -448,14 +450,19 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 with open(active_file, "rb") as active:
                     self.assertEqual(active.read(), original)
                 self.assertFalse(os.path.exists(created_file))
-                final_events = prepared.journal.read_events()
+                reopened_journal = open_journal_transaction_by_handle(
+                    journal_handle, transaction_id
+                )
+                try:
+                    final_events = reopened_journal.read_events()
+                finally:
+                    reopened_journal.close()
                 final_names = [event["event"] for event in final_events]
                 self.assertIn("FILE_REMOVED", final_names)
                 self.assertIn("FILE_RESTORED", final_names)
                 self.assertEqual(final_names[-1], "ROLLED_BACK")
-                self.assertIsNone(prepared.backup.root_handle)
                 self.assertTrue(
-                    os.path.isdir(os.path.join(root, "backups", prepared.backup.component))
+                    os.path.isdir(os.path.join(root, "backups", backup_component))
                 )
             finally:
                 if prepared is not None:
