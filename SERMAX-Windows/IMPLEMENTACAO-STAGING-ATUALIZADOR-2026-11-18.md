@@ -284,3 +284,33 @@ A classe `PreparedUpdateTransaction` mantém os recursos abertos. Seu método `b
 O teste nativo Windows confirma a sequência PREPARED, BACKUP_COMPLETE, STAGING_COMPLETE, depois INSTALL_STARTED. Também confirma que o arquivo ativo permanece inalterado e que arquivos da nova release não aparecem na instalação.
 
 **Limite:** a preparação está integrada. A substituição real dos arquivos, a confirmação COMMITTED e a recuperação automática após interrupção ainda não foram implementadas.
+
+
+## Instalação por renomeação atômica, 2026-11-19
+
+Foi adicionada `install_prepared_update_by_handle()` ao módulo `sermax_update_transaction.py`.
+
+A rotina exige `INSTALL_STARTED` persistido e executa:
+1. Revalida o backup pelo hash do catálogo registrado em `BACKUP_COMPLETE`.
+2. Confere os FileIds, tamanhos e hashes dos arquivos no staging.
+3. Confere os destinos e os diretórios pais, sem seguir reparse points.
+4. Exige destino existente para ação `replace` e destino ausente para ação `create`.
+5. Rejeita hardlinks, volume divergente e destinos somente leitura.
+6. Move cada arquivo do staging para a pasta ativa por `NtSetInformationFile(FileRenameInformation)`, usando handles relativos.
+7. Confere FileId, tamanho e SHA-256 após a renomeação.
+8. Registra `FILE_REPLACED` por arquivo.
+9. Relê todos os destinos e registra `COMMITTED` ao final.
+
+A renomeação é atômica por arquivo no sistema de arquivos. A atualização inteira, com vários arquivos, não é uma única operação atômica. Se houver falha parcial, a rotina tenta registrar `RECOVERY_REQUIRED` e mantém o backup para rollback.
+
+O teste integrado em Windows Server 2025 prepara uma release com um arquivo `replace` e outro `create`, executa a instalação em diretório temporário, confere os dois conteúdos e confirma `COMMITTED`. O teste também confirma que a preparação, antes da chamada de instalação, não alterou a instalação ativa.
+
+**Limites ainda pendentes:**
+- Rollback dos arquivos de ação `create`, com exclusão por handle e verificação de identidade.
+- Recuperação automática após queda do processo ou energia.
+- Orquestração de rollback completo, incluindo todos os eventos de recuperação.
+- Homologação local no Windows 11.
+- Chave pública oficial de release e validação com pacote assinado de produção.
+- Preservação de timestamps originais.
+
+**Segurança operacional:** a função foi exercitada em diretório temporário de CI. Não foi chamada em `C:\SERMAX`, não houve instalação real, merge ou publicação.
