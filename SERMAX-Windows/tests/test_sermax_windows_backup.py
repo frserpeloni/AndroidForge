@@ -32,6 +32,22 @@ class HandleBackupUnitTests(unittest.TestCase):
         with self.assertRaisesRegex(backup.BackupError, "não permitida"):
             backup._reject_json_constant("NaN")
 
+    def test_restore_attribute_preflight_accepts_supported_attributes(self):
+        attributes = (
+            backup.FILE_ATTRIBUTE_READONLY
+            | backup.FILE_ATTRIBUTE_HIDDEN
+            | backup.FILE_ATTRIBUTE_ARCHIVE
+        )
+        self.assertEqual(
+            backup._validate_restorable_attributes(attributes), attributes
+        )
+
+    def test_restore_attribute_preflight_rejects_compressed_or_reparse_flags(self):
+        for attributes in (0x00000800, 0x00000400, 0x00004000):
+            with self.subTest(attributes=attributes):
+                with self.assertRaisesRegex(backup.BackupError, "não suportados"):
+                    backup._validate_restorable_attributes(attributes)
+
     def test_rejects_source_with_multiple_hardlinks(self):
         metadata = {
             "is_directory": False,
