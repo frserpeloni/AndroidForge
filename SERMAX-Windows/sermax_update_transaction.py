@@ -872,6 +872,8 @@ def rollback_prepared_update_by_handle(
         if replacement_items:
             if backup_component is None:
                 raise TransactionPreparationError("Backup ausente para ações replace.")
+            if prepared.backup.root_handle is not None:
+                prepared.backup.close()
             restored = restore_backup_files_by_handle(
                 active_root_handle,
                 backups_parent_handle,
