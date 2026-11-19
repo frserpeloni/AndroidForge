@@ -357,6 +357,10 @@ def install_prepared_update_by_handle(
     if has_replacements != (expected_backup_component is not None):
         raise TransactionPreparationError("Cobertura do backup diverge das ações do manifesto.")
     if expected_backup_component is not None:
+        # O handle da raiz criado durante o backup mantém acesso de escrita
+        # aberto. Fechá-lo permite a reabertura independente com share mode
+        # restrito, sem perder os arquivos persistidos.
+        prepared.backup.close()
         verify_backup_by_handle(
             backups_parent_handle,
             expected_backup_component,
