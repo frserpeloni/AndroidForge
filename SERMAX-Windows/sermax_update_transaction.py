@@ -1032,3 +1032,475 @@ def rollback_prepared_update_by_handle(
         raise TransactionPreparationError(
             f"Rollback interrompido; preserve backup e journal: {exc}"
         ) from exc
+
+
+def recover_interrupted_update_by_handle(
+    transaction_id: str,
+    manifest: ValidatedManifest,
+    *,
+    active_root_handle,
+    backups_parent_handle,
+    staging_parent_handle,
+    journal_parent_handle,
+) -> dict[str, object]:
+    """Reabre uma transação interrompida e executa rollback após restart.
+
+    O chamador deve reautenticar o manifesto com a chave pública confiável e
+    fornecer os handles obtidos da área privada persistente validada. A função
+    reconstrói a sessão do journal e a referência ao staging a partir dos
+    eventos persistidos. Não depende dos objetos Python do processo anterior.
+
+    A rotina é deliberadamente limitada à recuperação por rollback. Não tenta
+    continuar a instalação nem aceita estados COMMITTED/ROLLED_BACK.
+    """
+    if os.name != "nt" or ctypes.sizeof(ctypes.c_void_p) != 8:
+        raise TransactionPreparationError(
+            "Recuperação transacional exige Windows x64."
+        )
+    if not isinstance(manifest, ValidatedManifest):
+        raise TransactionPreparationError(
+            "Recuperação exige manifesto ValidatedManifest autenticado."
+        )
+
+    from sermax_windows_backup import (
+        BackupError,
+        BackupSnapshot,
+        NativeHandleReader,
+        _close_source,
+        _hash_and_rewind,
+        _open_source_file,
+        verify_backup_by_handle,
+    )
+    from sermax_windows_directory_handle import (
+        enumerate_stable_directory_handle,
+        open_verified_child_component,
+    )
+    from sermax_windows_journal import (
+        JournalError,
+        open_journal_transaction_by_handle,
+    )
+    from sermax_windows_private_area import validate_private_directory_handle
+
+    parent_handles = {
+        "backups": backups_parent_handle,
+        "staging": staging_parent_handle,
+        "journal": journal_parent_handle,
+    }
+    for label, handle in parent_handles.items():
+        metadata = query_handle_metadata(handle)
+        validation = validate_private_directory_handle(
+            handle, require_empty=False
+        )
+        if (
+            not metadata["is_directory"]
+            or metadata["is_reparse_point"]
+            or metadata["delete_pending"]
+            or validation.get("valid") is not True
+            or validation.get("mutated") is not False
+        ):
+            raise TransactionPreparationError(
+                f"Área privada {label} não passou na validação por handle."
+            )
+
+    active_meta = query_handle_metadata(active_root_handle)
+    if (
+        not active_meta["is_directory"]
+        or active_meta["is_reparse_point"]
+        or active_meta["delete_pending"]
+    ):
+        raise TransactionPreparationError(
+            "Raiz ativa inválida para recuperação."
+        )
+
+    journal = None
+    staging_root = None
+    prepared = None
+    try:
+        journal = open_journal_transaction_by_handle(
+            journal_parent_handle, transaction_id
+        )
+        events = journal.read_events()
+        if not events or events[0]["event"] != "PREPARED":
+            raise TransactionPreparationError(
+                "Journal não contém PREPARED como primeiro evento."
+            )
+        if not any(item["event"] == "INSTALL_STARTED" for item in events):
+            raise TransactionPreparationError(
+                "A transação não chegou a iniciar a instalação."
+            )
+        last_event = events[-1]["event"]
+        if last_event in {"COMMITTED", "ROLLED_BACK"}:
+            raise TransactionPreparationError(
+                f"Transação terminal não aceita recuperação: {last_event}."
+            )
+        if last_event not in {
+            "INSTALL_STARTED", "FILE_INSTALL_INTENT", "FILE_REPLACED",
+            "RECOVERY_REQUIRED", "ROLLBACK_STARTED", "FILE_REMOVED",
+            "FILE_RESTORED",
+        }:
+            raise TransactionPreparationError(
+                f"Estado do journal não permite rollback: {last_event}."
+            )
+
+        prepared_payload = events[0]["payload"]
+        if (
+            prepared_payload.get("release_version") != manifest.release_version
+            or prepared_payload.get("manifest_sha256") != manifest.manifest_sha256
+        ):
+            raise TransactionPreparationError(
+                "Manifesto autenticado não corresponde ao PREPARED persistido."
+            )
+
+        backup_events = [
+            item for item in events if item["event"] == "BACKUP_COMPLETE"
+        ]
+        staging_events = [
+            item for item in events if item["event"] == "STAGING_COMPLETE"
+        ]
+        if len(backup_events) != 1 or len(staging_events) != 1:
+            raise TransactionPreparationError(
+                "Journal precisa conter exatamente BACKUP_COMPLETE e STAGING_COMPLETE."
+            )
+        backup_payload = backup_events[0]["payload"]
+        staging_payload = staging_events[0]["payload"]
+        backup_component = backup_payload["backup_component"]
+        backup_catalog_hash = backup_payload["catalog_sha256"]
+        staging_component = staging_payload["staging_component"]
+        archive_hash = staging_payload["archive_sha256"]
+
+        replacement_items = [
+            item for item in manifest.files if item.action == "replace"
+        ]
+        if bool(replacement_items) != (backup_component is not None):
+            raise TransactionPreparationError(
+                "Cobertura de backup não corresponde às ações replace do manifesto."
+            )
+        if backup_component is None:
+            if backup_catalog_hash is not None:
+                raise TransactionPreparationError(
+                    "Hash de catálogo existe sem componente de backup."
+                )
+            original_ids = {}
+        else:
+            verification = verify_backup_by_handle(
+                backups_parent_handle,
+                backup_component,
+                expected_catalog_sha256=backup_catalog_hash,
+            )
+            if verification.get("valid") is not True:
+                raise TransactionPreparationError(
+                    "Backup não passou na verificação independente."
+                )
+            original_ids = verification.get("source_file_ids", {})
+            if set(original_ids) != {item.path for item in replacement_items}:
+                raise TransactionPreparationError(
+                    "Inventário de FileIds do backup diverge das ações replace."
+                )
+
+        staging_matches = [
+            entry for entry in enumerate_stable_directory_handle(
+                staging_parent_handle
+            )
+            if entry.name == staging_component
+        ]
+        if (
+            len(staging_matches) != 1
+            or not staging_matches[0].is_directory
+            or staging_matches[0].is_reparse_point
+        ):
+            raise TransactionPreparationError(
+                "Componente de staging ausente, ambíguo ou inseguro."
+            )
+        staging_root = open_verified_child_component(
+            staging_parent_handle,
+            staging_matches[0],
+            desired_access=(
+                _FILE_LIST_DIRECTORY | _FILE_READ_ATTRIBUTES | _FILE_READ_CONTROL
+            ),
+        )
+        staging_meta = query_handle_metadata(staging_root)
+        staging_validation = validate_private_directory_handle(
+            staging_root, require_empty=False
+        )
+        if (
+            not staging_meta["is_directory"]
+            or staging_meta["is_reparse_point"]
+            or staging_meta["delete_pending"]
+            or staging_meta["volume_serial_number"]
+            != active_meta["volume_serial_number"]
+            or staging_validation.get("valid") is not True
+            or staging_validation.get("mutated") is not False
+        ):
+            raise TransactionPreparationError(
+                "Raiz de staging não passou na validação de recuperação."
+            )
+
+        intents = {
+            item["payload"]["path"]: item["payload"]
+            for item in events if item["event"] == "FILE_INSTALL_INTENT"
+        }
+        replaced = {
+            item["payload"]["path"]: item["payload"]
+            for item in events if item["event"] == "FILE_REPLACED"
+        }
+        stage_results = {}
+        expected_files = {item.path: item for item in manifest.files}
+        expected_directories = set()
+        for path in expected_files:
+            parts = path.split("/")
+            for index in range(1, len(parts)):
+                expected_directories.add("/".join(parts[:index]))
+
+        def inspect_staging_directory(directory_handle, relative_directory=""):
+            entries = tuple(
+                entry for entry in enumerate_stable_directory_handle(directory_handle)
+                if entry.name not in {".", ".."}
+            )
+            for entry in entries:
+                relative_path = (
+                    f"{relative_directory}/{entry.name}"
+                    if relative_directory else entry.name
+                )
+                if entry.is_reparse_point:
+                    raise TransactionPreparationError(
+                        f"Reparse point encontrado no staging: {relative_path}"
+                    )
+                if entry.is_directory:
+                    if relative_path not in expected_directories:
+                        raise TransactionPreparationError(
+                            f"Diretório extra no staging: {relative_path}"
+                        )
+                    child = open_verified_child_component(
+                        directory_handle,
+                        entry,
+                        desired_access=_FILE_LIST_DIRECTORY | _FILE_READ_CONTROL,
+                    )
+                    try:
+                        child_meta = query_handle_metadata(child)
+                        child_acl = validate_private_directory_handle(
+                            child, require_empty=False
+                        )
+                        if (
+                            not child_meta["is_directory"]
+                            or child_meta["is_reparse_point"]
+                            or child_meta["delete_pending"]
+                            or child_meta["volume_serial_number"]
+                            != active_meta["volume_serial_number"]
+                            or child_acl.get("valid") is not True
+                            or child_acl.get("mutated") is not False
+                        ):
+                            raise TransactionPreparationError(
+                                f"Diretório staging inválido: {relative_path}"
+                            )
+                        inspect_staging_directory(child, relative_path)
+                    finally:
+                        close_handle(child)
+                    continue
+
+                item = expected_files.get(relative_path)
+                if item is None:
+                    raise TransactionPreparationError(
+                        f"Arquivo extra no staging: {relative_path}"
+                    )
+                file_handle = open_verified_child_component(
+                    directory_handle,
+                    entry,
+                    desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL,
+                )
+                try:
+                    metadata = query_handle_metadata(file_handle)
+                    digest = _hash_and_rewind(
+                        NativeHandleReader(file_handle), item.size
+                    )
+                    if (
+                        metadata["is_directory"]
+                        or metadata["is_reparse_point"]
+                        or metadata["delete_pending"]
+                        or metadata["number_of_links"] != 1
+                        or metadata["volume_serial_number"]
+                        != active_meta["volume_serial_number"]
+                        or metadata["end_of_file"] != item.size
+                        or digest != item.sha256
+                    ):
+                        raise TransactionPreparationError(
+                            f"Arquivo staging não corresponde ao manifesto: {relative_path}"
+                        )
+                    intent = intents.get(relative_path)
+                    if intent is not None and (
+                        intent["sha256"] != item.sha256
+                        or intent["file_id_128"].lower()
+                        != metadata["file_id_128"].lower()
+                    ):
+                        raise TransactionPreparationError(
+                            f"FileId de staging diverge da intenção: {relative_path}"
+                        )
+                    stage_results[relative_path] = {
+                        "file_id_128": metadata["file_id_128"],
+                        "size": metadata["end_of_file"],
+                        "sha256": digest,
+                    }
+                finally:
+                    close_handle(file_handle)
+
+        inspect_staging_directory(staging_root)
+
+        for item in manifest.files:
+            intent = intents.get(item.path) or replaced.get(item.path)
+            staged_result = stage_results.get(item.path)
+            expected_new_id = (
+                intent["file_id_128"].lower() if intent is not None else None
+            )
+            if staged_result is None and expected_new_id is None:
+                raise TransactionPreparationError(
+                    f"Arquivo ausente do staging sem intenção persistida: {item.path}"
+                )
+            if staged_result is not None and expected_new_id is not None:
+                if staged_result["file_id_128"].lower() != expected_new_id:
+                    raise TransactionPreparationError(
+                        f"Staging diverge do FileId registrado: {item.path}"
+                    )
+
+            parent_path, leaf_name = (
+                item.path.rsplit("/", 1) if "/" in item.path else ("", item.path)
+            )
+            parent_handle, opened_parents = _open_active_parent(
+                active_root_handle,
+                parent_path,
+                active_meta["volume_serial_number"],
+            )
+            target_handle = None
+            try:
+                entry = _find_active_leaf(parent_handle, leaf_name)
+                if item.action == "create":
+                    if staged_result is not None:
+                        if entry is not None:
+                            raise TransactionPreparationError(
+                                f"Destino create existe enquanto arquivo ainda está no staging: {item.path}"
+                            )
+                        continue
+                    if entry is None:
+                        continue
+                    if expected_new_id is None:
+                        raise TransactionPreparationError(
+                            f"Objeto inesperado no destino create: {item.path}"
+                        )
+                    target_handle = open_verified_child_component(
+                        parent_handle,
+                        entry,
+                        desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL,
+                    )
+                    target_meta = query_handle_metadata(target_handle)
+                    digest = _hash_and_rewind(
+                        NativeHandleReader(target_handle), item.size
+                    )
+                    if (
+                        target_meta["file_id_128"].lower() != expected_new_id
+                        or target_meta["end_of_file"] != item.size
+                        or digest != item.sha256
+                        or target_meta["number_of_links"] != 1
+                        or target_meta["is_reparse_point"]
+                        or target_meta["delete_pending"]
+                    ):
+                        raise TransactionPreparationError(
+                            f"Destino create não corresponde à intenção persistida: {item.path}"
+                        )
+                    continue
+
+                original_id = original_ids.get(item.path)
+                if not isinstance(original_id, str):
+                    raise TransactionPreparationError(
+                        f"Backup não fornece FileId original: {item.path}"
+                    )
+                if entry is None:
+                    if item.path not in replaced:
+                        raise TransactionPreparationError(
+                            f"Destino replace ausente sem FILE_REPLACED: {item.path}"
+                        )
+                    continue
+                target_handle = open_verified_child_component(
+                    parent_handle,
+                    entry,
+                    desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL,
+                )
+                target_meta = query_handle_metadata(target_handle)
+                target_id = target_meta["file_id_128"].lower()
+                allowed_ids = {original_id.lower()}
+                if expected_new_id is not None:
+                    allowed_ids.add(expected_new_id)
+                if (
+                    target_meta["is_directory"]
+                    or target_meta["is_reparse_point"]
+                    or target_meta["delete_pending"]
+                    or target_meta["number_of_links"] != 1
+                    or target_meta["volume_serial_number"]
+                    != active_meta["volume_serial_number"]
+                    or target_id not in allowed_ids
+                ):
+                    raise TransactionPreparationError(
+                        f"Destino replace não corresponde ao FileId original ou à intenção: {item.path}"
+                    )
+                if expected_new_id is not None and target_id == expected_new_id:
+                    digest = _hash_and_rewind(
+                        NativeHandleReader(target_handle), item.size
+                    )
+                    if (
+                        target_meta["end_of_file"] != item.size
+                        or digest != item.sha256
+                    ):
+                        raise TransactionPreparationError(
+                            f"Arquivo replace instalado diverge do manifesto: {item.path}"
+                        )
+            finally:
+                if target_handle is not None:
+                    close_handle(target_handle)
+                for handle in reversed(opened_parents):
+                    close_handle(handle)
+
+        synthetic_package = VerifiedPackage(
+            release_version=manifest.release_version,
+            manifest_sha256=manifest.manifest_sha256,
+            archive_sha256=archive_hash,
+            file_count=len(manifest.files),
+            total_uncompressed_size=sum(item.size for item in manifest.files),
+        )
+        prepared = PreparedUpdateTransaction(
+            package=synthetic_package,
+            journal=journal,
+            backup=BackupSnapshot(
+                component=backup_component,
+                root_handle=None,
+                files=(),
+                catalog=None,
+            ),
+            staging=HandleStagedRelease(
+                component=staging_component,
+                root_handle=staging_root,
+                files=tuple(stage_results[item.path] for item in manifest.files if item.path in stage_results),
+            ),
+            manifest=manifest,
+        )
+        journal = None
+        staging_root = None
+        result = rollback_prepared_update_by_handle(
+            prepared,
+            active_root_handle,
+            backups_parent_handle,
+        )
+        return {
+            **result,
+            "recovered_after_restart": True,
+            "preflight_file_count": len(manifest.files),
+            "staging_file_count": len(stage_results),
+        }
+    except (JournalError, BackupError) as exc:
+        raise TransactionPreparationError(
+            f"Recuperação interrompida; journal e backup preservados: {exc}"
+        ) from exc
+    finally:
+        if prepared is not None:
+            prepared.close()
+        else:
+            if staging_root is not None:
+                close_handle(staging_root)
+            if journal is not None:
+                journal.close()
