@@ -361,3 +361,21 @@ A falha na preparação tenta registrar `RECOVERY_REQUIRED` e preserva os dados 
 Teste nativo Windows confirmou a sequência e verificou que os arquivos ativos permaneceram intactos. A execução CI 44619532422 aprovou a compilação e todas as etapas, incluindo o novo teste integrado.
 
 Pendente: instalação efetiva, substituição segura, evento `FILE_REPLACED`, confirmação `COMMITTED`, recuperação automática e rollback completo.
+
+
+## Atualização da auditoria, instalação por handles, 2026-11-19
+
+Implementada `install_prepared_update_by_handle()`.
+
+A rotina revalida o backup e o staging. Faz preflight de destinos. Usa `NtSetInformationFile(FileRenameInformation)` com handles relativos para renomeação atômica de cada arquivo. Confere FileId, tamanho e SHA-256. Registra `FILE_REPLACED` após cada arquivo e `COMMITTED` após conferir todos os destinos.
+
+O teste integrado em Windows Server 2025 instala, em diretório temporário, um arquivo de substituição e um arquivo novo. Ambos são conferidos após a operação. O journal termina em `COMMITTED`.
+
+A execução CI 44620905108 concluiu com sucesso todas as etapas do workflow, incluindo o teste integrado de instalação.
+
+Limites:
+- A atomicidade é por arquivo, não para o conjunto inteiro.
+- Falhas parciais tentam registrar `RECOVERY_REQUIRED`; o backup é preservado.
+- A exclusão dos arquivos `create` no rollback ainda não foi implementada.
+- Recuperação automática após interrupção ainda pendente.
+- Não houve homologação local no Windows 11 nem instalação em `C:\SERMAX`.
