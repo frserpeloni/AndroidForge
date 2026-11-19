@@ -397,7 +397,7 @@ def install_prepared_update_by_handle(
         raise TransactionPreparationError("Inventário do staging diverge do manifesto.")
 
     replaced_events = {
-        item["payload"]["path"]: item["payload"]["sha256"]
+        item["payload"]["path"]: item["payload"]
         for item in events if item["event"] == "FILE_REPLACED"
     }
     installed_count = 0
@@ -503,9 +503,12 @@ def install_prepared_update_by_handle(
             staged_result = stage_results[item.path]
             expected_file_id = staged_result["file_id_128"].lower()
             expected_hash = item.sha256
-            if item.path in replaced_events and replaced_events[item.path] != expected_hash:
+            if item.path in replaced_events and (
+                replaced_events[item.path]["sha256"] != expected_hash
+                or replaced_events[item.path]["file_id_128"].lower() != expected_file_id
+            ):
                 raise TransactionPreparationError(
-                    f"Journal registra hash divergente para {item.path}."
+                    f"Journal registra FileId/hash divergente para {item.path}."
                 )
 
             parent_path, leaf_name = (
@@ -541,7 +544,11 @@ def install_prepared_update_by_handle(
                     if item.path not in replaced_events:
                         prepared.journal.append_event(
                             "FILE_REPLACED",
-                            {"path": item.path, "sha256": expected_hash},
+                            {
+                                "path": item.path,
+                                "sha256": expected_hash,
+                                "file_id_128": expected_file_id,
+                            },
                         )
                     already_installed_count += 1
                     continue
@@ -599,7 +606,11 @@ def install_prepared_update_by_handle(
                     )
                 prepared.journal.append_event(
                     "FILE_REPLACED",
-                    {"path": item.path, "sha256": expected_hash},
+                    {
+                        "path": item.path,
+                        "sha256": expected_hash,
+                        "file_id_128": expected_file_id,
+                    },
                 )
                 installed_count += 1
             finally:
