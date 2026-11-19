@@ -1147,7 +1147,7 @@ def restore_backup_files_by_handle(
     from sermax_windows_file_writer import write_verified_file_component
 
     events = journal_session.read_events()
-    if not events or events[-1]["event"] not in {"ROLLBACK_STARTED", "FILE_RESTORED"}:
+    if not events or events[-1]["event"] not in {"ROLLBACK_STARTED", "FILE_RESTORED", "FILE_REMOVED"}:
         raise BackupError("Journal precisa estar em ROLLBACK_STARTED/FILE_RESTORED.")
     backup_events = [
         item for item in events
