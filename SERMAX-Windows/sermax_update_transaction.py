@@ -767,6 +767,7 @@ def rollback_prepared_update_by_handle(
         NativeHandleReader,
         _hash_and_rewind,
         restore_backup_files_by_handle,
+        verify_backup_by_handle,
     )
     from sermax_windows_directory_handle import open_verified_child_component
 
@@ -783,6 +784,10 @@ def rollback_prepared_update_by_handle(
             item["payload"]["path"]: item["payload"]
             for item in journal_events if item["event"] == "FILE_REPLACED"
         }
+        install_intents = {
+            item["payload"]["path"]: item["payload"]
+            for item in journal_events if item["event"] == "FILE_INSTALL_INTENT"
+        }
         removed = {
             item["payload"]["path"]: item["payload"]
             for item in journal_events if item["event"] == "FILE_REMOVED"
@@ -791,9 +796,11 @@ def rollback_prepared_update_by_handle(
         removed_count = 0
         already_removed_count = 0
         for item in prepared.manifest.files:
-            if item.action != "create" or item.path not in replaced:
+            if item.action != "create":
                 continue
-            evidence = replaced[item.path]
+            evidence = replaced.get(item.path) or install_intents.get(item.path)
+            if evidence is None:
+                continue
             expected_id = evidence["file_id_128"].lower()
             if evidence["sha256"] != item.sha256:
                 raise TransactionPreparationError(
@@ -817,7 +824,8 @@ def rollback_prepared_update_by_handle(
                             raise TransactionPreparationError(
                                 f"FILE_REMOVED diverge do registro de instalação: {item.path}"
                             )
-                    else:
+                        already_removed_count += 1
+                    elif item.path in replaced:
                         prepared.journal.append_event(
                             "FILE_REMOVED",
                             {
@@ -826,7 +834,9 @@ def rollback_prepared_update_by_handle(
                                 "file_id_128": expected_id,
                             },
                         )
-                    already_removed_count += 1
+                        already_removed_count += 1
+                    # Uma intenção sem FILE_REPLACED e destino ausente indica
+                    # que a renomeação ainda não ocorreu. Não inventar remoção.
                     continue
 
                 target_handle = open_verified_child_component(
@@ -913,6 +923,62 @@ def rollback_prepared_update_by_handle(
                 raise TransactionPreparationError("Backup ausente para ações replace.")
             if prepared.backup.root_handle is not None:
                 prepared.backup.close()
+            backup_verification = verify_backup_by_handle(
+                backups_parent_handle,
+                backup_component,
+                expected_catalog_sha256=backup_events[-1]["payload"]["catalog_sha256"],
+            )
+            original_ids = backup_verification.get("source_file_ids", {})
+            for item in replacement_items:
+                original_id = original_ids.get(item.path)
+                intent = install_intents.get(item.path) or replaced.get(item.path)
+                expected_ids = {
+                    value.lower() for value in (
+                        original_id,
+                        intent["file_id_128"] if intent is not None else None,
+                    ) if isinstance(value, str)
+                }
+                if not expected_ids:
+                    raise TransactionPreparationError(
+                        f"Backup não contém FileId original para {item.path}"
+                    )
+                parent_path, leaf_name = (
+                    item.path.rsplit("/", 1) if "/" in item.path else ("", item.path)
+                )
+                parent_handle, parent_handles = _open_active_parent(
+                    active_root_handle, parent_path, active_meta["volume_serial_number"]
+                )
+                target_handle = None
+                try:
+                    entry = _find_active_leaf(parent_handle, leaf_name)
+                    if entry is None:
+                        if item.path not in replaced:
+                            raise TransactionPreparationError(
+                                f"Destino replace ausente sem FILE_REPLACED confirmado: {item.path}"
+                            )
+                        continue
+                    target_handle = open_verified_child_component(
+                        parent_handle,
+                        entry,
+                        desired_access=_FILE_READ_DATA | _FILE_READ_CONTROL,
+                    )
+                    target_meta = query_handle_metadata(target_handle)
+                    if (
+                        target_meta["is_directory"]
+                        or target_meta["is_reparse_point"]
+                        or target_meta["delete_pending"]
+                        or target_meta["number_of_links"] != 1
+                        or target_meta["volume_serial_number"] != active_meta["volume_serial_number"]
+                        or target_meta["file_id_128"].lower() not in expected_ids
+                    ):
+                        raise TransactionPreparationError(
+                            f"Destino replace não corresponde ao FileId original ou à intenção: {item.path}"
+                        )
+                finally:
+                    if target_handle is not None:
+                        close_handle(target_handle)
+                    for handle in reversed(parent_handles):
+                        close_handle(handle)
             restored = restore_backup_files_by_handle(
                 active_root_handle,
                 backups_parent_handle,
