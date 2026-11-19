@@ -128,6 +128,7 @@ def open_verified_child_component(
     entry: DirectoryEntry,
     *,
     desired_access: int | None = None,
+    share_access: int = 0x00000001,
 ):
     """Abre um filho e vincula o handle ao FileId enumerado de 128 bits.
 
@@ -163,6 +164,7 @@ def open_verified_child_component(
         entry.name,
         directory=entry.is_directory,
         desired_access=access,
+        share_access=share_access,
     )
     try:
         child_metadata = query_handle_metadata(child_handle)
