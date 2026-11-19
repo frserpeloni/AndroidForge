@@ -752,7 +752,7 @@ def rollback_prepared_update_by_handle(
         raise TransactionPreparationError("Objeto de transação preparada inválido.")
     events = prepared.journal.read_events()
     if not events or events[-1]["event"] not in {
-        "INSTALL_STARTED", "FILE_REPLACED", "RECOVERY_REQUIRED",
+        "INSTALL_STARTED", "FILE_INSTALL_INTENT", "FILE_REPLACED", "RECOVERY_REQUIRED",
         "ROLLBACK_STARTED", "FILE_REMOVED", "FILE_RESTORED",
     }:
         raise TransactionPreparationError("Journal não está em estado recuperável.")
