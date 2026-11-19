@@ -325,3 +325,23 @@ Pontos ainda não concluídos:
 - O chamador ainda precisa obter o hash esperado de um evento validado do journal.
 - A rotina de restauração de conteúdo, atributos e descritor de segurança ainda não foi implementada.
 - A integração transacional entre journal, backup e staging permanece pendente.
+
+
+## Atualização da auditoria, restauração, 2026-11-19
+
+Implementada a rotina `restore_backup_files_by_handle()`, com validação prévia do backup, restauração de conteúdo por handle, readback, restauração de owner/group/DACL, atributos permitidos e registro individual `FILE_RESTORED` no journal.
+
+A integração nativa Windows testa:
+- Backup e reabertura independente.
+- Alteração simulada do arquivo ativo.
+- Restauração do conteúdo original.
+- Registro de `FILE_RESTORED`.
+- Reexecução idempotente sem reescrever arquivo já restaurado.
+
+Limites conhecidos:
+- Restauração in-place não atômica.
+- Arquivos de ações `create` ainda exigem rotina própria de remoção no rollback.
+- Diretórios pais ausentes não são recriados.
+- Timestamps não são restaurados.
+- Atributos fora da allowlist são recusados.
+- Não há ainda orquestrador que integre todas as etapas da instalação, recuperação e rollback.
