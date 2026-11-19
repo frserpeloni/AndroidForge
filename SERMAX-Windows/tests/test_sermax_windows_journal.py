@@ -93,6 +93,22 @@ class JournalUnitTests(unittest.TestCase):
         with self.assertRaisesRegex(journal.JournalError, "incompleto"):
             journal._validate_event_payload("PREPARED", {"release_version": "2.0"})
 
+    def test_file_install_intent_requires_valid_file_identity(self):
+        payload = {
+            "path": "bin/new-engine.dll",
+            "sha256": "a" * 64,
+            "file_id_128": "b" * 32,
+        }
+        journal._validate_event_payload("FILE_INSTALL_INTENT", payload)
+        invalid = {**payload, "file_id_128": "not-a-file-id"}
+        with self.assertRaisesRegex(journal.JournalError, "FileId inválido"):
+            journal._validate_event_payload("FILE_INSTALL_INTENT", invalid)
+
+    def test_install_intent_precedes_replacement_and_allows_rollback(self):
+        journal._validate_transition("INSTALL_STARTED", "FILE_INSTALL_INTENT")
+        journal._validate_transition("FILE_INSTALL_INTENT", "FILE_REPLACED")
+        journal._validate_transition("FILE_INSTALL_INTENT", "ROLLBACK_STARTED")
+
     def test_file_removed_requires_valid_file_identity(self):
         payload = {
             "path": "bin/new-engine.dll",
@@ -166,6 +182,11 @@ class JournalWindowsIntegrationTests(unittest.TestCase):
                         "archive_sha256": "c" * 64,
                     }),
                     ("INSTALL_STARTED", {}),
+                    ("FILE_INSTALL_INTENT", {
+                        "path": "bin/engine.dll",
+                        "sha256": "d" * 64,
+                        "file_id_128": "1" * 32,
+                    }),
                     ("FILE_REPLACED", {
                         "path": "bin/engine.dll",
                         "sha256": "d" * 64,
