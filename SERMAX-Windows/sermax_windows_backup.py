@@ -919,16 +919,21 @@ class _FILE_BASIC_INFO(ctypes.Structure):
     ]
 
 
-def _set_file_attributes_by_handle(handle, attributes: int) -> None:
+def _validate_restorable_attributes(attributes: int) -> int:
     if type(attributes) is not int or attributes < 0 or attributes > 0xFFFFFFFF:
         raise BackupError("Atributos originais inválidos.")
+    if attributes == FILE_ATTRIBUTE_NORMAL:
+        return attributes
     unsupported = attributes & ~RESTORABLE_FILE_ATTRIBUTES
-    if unsupported and attributes != FILE_ATTRIBUTE_NORMAL:
+    if unsupported:
         raise BackupError(
             f"Atributos de arquivo não suportados para restauração: 0x{unsupported:08X}"
         )
-    if attributes == 0:
-        attributes = FILE_ATTRIBUTE_NORMAL
+    return attributes or FILE_ATTRIBUTE_NORMAL
+
+
+def _set_file_attributes_by_handle(handle, attributes: int) -> None:
+    attributes = _validate_restorable_attributes(attributes)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     set_info = kernel32.SetFileInformationByHandle
     set_info.argtypes = [
@@ -1209,6 +1214,8 @@ def restore_backup_files_by_handle(
         records = _validate_backup_catalog(
             document, backup_component, backup_root_metadata["volume_serial_number"]
         )
+        for record in records:
+            _validate_restorable_attributes(record["source_attributes"])
         restored_paths = {
             item["payload"]["path"]: item["payload"]["sha256"]
             for item in events if item["event"] == "FILE_RESTORED"
@@ -1235,16 +1242,63 @@ def restore_backup_files_by_handle(
             ):
                 raise BackupError(f"Arquivo de backup não confere: {path}")
 
+            target_handle, target_parents, target_meta = _open_source_file(
+                active_root_handle, path, active_root_metadata["volume_serial_number"]
+            )
+            if target_handle is not None and target_meta is not None:
+                opened_active_files.append((target_handle, target_parents))
+                _validate_regular_source(
+                    target_meta, active_root_metadata["volume_serial_number"]
+                )
+                if target_meta["number_of_links"] != 1:
+                    raise BackupError(f"Destino possui hardlinks: {path}")
+                current_hash = _hash_and_rewind(
+                    NativeHandleReader(target_handle), target_meta["end_of_file"]
+                )
+                already_matches = (
+                    current_hash.lower() == expected_hash
+                    and target_meta["attributes"] == record["source_attributes"]
+                    and _security_descriptor_matches(target_handle, descriptor_bytes)
+                )
+                if already_matches:
+                    if path not in restored_paths:
+                        journal_session.append_event(
+                            "FILE_RESTORED", {"path": path, "sha256": expected_hash}
+                        )
+                    already_restored_count += 1
+                    continue
+                if path in restored_paths:
+                    raise BackupError(
+                        f"Arquivo registrado como restaurado diverge no disco: {path}"
+                    )
+                _close_source(target_handle, target_parents)
+                opened_active_files.pop()
+                target_handle = None
+                target_parents = []
+
+            elif path in restored_paths:
+                raise BackupError(
+                    f"Journal registra arquivo restaurado, mas o destino sumiu: {path}"
+                )
+
             target_access = (
                 FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES
                 | FILE_WRITE_ATTRIBUTES | READ_CONTROL | WRITE_DAC
                 | WRITE_OWNER | SYNCHRONIZE
             )
-            target_handle, target_parents, target_meta = _open_source_file(
-                active_root_handle, path, active_root_metadata["volume_serial_number"],
-                desired_access=target_access,
-            )
             if target_handle is None:
+                target_handle, target_parents, target_meta = _open_source_file(
+                    active_root_handle, path, active_root_metadata["volume_serial_number"],
+                    desired_access=target_access,
+                )
+            if target_handle is None:
+                expected_parent_count = len(path.split("/")) - 1
+                if len(target_parents) != expected_parent_count:
+                    for parent in reversed(target_parents):
+                        close_handle(parent)
+                    raise BackupError(
+                        f"Diretório pai ausente; restauração não criará hierarquia: {path}"
+                    )
                 parent_handle = target_parents[-1] if target_parents else active_root_handle
                 leaf_name = path.rsplit("/", 1)[-1]
                 write_verified_file_component(
@@ -1252,6 +1306,9 @@ def restore_backup_files_by_handle(
                     expected_size=record["size"], expected_sha256=expected_hash,
                 )
                 created_count += 1
+                for parent in reversed(target_parents):
+                    close_handle(parent)
+                target_parents = []
                 target_handle, target_parents, target_meta = _open_source_file(
                     active_root_handle, path, active_root_metadata["volume_serial_number"],
                     desired_access=target_access,
@@ -1259,24 +1316,11 @@ def restore_backup_files_by_handle(
             if target_handle is None or target_meta is None:
                 raise BackupError(f"Não foi possível abrir destino para restauração: {path}")
             opened_active_files.append((target_handle, target_parents))
-            _validate_regular_source(target_meta, active_root_metadata["volume_serial_number"])
+            _validate_regular_source(
+                target_meta, active_root_metadata["volume_serial_number"]
+            )
             if target_meta["number_of_links"] != 1:
                 raise BackupError(f"Destino possui hardlinks: {path}")
-
-            current_hash = _hash_and_rewind(
-                NativeHandleReader(target_handle), target_meta["end_of_file"]
-            )
-            if path in restored_paths:
-                if (
-                    current_hash.lower() != expected_hash
-                    or target_meta["attributes"] != record["source_attributes"]
-                    or not _security_descriptor_matches(target_handle, descriptor_bytes)
-                ):
-                    raise BackupError(
-                        f"Arquivo registrado como restaurado diverge no disco: {path}"
-                    )
-                already_restored_count += 1
-                continue
 
             result = _restore_file_content_by_handle(
                 target_handle,
