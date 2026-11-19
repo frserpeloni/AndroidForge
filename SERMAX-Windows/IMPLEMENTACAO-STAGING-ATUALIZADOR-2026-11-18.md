@@ -213,3 +213,26 @@ Foi corrigido também `open_verified_child_component()`: diretórios podem mudar
 ### Próxima etapa
 
 Implementar verificação independente de backups após reabertura, rotina de restauração de conteúdo/ACL e integração do journal com o staging e o backup. Depois desenvolver instalação transacional e rollback em sandbox. O journal ainda não executa recuperação automática nem altera a instalação ativa.
+
+## Verificação independente de backup, 2026-11-19
+
+Foi adicionada `verify_backup_by_handle()` em `sermax_windows_backup.py`.
+
+A rotina reabre o componente de backup pelo handle do diretório `backups`. Não depende do objeto `BackupSnapshot` produzido na criação. Exige `expected_catalog_sha256`, que deverá ser obtido de evento validado do journal pelo fluxo integrador.
+
+A rotina valida:
+- Hash SHA-256 do catálogo contra o hash externo esperado.
+- JSON UTF-8 canônico, sem chaves duplicadas ou constantes não padronizadas.
+- Versão, componente, campos e tipos do catálogo.
+- Caminhos normalizados, sem caminhos protegidos, duplicados ou colisão arquivo/diretório.
+- Namespace completo, rejeitando arquivos e diretórios ausentes ou extras.
+- FileId de 128 bits, volume, número de links e tamanho dos arquivos.
+- SHA-256 de cada arquivo de backup.
+- ACL e Authz de diretórios, subdiretórios, catálogo e arquivos.
+- Reparse points e objetos não regulares.
+
+A operação é somente leitura. Não executa restauração nem altera a instalação ativa.
+
+O teste nativo de integração fecha o handle original do snapshot e verifica o backup por nova abertura. A execução CI 44611351890 completou todas as etapas com sucesso em Windows.
+
+**Limite atual:** o hash esperado é recebido como argumento. A integração que lê e fornece esse hash a partir do journal ainda está pendente. A rotina de restauração também permanece pendente.
