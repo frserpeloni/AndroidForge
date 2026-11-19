@@ -176,6 +176,22 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                 self.assertFalse(
                     os.path.exists(os.path.join(active_path, "bin", "new-engine.dll"))
                 )
+
+                installed = transaction.install_prepared_update_by_handle(
+                    prepared, active_handle, backups_handle
+                )
+                self.assertTrue(installed["valid"])
+                self.assertEqual(installed["installed_count"], 2)
+                self.assertEqual(installed["journal_last_event"], "COMMITTED")
+                with open(active_file, "rb") as active:
+                    self.assertEqual(active.read(), files["bin/engine.dll"])
+                with open(
+                    os.path.join(active_path, "bin", "new-engine.dll"), "rb"
+                ) as active:
+                    self.assertEqual(active.read(), files["bin/new-engine.dll"])
+                self.assertEqual(
+                    prepared.journal.read_events()[-1]["event"], "COMMITTED"
+                )
             finally:
                 if prepared is not None:
                     prepared.close()
