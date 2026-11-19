@@ -383,11 +383,71 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                     journal_parent_handle=journal_handle,
                 )
                 prepared.begin_install()
-                installed = transaction.install_prepared_update_by_handle(
+
+                append_event = prepared.journal.append_event
+
+                def interrupt_after_second_replacement(event, payload):
+                    result = append_event(event, payload)
+                    if event == "FILE_REPLACED" and payload["path"] == "bin/new-engine.dll":
+                        raise RuntimeError("simulated interruption after second FILE_REPLACED")
+                    return result
+
+                with mock.patch.object(
+                    prepared.journal,
+                    "append_event",
+                    side_effect=interrupt_after_second_replacement,
+                ):
+                    with self.assertRaisesRegex(
+                        transaction.TransactionPreparationError,
+                        "Instalação interrompida",
+                    ):
+                        transaction.install_prepared_update_by_handle(
+                            prepared, active_handle, backups_handle
+                        )
+
+                created_file = os.path.join(active_path, "bin", "new-engine.dll")
+                self.assertTrue(os.path.exists(created_file))
+
+                append_event = prepared.journal.append_event
+
+                def interrupt_before_removed_event(event, payload):
+                    if event == "FILE_REMOVED":
+                        raise RuntimeError("simulated interruption before FILE_REMOVED")
+                    return append_event(event, payload)
+
+                with mock.patch.object(
+                    prepared.journal,
+                    "append_event",
+                    side_effect=interrupt_before_removed_event,
+                ):
+                    with self.assertRaisesRegex(
+                        transaction.TransactionPreparationError,
+                        "Rollback interrompido",
+                    ):
+                        transaction.rollback_prepared_update_by_handle(
+                            prepared, active_handle, backups_handle
+                        )
+
+                self.assertFalse(os.path.exists(created_file))
+                interrupted_events = prepared.journal.read_events()
+                self.assertEqual(interrupted_events[-1]["event"], "RECOVERY_REQUIRED")
+
+                resumed = transaction.rollback_prepared_update_by_handle(
                     prepared, active_handle, backups_handle
                 )
-                self.assertTrue(installed["valid"])
-                self.assertEqual(installed["journal_last_event"], "COMMITTED")
+                self.assertTrue(resumed["valid"])
+                self.assertEqual(resumed["journal_last_event"], "ROLLED_BACK")
+                self.assertEqual(resumed["already_removed_count"], 1)
+                self.assertEqual(resumed["restored_count"], 1)
+
+                with open(active_file, "rb") as active:
+                    self.assertEqual(active.read(), original)
+                self.assertFalse(os.path.exists(created_file))
+                final_events = prepared.journal.read_events()
+                names = [event["event"] for event in final_events]
+                self.assertEqual(names[-1], "ROLLED_BACK")
+                self.assertEqual(names.count("FILE_REMOVED"), 1)
+                self.assertEqual(names.count("FILE_RESTORED"), 1)
             finally:
                 if prepared is not None:
                     prepared.close()
