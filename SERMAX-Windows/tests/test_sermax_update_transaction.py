@@ -386,8 +386,13 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
 
                 append_event = prepared.journal.append_event
                 def interrupt_before_second_replaced_event(event, payload):
-                    if event == "FILE_REPLACED" and payload["path"] == "bin/new-engine.dll":
+                    if (
+                        event == "FILE_REPLACED"
+                        and payload["path"] == "bin/new-engine.dll"
+                    ):
                         raise RuntimeError("simulated crash after rename before FILE_REPLACED")
+                    if event == "RECOVERY_REQUIRED":
+                        raise RuntimeError("simulated process termination before recovery marker")
                     return append_event(event, payload)
 
                 with mock.patch.object(
@@ -404,7 +409,7 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                         )
 
                 interrupted_events = prepared.journal.read_events()
-                self.assertEqual(interrupted_events[-1]["event"], "RECOVERY_REQUIRED")
+                self.assertEqual(interrupted_events[-1]["event"], "FILE_INSTALL_INTENT")
                 names_before_recovery = [event["event"] for event in interrupted_events]
                 self.assertEqual(names_before_recovery.count("FILE_INSTALL_INTENT"), 2)
                 self.assertEqual(names_before_recovery.count("FILE_REPLACED"), 1)
