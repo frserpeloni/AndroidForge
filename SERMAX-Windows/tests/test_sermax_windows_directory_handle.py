@@ -50,7 +50,7 @@ class DirectoryHandleEnumerationControlTests(unittest.TestCase):
             patch.object(
                 native_enum, "_native_api", return_value=(None, query, None)
             ),
-            patch.object(native_enum.ctypes, "get_last_error", return_value=18),
+            patch.object(native_enum.ctypes, "get_last_error", return_value=18, create=True),
         ):
             result = native_enum.enumerate_directory_handle(123, buffer_size=4096)
         return result, calls
