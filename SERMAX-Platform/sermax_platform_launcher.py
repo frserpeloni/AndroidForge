@@ -92,12 +92,58 @@ def _serve_server(server, stop: threading.Event, failed: threading.Event) -> Non
         stop.set()
 
 
+def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5) -> dict:
+    """Inspeciona o lock e o health check sem iniciar, encerrar ou alterar a instância."""
+    from instance_lock import InstanceLockError, acquire_instance_lock
+
+    lock_path = data_dir / "platform-instance.lock"
+    if not lock_path.exists():
+        return {"state": "stopped", "detail": "Nenhum lock de instância encontrado."}
+
+    try:
+        handle = acquire_instance_lock(data_dir)
+    except InstanceLockError:
+        try:
+            request = urllib.request.Request(
+                url.rstrip("/") + "/api/health",
+                headers={"Accept": "application/json"},
+                method="GET",
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if (
+                response.status == 200
+                and isinstance(payload, dict)
+                and payload.get("service") == "sermax-platform-api"
+            ):
+                return {
+                    "state": "running",
+                    "detail": "Lock ativo e API SERMAX saudável.",
+                    "version": payload.get("version"),
+                    "core": payload.get("core"),
+                }
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            pass
+        return {
+            "state": "unresponsive",
+            "detail": "O lock está ocupado, mas a API não confirmou saúde. Não encerre processos automaticamente.",
+        }
+    else:
+        handle.close()
+        return {"state": "stopped", "detail": "Lock livre; nenhuma instância mantém o diretório de dados."}
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Inicializador local da Plataforma SERMAX.")
     parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Mantém a API local em execução sem abrir uma janela do navegador.",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Consulta o estado local da Plataforma sem iniciar ou encerrar processos.",
     )
     parser.add_argument(
         "--install-autostart", action="store_const", const="install", dest="autostart_action",
@@ -207,6 +253,11 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
 def main(argv=None) -> int:
     args = parse_args(argv)
     root = platform_root()
+    if args.status:
+        data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
+        status = inspect_instance_status(data_dir)
+        print(json.dumps(status, ensure_ascii=False))
+        return 0 if status["state"] in {"running", "stopped"} else 6
     if args.autostart_action:
         backend = root / "backend"
         if not (backend / "windows_autostart.py").is_file():
