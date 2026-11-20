@@ -31,7 +31,7 @@ class WindowsAutostartXmlTests(unittest.TestCase):
             venv_python.parent.mkdir(parents=True)
             venv_python.write_text("", encoding="utf-8")
             xml_text = autostart.build_task_xml(
-                root, frozen=False, user_id="PC\\\\fabiano"
+                root, frozen=False, user_id="PC\\fabiano"
             )
             self.assertIn(f"<Command>{venv_python}</Command>", xml_text)
             self.assertIn(f"{root / 'sermax_platform_launcher.py'}", xml_text)
@@ -45,7 +45,7 @@ class WindowsAutostartXmlTests(unittest.TestCase):
             venv_python.parent.mkdir(parents=True)
             venv_python.write_text("", encoding="utf-8")
             xml_text = autostart.build_task_xml(
-                root, frozen=False, user_id="PC\\\\fabiano"
+                root, frozen=False, user_id="PC\\fabiano"
             )
             self.assertIn(f"<Command>{venv_python}</Command>", xml_text)
 
@@ -55,13 +55,13 @@ class WindowsAutostartXmlTests(unittest.TestCase):
             Path("C:/SERMAX-Platform"),
             executable="C:/Python/python.exe",
             frozen=False,
-            user_id="PC\\\\fabiano",
+            user_id="PC\\fabiano",
         )
         task = autostart.ET.fromstring(xml_text)
         self.assertEqual(task.tag, f"{namespace}Task")
         trigger = task.find(f"{namespace}Triggers/{namespace}LogonTrigger")
         self.assertIsNotNone(trigger)
-        self.assertEqual(trigger.findtext(f"{namespace}UserId"), "PC\\\\fabiano")
+        self.assertEqual(trigger.findtext(f"{namespace}UserId"), "PC\\fabiano")
         principal = task.find(f"{namespace}Principals/{namespace}Principal")
         self.assertEqual(principal.findtext(f"{namespace}LogonType"), "InteractiveToken")
         self.assertEqual(principal.findtext(f"{namespace}RunLevel"), "LeastPrivilege")
