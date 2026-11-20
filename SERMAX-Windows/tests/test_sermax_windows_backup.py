@@ -524,7 +524,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 "last_write_time": 132223104020000000,
             }
             backup._set_file_attributes_by_handle(
-                source_handle, backup.FILE_ATTRIBUTE_HIDDEN
+                source_handle, backup.FILE_ATTRIBUTE_READONLY
             )
             expected_timestamps = backup._set_file_timestamps_by_handle(
                 source_handle, expected_timestamps
@@ -537,6 +537,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
             journal_session = None
             snapshot = None
             restored_handle = None
+            writable_handle = None
             try:
                 backups_handle = create_private_directory_component(
                     parent_handle, "backups"
@@ -552,11 +553,25 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertIsNotNone(snapshot.catalog)
                 self.assertEqual(
                     snapshot.files[0]["source_attributes"],
-                    backup.FILE_ATTRIBUTE_HIDDEN,
+                    backup.FILE_ATTRIBUTE_READONLY,
                 )
                 backup_component = snapshot.component
                 catalog_hash = snapshot.catalog["sha256"]
                 snapshot.close()
+
+                # O backup preserva o atributo somente leitura. Remova-o no
+                # sandbox para simular a atualização que alterou o arquivo.
+                writable_handle = create_file(
+                    source_path,
+                    0x00000080 | 0x00000100 | 0x00100000,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(writable_handle, (None, 0, invalid))
+                backup._set_file_attributes_by_handle(
+                    writable_handle, backup.FILE_ATTRIBUTE_NORMAL
+                )
+                self.assertTrue(close(writable_handle))
+                writable_handle = None
 
                 journal_session = create_journal_transaction_by_handle(
                     journal_handle
@@ -692,7 +707,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertNotIn(restored_handle, (None, 0, invalid))
                 metadata = query_handle_metadata(restored_handle)
                 self.assertEqual(
-                    metadata["attributes"], backup.FILE_ATTRIBUTE_HIDDEN
+                    metadata["attributes"], backup.FILE_ATTRIBUTE_READONLY
                 )
                 self.assertEqual(
                     backup._query_file_timestamps_by_handle(restored_handle),
@@ -716,6 +731,8 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                     self.assertTrue(close(source_handle))
                 if restored_handle is not None:
                     self.assertTrue(close(restored_handle))
+                if writable_handle is not None:
+                    self.assertTrue(close(writable_handle))
                 self.assertTrue(close(active_handle))
                 self.assertTrue(close(parent_handle))
                 shutil.rmtree(root, ignore_errors=True)
