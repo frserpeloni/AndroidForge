@@ -105,7 +105,10 @@ def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5
     if not lock_path.exists():
         return {"state": "stopped", "detail": "Nenhum lock de instância encontrado."}
     try:
-        if lock_path.stat().st_size == 0:
+        # Windows locks a byte in the file; POSIX flock locks the file
+        # descriptor without changing its size. Only an empty Windows lock
+        # file can be treated as an unused lock without probing it.
+        if os.name == "nt" and lock_path.stat().st_size == 0:
             return {"state": "stopped", "detail": "Arquivo de lock vazio; nenhuma instância mantém o bloqueio."}
     except OSError as exc:
         return {
