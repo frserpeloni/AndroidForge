@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import ctypes
 import hashlib
 import json
@@ -47,6 +48,89 @@ class HandleBackupUnitTests(unittest.TestCase):
             with self.subTest(attributes=attributes):
                 with self.assertRaisesRegex(backup.BackupError, "não suportados"):
                     backup._validate_restorable_attributes(attributes)
+
+    def test_schema_v1_catalog_remains_valid_without_timestamp_fields(self):
+        descriptor = b"SERMAX legacy security descriptor"
+        descriptor_hash = hashlib.sha256(descriptor).hexdigest()
+        content_hash = hashlib.sha256(b"data").hexdigest()
+        record = {
+            "path": "bin/engine.dll",
+            "source_file_id_128": "a" * 32,
+            "source_volume_serial_number": 123,
+            "source_attributes": backup.FILE_ATTRIBUTE_ARCHIVE,
+            "source_security_descriptor_b64": base64.b64encode(descriptor).decode("ascii"),
+            "source_security_descriptor_sha256": descriptor_hash,
+            "size": 4,
+            "sha256": content_hash,
+            "backup_file_id_128": "b" * 32,
+            "backup_volume_serial_number": 123,
+            "backup_number_of_links": 1,
+            "backup_size": 4,
+            "backup_sha256": content_hash,
+        }
+        catalog = {
+            "schema_version": 1,
+            "backup_component": "backup-" + "c" * 24,
+            "files": [record],
+        }
+        self.assertEqual(
+            backup._validate_backup_catalog(catalog, catalog["backup_component"], 123),
+            (record,),
+        )
+
+    def test_schema_v2_catalog_requires_timestamp_fields(self):
+        descriptor = b"SERMAX legacy security descriptor"
+        descriptor_hash = hashlib.sha256(descriptor).hexdigest()
+        content_hash = hashlib.sha256(b"data").hexdigest()
+        record = {
+            "path": "bin/engine.dll",
+            "source_file_id_128": "a" * 32,
+            "source_volume_serial_number": 123,
+            "source_attributes": backup.FILE_ATTRIBUTE_ARCHIVE,
+            "source_security_descriptor_b64": base64.b64encode(descriptor).decode("ascii"),
+            "source_security_descriptor_sha256": descriptor_hash,
+            "size": 4,
+            "sha256": content_hash,
+            "backup_file_id_128": "b" * 32,
+            "backup_volume_serial_number": 123,
+            "backup_number_of_links": 1,
+            "backup_size": 4,
+            "backup_sha256": content_hash,
+        }
+        catalog = {
+            "schema_version": 2,
+            "backup_component": "backup-" + "c" * 24,
+            "files": [record],
+        }
+        with self.assertRaisesRegex(backup.BackupError, "campos ausentes"):
+            backup._validate_backup_catalog(catalog, catalog["backup_component"], 123)
+
+    def test_file_timestamp_validation_accepts_windows_filetime_values(self):
+        values = {
+            "creation_time": 132223104000000000,
+            "last_access_time": 132223104010000000,
+            "last_write_time": 132223104020000000,
+        }
+        self.assertEqual(backup._validate_file_timestamps(values), values)
+
+    def test_file_timestamp_validation_rejects_missing_zero_bool_and_overflow(self):
+        valid = {
+            "creation_time": 132223104000000000,
+            "last_access_time": 132223104010000000,
+            "last_write_time": 132223104020000000,
+        }
+        cases = (
+            {},
+            {**valid, "last_write_time": 0},
+            {**valid, "last_access_time": True},
+            {**valid, "creation_time": -1},
+            {**valid, "last_write_time": 0x8000000000000000},
+            {**valid, "extra": 1},
+        )
+        for value in cases:
+            with self.subTest(value=value):
+                with self.assertRaises(backup.BackupError):
+                    backup._validate_file_timestamps(value)
 
     def test_rejects_source_with_multiple_hardlinks(self):
         metadata = {
@@ -205,6 +289,22 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 share, None, 3, flags, None,
             )
             self.assertNotIn(active_handle, (None, 0, invalid))
+            source_file_handle = create_file(
+                source_path,
+                0x00000080 | 0x00000100 | 0x00100000,
+                share, None, 3, 0x00000080, None,
+            )
+            self.assertNotIn(source_file_handle, (None, 0, invalid))
+            expected_timestamps = backup._set_file_timestamps_by_handle(
+                source_file_handle,
+                {
+                    "creation_time": 132223104000000000,
+                    "last_access_time": 132223104010000000,
+                    "last_write_time": 132223104020000000,
+                },
+            )
+            self.assertTrue(close(source_file_handle))
+            source_file_handle = None
 
             backups_handle = None
             journal_handle = None
@@ -241,8 +341,11 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 )
                 with open(catalog_path, "r", encoding="utf-8") as catalog_file:
                     catalog = json.load(catalog_file)
-                self.assertEqual(catalog["schema_version"], 1)
+                self.assertEqual(catalog["schema_version"], 2)
                 self.assertEqual(catalog["files"][0]["path"], "bin/engine.dll")
+                self.assertEqual(
+                    catalog["files"][0]["source_timestamps"], expected_timestamps
+                )
                 self.assertEqual(
                     catalog["files"][0]["sha256"],
                     hashlib.sha256(source).hexdigest(),
@@ -305,6 +408,28 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertEqual(restored["journal_last_event"], "FILE_RESTORED")
                 with open(source_path, "rb") as active:
                     self.assertEqual(active.read(), source)
+                source_file_handle = create_file(
+                    source_path,
+                    0x00000080 | 0x00000100 | 0x00100000,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(source_file_handle, (None, 0, invalid))
+                # A leitura usada para conferir o conteúdo pode atualizar LastAccessTime.
+                backup._set_file_timestamps_by_handle(
+                    source_file_handle, expected_timestamps
+                )
+                self.assertEqual(
+                    backup._query_file_timestamps_by_handle(source_file_handle),
+                    expected_timestamps,
+                )
+                divergent_timestamps = {
+                    key: value + 1000 for key, value in expected_timestamps.items()
+                }
+                backup._set_file_timestamps_by_handle(
+                    source_file_handle, divergent_timestamps
+                )
+                self.assertTrue(close(source_file_handle))
+                source_file_handle = None
 
                 repeated = backup.restore_backup_files_by_handle(
                     active_handle,
@@ -314,6 +439,18 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(repeated["restored_count"], 0)
                 self.assertEqual(repeated["already_restored_count"], 1)
+                source_file_handle = create_file(
+                    source_path,
+                    0x00000080,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(source_file_handle, (None, 0, invalid))
+                self.assertEqual(
+                    backup._query_file_timestamps_by_handle(source_file_handle),
+                    expected_timestamps,
+                )
+                self.assertTrue(close(source_file_handle))
+                source_file_handle = None
             finally:
                 if journal_session is not None:
                     journal_session.close()
@@ -323,6 +460,8 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                     snapshot.close()
                 if backups_handle is not None:
                     close_handle(backups_handle)
+                if source_file_handle is not None:
+                    self.assertTrue(close(source_file_handle))
                 self.assertTrue(close(active_handle))
                 self.assertTrue(close(parent_handle))
                 shutil.rmtree(root, ignore_errors=True)
