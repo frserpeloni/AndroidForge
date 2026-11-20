@@ -27,7 +27,7 @@ class WindowsAutostartXmlTests(unittest.TestCase):
     def test_source_task_prefers_platform_virtual_environment_python(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            venv_python = root / "backend" / ".venv" / "Scripts" / "python.exe"
+            venv_python = root / "backend" / ".venv" / "Scripts" / "pythonw.exe"
             venv_python.parent.mkdir(parents=True)
             venv_python.write_text("", encoding="utf-8")
             xml_text = autostart.build_task_xml(
