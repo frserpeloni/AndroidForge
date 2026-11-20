@@ -1,10 +1,18 @@
 import json
+import os
+import sys
+import tempfile
 import threading
 import urllib.error
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 import sermax_platform_launcher as launcher
+
+BACKEND_DIR = Path(__file__).resolve().parents[1] / "backend"
+sys.path.insert(0, str(BACKEND_DIR))
+import instance_lock
 
 
 class _Response:
@@ -175,6 +183,43 @@ class LauncherArgumentTests(unittest.TestCase):
     def test_non_positive_timeout_is_rejected(self):
         with self.assertRaises(SystemExit):
             launcher.parse_args(["--health-timeout", "0"])
+
+
+
+class LauncherInstanceLockIntegrationTests(unittest.TestCase):
+    def test_main_refuses_to_start_server_when_lock_is_already_held(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            held = instance_lock.acquire_instance_lock(data_dir)
+            try:
+                with (
+                    patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                    patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}),
+                    patch.object(launcher, "configure_logging"),
+                    patch.object(launcher, "_run_server") as run_server,
+                ):
+                    self.assertEqual(launcher.main(["--no-browser"]), 4)
+                run_server.assert_not_called()
+            finally:
+                held.close()
+
+    def test_main_keeps_lock_for_the_entire_server_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+
+            def fake_run_server(args, root, selected_data_dir):
+                self.assertEqual(selected_data_dir, data_dir)
+                with self.assertRaises(instance_lock.InstanceLockError):
+                    instance_lock.acquire_instance_lock(data_dir)
+                return 0
+
+            with (
+                patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}),
+                patch.object(launcher, "configure_logging"),
+                patch.object(launcher, "_run_server", side_effect=fake_run_server),
+            ):
+                self.assertEqual(launcher.main(["--no-browser"]), 0)
 
 
 class LauncherShutdownTests(unittest.TestCase):
