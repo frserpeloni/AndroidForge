@@ -23,6 +23,20 @@ class WindowsAutostartXmlTests(unittest.TestCase):
         self.assertIn("IgnoreNew", xml_text)
         self.assertNotIn("LocalSystem", xml_text)
 
+
+    def test_source_task_prefers_platform_virtual_environment_python(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv_python = root / "backend" / ".venv" / "Scripts" / "python.exe"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_text("", encoding="utf-8")
+            xml_text = autostart.build_task_xml(
+                root, frozen=False, user_id="PC\\\\fabiano"
+            )
+            self.assertIn(f"<Command>{venv_python}</Command>", xml_text)
+            self.assertIn(f"{root / 'sermax_platform_launcher.py'}", xml_text)
+            self.assertIn("--no-browser", xml_text)
+
     def test_frozen_launcher_does_not_pass_python_script_path(self):
         xml_text = autostart.build_task_xml(
             Path("C:/SERMAX"),
