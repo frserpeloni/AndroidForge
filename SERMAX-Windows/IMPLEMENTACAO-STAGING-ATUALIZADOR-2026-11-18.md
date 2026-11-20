@@ -426,4 +426,27 @@ A branch `sermax-backup-timestamps-20261120` acrescenta metadados temporais ao c
 - `ChangeTime` não é armazenado nem restaurado. O Windows administra esse campo como horário de alteração de metadados e não é tratado como timestamp preservável neste fluxo.
 - Valores zero são recusados, pois zero em `FILE_BASIC_INFO` significa não alterar o campo. O fluxo falha fechado em vez de declarar restauração temporal sem confirmação.
 
-A alteração está em branch isolada. A validação CI e a homologação local ainda precisam ser executadas. Nenhum arquivo de `C:\\SERMAX` foi tocado.
+A alteração está em branch isolada. CI Windows aprovada na execução `44775262899`, no commit `14636652bc19d4cf14a90fb994432c0a8697832d`, com compilação e todas as etapas do workflow concluídas. Homologação no Windows 11 local permanece pendente. Nenhum arquivo de `C:\\SERMAX` foi tocado.
+
+
+## Recuperação após encerramento abrupto de processo separado, 2026-11-20
+
+Foi acrescentado um teste nativo Windows que valida o limite entre a renomeação física e o registro de `FILE_REPLACED`:
+
+1. Um processo filho prepara a transação em diretório temporário e instala o primeiro arquivo.
+2. No segundo arquivo, o teste executa a renomeação real e encerra o processo com `os._exit(73)`, sem executar os blocos `except/finally` e sem gravar `RECOVERY_REQUIRED`.
+3. Um segundo processo abre as áreas privadas persistentes por novos handles.
+4. O segundo processo reabre o journal e executa `recover_interrupted_update_by_handle()`.
+5. O teste confirma a restauração do arquivo original, a remoção do arquivo novo e o estado final `ROLLED_BACK`.
+
+### Evidência CI
+
+- Commit de código/teste: `c11c91fb878388c76ebc6a45806f39bb7d9dcaee`.
+- Run: `44784361812`.
+- Runner Windows, Python 3.14.
+- O log confirma `test_recovers_after_real_subprocess_termination_between_rename_and_journal ... ok`.
+- A suíte transacional executou 8 testes em 4,397 segundos.
+- Todas as etapas do workflow concluíram com sucesso.
+- Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44784361812.
+
+O cenário valida encerramento abrupto de processo e recuperação em outro processo no runner Windows. Não simula perda física de energia nem substitui a homologação no Windows 11 local. Nenhum arquivo de `C:\\SERMAX` foi alterado; não houve merge ou release.

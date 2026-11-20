@@ -4,6 +4,9 @@ import ctypes
 import hashlib
 import io
 import os
+import json
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -731,6 +734,244 @@ class TransactionPreparationWindowsTests(unittest.TestCase):
                     close_handle(handle)
                 self.assertTrue(close(active_handle))
                 self.assertTrue(close(root_handle))
+
+
+    def test_recovers_after_real_subprocess_termination_between_rename_and_journal(self):
+        archive_script = r'''
+import ctypes
+import hashlib
+import io
+import os
+import sys
+import zipfile
+
+import sermax_update_transaction as transaction
+from sermax_update_manifest import ManifestFile, ValidatedManifest
+from sermax_windows_private_area import create_private_directory_component
+
+root = sys.argv[1]
+active_path = os.path.join(root, "active")
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+create_file = kernel32.CreateFileW
+create_file.argtypes = [
+    ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+    ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+]
+create_file.restype = ctypes.c_void_p
+invalid = ctypes.c_void_p(-1).value
+share = 0x00000001 | 0x00000002 | 0x00000004
+flags = 0x02000000 | 0x00200000
+
+def open_directory(path, access):
+    handle = create_file(path, access, share, None, 3, flags, None)
+    if handle in (None, 0, invalid):
+        raise OSError(ctypes.get_last_error(), "CreateFileW directory failed", path)
+    return handle
+
+root_handle = open_directory(
+    root, 0x0001 | 0x0004 | 0x0080 | 0x00020000 | 0x00100000
+)
+active_handle = open_directory(
+    active_path, 0x0001 | 0x0080 | 0x00020000 | 0x00100000
+)
+backups_handle = create_private_directory_component(root_handle, "backups")
+staging_handle = create_private_directory_component(root_handle, "staging")
+journal_handle = create_private_directory_component(root_handle, "journal")
+
+files = {
+    "bin/engine.dll": b"SERMAX replacement payload",
+    "bin/new-engine.dll": b"SERMAX new component",
+}
+archive_stream = io.BytesIO()
+with zipfile.ZipFile(archive_stream, "w", compression=zipfile.ZIP_DEFLATED) as package:
+    for name, payload in files.items():
+        package.writestr(name, payload)
+manifest = ValidatedManifest(
+    release_version="1.2.3",
+    files=(
+        ManifestFile(
+            path="bin/engine.dll",
+            size=len(files["bin/engine.dll"]),
+            sha256=hashlib.sha256(files["bin/engine.dll"]).hexdigest(),
+            action="replace",
+        ),
+        ManifestFile(
+            path="bin/new-engine.dll",
+            size=len(files["bin/new-engine.dll"]),
+            sha256=hashlib.sha256(files["bin/new-engine.dll"]).hexdigest(),
+            action="create",
+        ),
+    ),
+    key_id="test-key",
+    manifest_sha256="a" * 64,
+)
+prepared = transaction.prepare_update_transaction_by_handle(
+    archive_stream.getvalue(),
+    manifest,
+    active_root_handle=active_handle,
+    backups_parent_handle=backups_handle,
+    staging_parent_handle=staging_handle,
+    journal_parent_handle=journal_handle,
+)
+prepared.begin_install()
+with open(os.path.join(root, "transaction-id.txt"), "w", encoding="ascii") as marker:
+    marker.write(prepared.transaction_id)
+
+real_rename = transaction._rename_handle_to_parent
+def terminate_after_create_rename(source_handle, destination_parent_handle, leaf_name, *, replace):
+    real_rename(
+        source_handle, destination_parent_handle, leaf_name, replace=replace
+    )
+    if leaf_name == "new-engine.dll":
+        # Encerra sem executar except/finally ou gravar RECOVERY_REQUIRED.
+        os._exit(73)
+
+transaction._rename_handle_to_parent = terminate_after_create_rename
+transaction.install_prepared_update_by_handle(
+    prepared, active_handle, backups_handle
+)
+os._exit(74)
+'''
+
+        recovery_script = r'''
+import ctypes
+import hashlib
+import json
+import os
+import sys
+
+import sermax_update_transaction as transaction
+from sermax_update_manifest import ManifestFile, ValidatedManifest
+from sermax_windows_handle_io import close_handle
+
+root = sys.argv[1]
+transaction_id = sys.argv[2]
+active_path = os.path.join(root, "active")
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+create_file = kernel32.CreateFileW
+create_file.argtypes = [
+    ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+    ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+]
+create_file.restype = ctypes.c_void_p
+invalid = ctypes.c_void_p(-1).value
+share = 0x00000001 | 0x00000002 | 0x00000004
+flags = 0x02000000 | 0x00200000
+
+def open_directory(path, access):
+    handle = create_file(path, access, share, None, 3, flags, None)
+    if handle in (None, 0, invalid):
+        raise OSError(ctypes.get_last_error(), "CreateFileW directory failed", path)
+    return handle
+
+directory_access = 0x0001 | 0x0080 | 0x00020000 | 0x00100000
+root_handle = open_directory(
+    root, 0x0001 | 0x0004 | 0x0080 | 0x00020000 | 0x00100000
+)
+active_handle = open_directory(active_path, directory_access)
+backups_handle = open_directory(os.path.join(root, "backups"), directory_access)
+staging_handle = open_directory(os.path.join(root, "staging"), directory_access)
+journal_handle = open_directory(os.path.join(root, "journal"), directory_access)
+
+manifest = ValidatedManifest(
+    release_version="1.2.3",
+    files=(
+        ManifestFile(
+            path="bin/engine.dll",
+            size=len(b"SERMAX replacement payload"),
+            sha256=hashlib.sha256(b"SERMAX replacement payload").hexdigest(),
+            action="replace",
+        ),
+        ManifestFile(
+            path="bin/new-engine.dll",
+            size=len(b"SERMAX new component"),
+            sha256=hashlib.sha256(b"SERMAX new component").hexdigest(),
+            action="create",
+        ),
+    ),
+    key_id="test-key",
+    manifest_sha256="a" * 64,
+)
+try:
+    result = transaction.recover_interrupted_update_by_handle(
+        transaction_id,
+        manifest,
+        active_root_handle=active_handle,
+        backups_parent_handle=backups_handle,
+        staging_parent_handle=staging_handle,
+        journal_parent_handle=journal_handle,
+    )
+    print(json.dumps(result, sort_keys=True))
+finally:
+    for handle in (
+        journal_handle, staging_handle, backups_handle,
+        active_handle, root_handle,
+    ):
+        close_handle(handle)
+'''
+
+        with tempfile.TemporaryDirectory(
+            prefix="sermax-subprocess-recovery-"
+        ) as root:
+            active_path = os.path.join(root, "active")
+            os.makedirs(os.path.join(active_path, "bin"))
+            original = b"SERMAX original active payload"
+            active_file = os.path.join(active_path, "bin", "engine.dll")
+            with open(active_file, "wb") as stream:
+                stream.write(original)
+
+            project_root = os.path.dirname(os.path.dirname(__file__))
+            crashed = subprocess.run(
+                [sys.executable, "-c", archive_script, root],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            self.assertEqual(
+                crashed.returncode,
+                73,
+                msg=f"Processo não terminou no ponto esperado. "
+                    f"stdout={crashed.stdout!r} stderr={crashed.stderr!r}",
+            )
+            transaction_id_path = os.path.join(root, "transaction-id.txt")
+            self.assertTrue(os.path.isfile(transaction_id_path))
+            with open(transaction_id_path, "r", encoding="ascii") as marker:
+                transaction_id = marker.read().strip()
+            self.assertTrue(transaction_id.startswith("txn-"))
+
+            created_file = os.path.join(active_path, "bin", "new-engine.dll")
+            with open(active_file, "rb") as active:
+                self.assertEqual(active.read(), b"SERMAX replacement payload")
+            with open(created_file, "rb") as active:
+                self.assertEqual(active.read(), b"SERMAX new component")
+
+            recovered = subprocess.run(
+                [
+                    sys.executable, "-c", recovery_script,
+                    root, transaction_id,
+                ],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                timeout=90,
+            )
+            self.assertEqual(
+                recovered.returncode,
+                0,
+                msg=f"Recuperação em processo separado falhou. "
+                    f"stdout={recovered.stdout!r} stderr={recovered.stderr!r}",
+            )
+            result = json.loads(recovered.stdout.strip().splitlines()[-1])
+            self.assertTrue(result["valid"])
+            self.assertTrue(result["recovered_after_restart"])
+            self.assertEqual(result["journal_last_event"], "ROLLED_BACK")
+            self.assertEqual(result["removed_count"], 1)
+            self.assertEqual(result["restored_count"], 1)
+
+            with open(active_file, "rb") as active:
+                self.assertEqual(active.read(), original)
+            self.assertFalse(os.path.exists(created_file))
 
 
 if __name__ == "__main__":
