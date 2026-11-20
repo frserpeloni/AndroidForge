@@ -124,5 +124,85 @@ class StartupRecoveryAssessmentTests(unittest.TestCase):
                 recovery.inspect_startup_recovery_by_handle(123)
 
 
+@unittest.skipUnless(
+    __import__("os").name == "nt",
+    "Inspeção nativa de journal exige Windows.",
+)
+class StartupRecoveryAssessmentWindowsTests(unittest.TestCase):
+    def test_assessment_reads_persistent_journal_without_mutating_it(self):
+        import ctypes
+        import os
+        import tempfile
+
+        from sermax_windows_handle_io import close_handle
+        from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_journal import create_journal_transaction_by_handle
+
+        with tempfile.TemporaryDirectory(prefix="sermax-startup-recovery-") as root:
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            invalid = ctypes.c_void_p(-1).value
+            parent = create_file(
+                root,
+                0x0001 | 0x0004 | 0x0080 | 0x00100000,
+                0x00000001 | 0x00000002 | 0x00000004,
+                None, 3, 0x02000000 | 0x00200000, None,
+            )
+            self.assertNotIn(parent, (None, 0, invalid))
+            journal_parent = None
+            session = None
+            try:
+                journal_parent = create_private_directory_component(
+                    parent, "journal"
+                )
+                session = create_journal_transaction_by_handle(journal_parent)
+                session.append_event(
+                    "PREPARED",
+                    {
+                        "release_version": "1.2.3",
+                        "manifest_sha256": "a" * 64,
+                    },
+                )
+                session.append_event(
+                    "BACKUP_COMPLETE",
+                    {"backup_component": None, "catalog_sha256": None},
+                )
+                session.append_event(
+                    "STAGING_COMPLETE",
+                    {
+                        "staging_component": "stage-" + "b" * 24,
+                        "archive_sha256": "c" * 64,
+                    },
+                )
+                session.append_event("INSTALL_STARTED", {})
+                before = session.read_events()
+                result = recovery.inspect_startup_recovery_by_handle(
+                    journal_parent
+                )
+                after = session.read_events()
+
+                self.assertFalse(result["startup_allowed"])
+                self.assertFalse(result["automatic_rollback_performed"])
+                self.assertEqual(
+                    result["transactions"][0]["state"], "INSTALL_INTERRUPTED"
+                )
+                self.assertEqual(
+                    [item["record_sha256"] for item in before],
+                    [item["record_sha256"] for item in after],
+                )
+            finally:
+                if session is not None:
+                    session.close()
+                if journal_parent is not None:
+                    close_handle(journal_parent)
+                close_handle(parent)
+
+
 if __name__ == "__main__":
     unittest.main()
