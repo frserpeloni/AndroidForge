@@ -120,7 +120,7 @@ class StartupRecoveryAssessmentTests(unittest.TestCase):
             ),
         ):
             with self.assertRaisesRegex(
-                recovery.StartupRecoveryAssessmentError, "resumo do journal"
+                recovery.StartupRecoveryAssessmentError, "[Rr]esumo do journal"
             ):
                 recovery.inspect_startup_recovery_by_handle(123)
 
@@ -141,7 +141,7 @@ class StartupRecoveryAssessmentTests(unittest.TestCase):
             return_value=({"transaction_id": "txn-invalid"},),
         ):
             with self.assertRaisesRegex(
-                recovery.StartupRecoveryAssessmentError, "resumo do journal"
+                recovery.StartupRecoveryAssessmentError, "[Rr]esumo do journal"
             ):
                 recovery.inspect_startup_recovery_by_handle(123)
 
