@@ -39,7 +39,36 @@ class JournalUnitTests(unittest.TestCase):
             result = journal.scan_journal_transactions_by_handle(100)
         self.assertEqual(result[0]["state"], "IN_PROGRESS")
         self.assertTrue(result[0]["requires_recovery"])
+        self.assertTrue(result[0]["install_started"])
+        self.assertTrue(result[0]["rollback_supported"])
         closer.assert_called_once_with(200)
+
+    def test_scan_marks_pre_install_transaction_as_not_rollback_supported(self):
+        entry = SimpleNamespace(
+            name="txn-" + "f" * 24,
+            is_directory=True,
+            is_reparse_point=False,
+        )
+        events = (
+            {"event": "PREPARED", "record_sha256": "b" * 64},
+            {"event": "BACKUP_COMPLETE", "record_sha256": "c" * 64},
+        )
+        with (
+            mock.patch.object(journal, "_validate_journal_parent"),
+            mock.patch.object(journal, "_real_entries", return_value=(entry,)),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component",
+                return_value=200,
+            ),
+            mock.patch.object(
+                journal, "read_journal_events_by_handle", return_value=events
+            ),
+            mock.patch.object(journal, "close_handle"),
+        ):
+            result = journal.scan_journal_transactions_by_handle(100)
+        self.assertTrue(result[0]["requires_recovery"])
+        self.assertFalse(result[0]["install_started"])
+        self.assertFalse(result[0]["rollback_supported"])
 
     def test_scan_marks_committed_transaction_as_terminal(self):
         entry = SimpleNamespace(
