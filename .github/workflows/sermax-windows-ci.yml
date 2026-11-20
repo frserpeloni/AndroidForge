@@ -1,6 +1,12 @@
 name: SERMAX Windows CI
 
 on:
+  push:
+    branches:
+      - sermax-launcher-recovery-gate-20261120
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
   pull_request:
     branches:
       - main
@@ -32,6 +38,7 @@ jobs:
           $required = @(
             "sermax_core.py",
             "sermax_launcher.py",
+            "sermax_startup_gate.py",
             "SERMAX.spec",
             "SERMAX_terminal/sermax_terminal.py",
             "SERMAX_terminal/sermax_voz.py",

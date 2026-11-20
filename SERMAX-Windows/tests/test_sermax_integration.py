@@ -26,6 +26,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             "sermax_tarefas.py",
             "sermax_historico_comandos.py",
             "sermax_launcher.py",
+            "sermax_startup_gate.py",
             "SERMAX.spec",
             "SERMAX_terminal/sermax_terminal.py",
             "SERMAX_terminal/sermax_voz.py",
@@ -48,6 +49,9 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             '"sermax_executor"',
             '"sermax_tarefas"',
             '"ferramenta_windows"',
+            '"sermax_startup_gate"', '"sermax_update_recovery"',
+            '"sermax_windows_journal"', '"sermax_windows_private_area"',
+            '"win32api"', '"win32security"',
             '"Pestinha-GPL-3.0.txt"',
             '"Pestinha-ORIGIN.md"',
         ):
@@ -167,6 +171,15 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
                           return_value=(raiz_instalacao, r"C:\Temp\_MEI12345",
                                         os.path.dirname(script_interface), script_interface)), \
              patch.object(sermax_launcher.os.path, "isfile", return_value=True), \
+             patch.object(
+                 sermax_launcher,
+                 "inspect_update_recovery_at_startup",
+                 return_value={
+                     "configured": False,
+                     "startup_allowed": True,
+                     "pending_count": 0,
+                 },
+             ), \
              patch.object(sermax_launcher.os, "chdir") as mudar_diretorio, \
              patch.object(sermax_launcher.runpy, "run_path") as executar_interface:
             sermax_launcher.main()
@@ -174,6 +187,36 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertEqual(os.environ.get("SERMAX_ROOT"), raiz_instalacao)
         mudar_diretorio.assert_called_once_with(raiz_instalacao)
         executar_interface.assert_called_once_with(script_interface, run_name="__main__")
+
+    def test_launcher_bloqueia_terminal_quando_instalacao_foi_interrompida(self):
+        raiz_instalacao = r"C:\SERMAX"
+        script_interface = r"C:\Temp\_MEI12345\SERMAX_terminal\sermax_terminal.py"
+        recovery = {
+            "configured": True,
+            "startup_allowed": False,
+            "pending_count": 1,
+            "transactions": [
+                {
+                    "transaction_id": "txn-" + "a" * 24,
+                    "last_event": "FILE_REPLACED",
+                    "startup_action": "HOLD_FOR_OPERATOR_DECISION",
+                }
+            ],
+        }
+        with patch.object(sermax_launcher.sys, "frozen", True, create=True), \
+             patch.object(sermax_launcher.sys, "executable", r"C:\SERMAX\SERMAX.exe"), \
+             patch.object(sermax_launcher.sys, "_MEIPASS", r"C:\Temp\_MEI12345", create=True), \
+             patch.object(sermax_launcher, "resolver_caminhos",
+                          return_value=(raiz_instalacao, r"C:\Temp\_MEI12345",
+                                        os.path.dirname(script_interface), script_interface)), \
+             patch.object(sermax_launcher.os.path, "isfile", return_value=True), \
+             patch.object(sermax_launcher, "inspect_update_recovery_at_startup",
+                          return_value=recovery), \
+             patch("builtins.input"), \
+             patch.object(sermax_launcher.runpy, "run_path") as executar_interface:
+            sermax_launcher.main()
+
+        executar_interface.assert_not_called()
 
     def test_localizador_de_voz_prioriza_arquivos_da_instalacao(self):
         with tempfile.TemporaryDirectory() as temporario:
