@@ -204,6 +204,16 @@ class LauncherStatusTests(unittest.TestCase):
             status = launcher.inspect_instance_status(data_dir)
             self.assertEqual(status["state"], "stopped")
 
+    def test_status_reports_lock_permission_error_without_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            (data_dir / "platform-instance.lock").touch()
+            with patch.object(instance_lock, "acquire_instance_lock",
+                              side_effect=PermissionError("access denied")):
+                status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "error")
+            self.assertIn("access denied", status["detail"])
+
     def test_status_reports_running_only_when_lock_and_health_match(self):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
@@ -299,6 +309,10 @@ class LauncherArgumentTests(unittest.TestCase):
     def test_non_positive_timeout_is_rejected(self):
         with self.assertRaises(SystemExit):
             launcher.parse_args(["--health-timeout", "0"])
+
+    def test_status_cannot_be_combined_with_autostart_operation(self):
+        with self.assertRaises(SystemExit):
+            launcher.parse_args(["--status", "--autostart-status"])
 
 
 
