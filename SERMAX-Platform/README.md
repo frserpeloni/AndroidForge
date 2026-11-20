@@ -20,8 +20,9 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador manual de desenvolvimento.
 - `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, valida `/api/health`, abre o navegador e encerra o servidor de forma controlada.
-- `backend/test_api.py`, testes automatizados da API, projetos e persistência após reinício.
+- `backend/test_api.py` e testes especializados para streaming, anexos, OCR, tarefas, memória, diagnóstico dos motores e contrato de sessão.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
+- `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
 - `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
 - `package.json`, dependências e comando dos testes de interface.
 
@@ -33,13 +34,16 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 
 ## Limitações conhecidas
 
-- A primeira versão é local e de usuário único.
-- Não há autenticação nem acesso remoto.
-- Não há streaming de tokens.
-- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. O gerenciador de tarefas persistentes permite criar, consultar, editar, definir prioridade e prazo, filtrar e atualizar o estado. O painel Memória consulta somente registros já carregados em memória pelo núcleo, sem abrir ou alterar arquivos. Execução automática/em segundo plano e anexos seguem pendentes.
+- A versão atual é local e de usuário único. Não há autenticação nem acesso remoto.
+- O serviço permanece vinculado a loopback. Não encaminhe a porta nem exponha a API à rede.
+- O streaming SSE envia snapshots acumulados do núcleo. O fluxo Ollama apresenta atualizações durante a geração; OpenJarvis entrega a resposta em bloco. Ainda não há cancelamento seguro da inferência.
+- Projetos, conversas e tarefas persistem no SQLite. Tarefas aceitam cadastro, edição, prioridade, prazo e mudança de estado, mas não executam ações automaticamente nem rodam em segundo plano.
+- O painel Memória é somente leitura e consulta registros já carregados pelo núcleo. A memória persistente geral continua compartilhada conforme as regras originais do SERMAX.
+- Anexos por conversa aceitam PDF, DOCX, TXT UTF-8, JPEG e PNG, com limites de tamanho e validação de conteúdo. A extração textual e o contexto dos anexos estão integrados à conversa, com orçamento limitado e tratamento do conteúdo como dado não confiável.
+- OCR local opcional atende imagens e páginas PDF digitalizadas quando Tesseract, idiomas e dependências estão instalados. O CI não comprova a qualidade do OCR nem a execução real dos motores locais.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
-- Compatibilidade real com o ambiente Python do computador precisa ser testada.
-- A interface ainda não passou por teste automatizado de interação em navegador.
+- A compatibilidade com o ambiente Python do computador e a integração real com Ollama/OpenJarvis ainda exigem homologação local.
+- Os testes de interface usam DOM simulado. Ainda falta teste visual em navegador real.
 - Não é hospedagem pública nem instalador validado.
 
 ## Inicializador da Plataforma
