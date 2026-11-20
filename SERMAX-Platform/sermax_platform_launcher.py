@@ -35,14 +35,29 @@ def configure_logging(data_dir: Path) -> None:
     )
 
 
-def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> bool:
+def wait_for_health(
+    url: str,
+    stop: threading.Event,
+    timeout: float = 30.0,
+    worker: threading.Thread | None = None,
+) -> bool:
+    """Wait for health while confirming the API worker belongs to this launcher."""
     deadline = time.monotonic() + timeout
     health_url = url.rstrip("/") + "/api/health"
     while time.monotonic() < deadline and not stop.is_set():
+        # A different SERMAX process may already own the port. Its health
+        # endpoint must not make this launcher report a successful startup.
+        if worker is not None and not worker.is_alive():
+            return False
         try:
             with urllib.request.urlopen(health_url, timeout=1.5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-                if response.status == 200 and isinstance(payload, dict) and payload.get("service") == "sermax-platform-api":
+                if (
+                    response.status == 200
+                    and isinstance(payload, dict)
+                    and payload.get("service") == "sermax-platform-api"
+                    and (worker is None or worker.is_alive())
+                ):
                     return True
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             time.sleep(0.25)
