@@ -209,7 +209,8 @@ class LauncherStatusTests(unittest.TestCase):
     def test_status_reports_lock_permission_error_without_crashing(self):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
-            (data_dir / "platform-instance.lock").touch()
+            lock_path = data_dir / "platform-instance.lock"
+            lock_path.write_bytes(b"\\x00")
             with patch.object(instance_lock, "acquire_instance_lock",
                               side_effect=PermissionError("access denied")):
                 status = launcher.inspect_instance_status(data_dir)
