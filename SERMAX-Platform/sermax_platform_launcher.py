@@ -104,6 +104,14 @@ def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5
     lock_path = data_dir / "platform-instance.lock"
     if not lock_path.exists():
         return {"state": "stopped", "detail": "Nenhum lock de instância encontrado."}
+    try:
+        if lock_path.stat().st_size == 0:
+            return {"state": "stopped", "detail": "Arquivo de lock vazio; nenhuma instância mantém o bloqueio."}
+    except OSError as exc:
+        return {
+            "state": "error",
+            "detail": f"Não foi possível inspecionar o arquivo de lock: {type(exc).__name__}: {exc}",
+        }
 
     try:
         handle = acquire_instance_lock(data_dir)
