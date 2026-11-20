@@ -428,6 +428,7 @@ def backup_existing_files_by_handle(
                         f"Identidade da origem mudou após o preflight: {item.path}"
                     )
 
+                source_timestamps = _query_file_timestamps_by_handle(source_handle)
                 reader = NativeHandleReader(source_handle)
                 original_security_descriptor = read_security_descriptor_binary(
                     source_handle, require_directory=False
@@ -473,6 +474,7 @@ def backup_existing_files_by_handle(
                     "source_file_id_128": source_metadata["file_id_128"],
                     "source_volume_serial_number": source_metadata["volume_serial_number"],
                     "source_attributes": source_metadata["attributes"],
+                    "source_timestamps": source_timestamps,
                     "source_security_descriptor_b64": original_security_descriptor_b64,
                     "source_security_descriptor_sha256": hashlib.sha256(
                         original_security_descriptor
@@ -486,7 +488,7 @@ def backup_existing_files_by_handle(
                 _close_source(source_handle, source_parents)
 
         catalog_document = {
-            "schema_version": 1,
+            "schema_version": 2,
             "backup_component": component,
             "files": [
                 {
@@ -494,6 +496,7 @@ def backup_existing_files_by_handle(
                     "source_file_id_128": item["source_file_id_128"],
                     "source_volume_serial_number": item["source_volume_serial_number"],
                     "source_attributes": item["source_attributes"],
+                    "source_timestamps": item["source_timestamps"],
                     "source_security_descriptor_b64": item["source_security_descriptor_b64"],
                     "source_security_descriptor_sha256": item["source_security_descriptor_sha256"],
                     "size": item["size"],
@@ -591,7 +594,7 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
         "schema_version", "backup_component", "files"
     }:
         raise BackupError("Estrutura do catálogo incompatível.")
-    if type(document["schema_version"]) is not int or document["schema_version"] != 1:
+    if type(document["schema_version"]) is not int or document["schema_version"] not in {1, 2}:
         raise BackupError("Versão do catálogo não suportada.")
     if document["backup_component"] != component:
         raise BackupError("O catálogo pertence a outro componente de backup.")
@@ -606,6 +609,8 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
         "backup_file_id_128", "backup_volume_serial_number",
         "backup_number_of_links", "backup_size", "backup_sha256",
     }
+    if document["schema_version"] == 2:
+        required.add("source_timestamps")
     seen = set()
     normalized_records = []
     for record in records:
@@ -633,6 +638,8 @@ def _validate_backup_catalog(document: object, component: str, root_volume: int)
             value = record[key]
             if not isinstance(value, str) or not re.fullmatch(r"[0-9a-fA-F]{32}", value):
                 raise BackupError(f"{key} inválido no catálogo.")
+        if document["schema_version"] == 2:
+            _validate_file_timestamps(record["source_timestamps"])
         for key in (
             "source_volume_serial_number", "source_attributes", "size",
             "backup_volume_serial_number", "backup_number_of_links", "backup_size",
@@ -923,6 +930,61 @@ class _FILE_BASIC_INFO(ctypes.Structure):
     ]
 
 
+def _validate_file_timestamps(value: object) -> dict[str, int]:
+    required = {"creation_time", "last_access_time", "last_write_time"}
+    if not isinstance(value, dict) or set(value) != required:
+        raise BackupError("Metadados de timestamps ausentes ou incompatíveis.")
+    result = {}
+    for key in sorted(required):
+        timestamp = value[key]
+        # Win32 usa zero como sinal de "não alterar" em FILE_BASIC_INFO.
+        if type(timestamp) is not int or timestamp <= 0 or timestamp > 0x7FFFFFFFFFFFFFFF:
+            raise BackupError(f"Timestamp Windows inválido: {key}.")
+        result[key] = timestamp
+    return result
+
+
+def _query_file_timestamps_by_handle(handle) -> dict[str, int]:
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    query = kernel32.GetFileInformationByHandleEx
+    query.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    query.restype = wintypes.BOOL
+    info = _FILE_BASIC_INFO()
+    # FILE_BASIC_INFO é a classe zero de GetFileInformationByHandleEx.
+    if not query(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+        raise BackupError(
+            "GetFileInformationByHandleEx(FileBasicInfo) falhou, "
+            f"WinError={ctypes.get_last_error()}."
+        )
+    return _validate_file_timestamps({
+        "creation_time": int(info.CreationTime),
+        "last_access_time": int(info.LastAccessTime),
+        "last_write_time": int(info.LastWriteTime),
+    })
+
+
+def _set_file_timestamps_by_handle(handle, timestamps: object) -> dict[str, int]:
+    values = _validate_file_timestamps(timestamps)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    set_info = kernel32.SetFileInformationByHandle
+    set_info.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    set_info.restype = wintypes.BOOL
+    info = _FILE_BASIC_INFO()
+    info.CreationTime = values["creation_time"]
+    info.LastAccessTime = values["last_access_time"]
+    info.LastWriteTime = values["last_write_time"]
+    # ChangeTime e FileAttributes permanecem zero, portanto não são alterados.
+    if not set_info(handle, 0, ctypes.byref(info), ctypes.sizeof(info)):
+        raise BackupError(
+            "SetFileInformationByHandle(FileBasicInfo/timestamps) falhou, "
+            f"WinError={ctypes.get_last_error()}."
+        )
+    actual = _query_file_timestamps_by_handle(handle)
+    if actual != values:
+        raise BackupError("Timestamps restaurados divergem dos valores originais.")
+    return actual
+
+
 def _validate_restorable_attributes(attributes: int) -> int:
     if type(attributes) is not int or attributes < 0 or attributes > 0xFFFFFFFF:
         raise BackupError("Atributos originais inválidos.")
@@ -1054,6 +1116,7 @@ def _restore_file_content_by_handle(
     expected_sha256: str,
     original_attributes: int,
     original_security_descriptor: bytes,
+    original_timestamps: object | None = None,
 ) -> dict[str, object]:
     from sermax_windows_file_writer import _write_apis, _write_all, _readback
 
@@ -1106,6 +1169,11 @@ def _restore_file_content_by_handle(
         raise BackupError("ACL/owner/group restaurados divergem do descritor original.")
 
     _set_file_attributes_by_handle(destination_handle, original_attributes)
+    restored_timestamps = None
+    if original_timestamps is not None:
+        restored_timestamps = _set_file_timestamps_by_handle(
+            destination_handle, original_timestamps
+        )
     metadata = query_handle_metadata(destination_handle)
     if metadata["end_of_file"] != expected_size or metadata["attributes"] != original_attributes:
         if not (
@@ -1119,6 +1187,8 @@ def _restore_file_content_by_handle(
         "size": readback_size,
         "attributes": metadata["attributes"],
         "security_descriptor_verified": True,
+        "timestamps": restored_timestamps,
+        "timestamps_verified": restored_timestamps is not None,
     }
 
 
@@ -1259,10 +1329,17 @@ def restore_backup_files_by_handle(
                 current_hash = _hash_and_rewind(
                     NativeHandleReader(target_handle), target_meta["end_of_file"]
                 )
+                expected_timestamps = record.get("source_timestamps")
+                timestamps_match = (
+                    expected_timestamps is None
+                    or _query_file_timestamps_by_handle(target_handle)
+                    == _validate_file_timestamps(expected_timestamps)
+                )
                 already_matches = (
                     current_hash.lower() == expected_hash
                     and target_meta["attributes"] == record["source_attributes"]
                     and _security_descriptor_matches(target_handle, descriptor_bytes)
+                    and timestamps_match
                 )
                 if already_matches:
                     if path not in restored_paths:
@@ -1333,6 +1410,7 @@ def restore_backup_files_by_handle(
                 expected_sha256=expected_hash,
                 original_attributes=record["source_attributes"],
                 original_security_descriptor=descriptor_bytes,
+                original_timestamps=record.get("source_timestamps"),
             )
             journal_session.append_event(
                 "FILE_RESTORED",
