@@ -28,7 +28,7 @@ No diretório da Plataforma, execute no terminal:
 .\\backend\\.venv\\Scripts\\python.exe .\\sermax_platform_launcher.py --remove-autostart
 ```
 
-A tarefa prioriza `pythonw.exe` do ambiente virtual `backend\\.venv` criado pelo `run_local.bat`, para iniciar sem janela de console e com as dependências da Plataforma. Se `pythonw.exe` não existir, tenta `python.exe` do mesmo ambiente. Sem ambiente virtual, usa o interpretador que executou o comando de registro. A tarefa inicia o launcher com `--no-browser`, mantém a API em `127.0.0.1:8765` e grava logs no diretório de dados do usuário. O PC precisa estar ligado e o usuário precisa entrar na sessão do Windows. A tarefa não oferece acesso remoto e não abre portas no firewall.
+A tarefa prioriza `pythonw.exe` do ambiente virtual `backend\\.venv` criado pelo `run_local.bat`, para iniciar sem janela de console e com as dependências da Plataforma. Se `pythonw.exe` não existir, tenta `python.exe` do mesmo ambiente. Sem ambiente virtual, usa o interpretador que executou o comando de registro. Se o processo falhar, o Agendador tenta reiniciá-lo até três vezes, com intervalo de um minuto. A tarefa inicia o launcher com `--no-browser`, mantém a API em `127.0.0.1:8765` e grava logs no diretório de dados do usuário. O PC precisa estar ligado e o usuário precisa entrar na sessão do Windows. A tarefa não oferece acesso remoto e não abre portas no firewall.
 
 Os comandos de registro, consulta e remoção são implementados e cobertos por testes com o Agendador simulado. A criação efetiva da tarefa no Windows do usuário continua pendente de homologação explícita. Nenhum comando foi executado neste desenvolvimento.
 
