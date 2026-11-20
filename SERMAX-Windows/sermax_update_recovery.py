@@ -47,17 +47,25 @@ def inspect_startup_recovery_by_handle(journal_parent_handle) -> dict[str, Any]:
     attention_count = 0
 
     for item in scanned:
+        if not isinstance(item, dict):
+            raise StartupRecoveryAssessmentError(
+                "Resumo do journal não é um objeto. Inicialização segura bloqueada."
+            )
         transaction_id = item.get("transaction_id")
         state = item.get("state")
         install_started = item.get("install_started")
         requires_recovery = item.get("requires_recovery")
+        rollback_supported = item.get("rollback_supported")
 
         if (
             not isinstance(transaction_id, str)
             or state not in {"EMPTY", "TERMINAL", "IN_PROGRESS", "RECOVERY_REQUIRED"}
             or type(install_started) is not bool
             or type(requires_recovery) is not bool
+            or type(rollback_supported) is not bool
             or requires_recovery != (state != "TERMINAL")
+            or rollback_supported != (install_started and state != "TERMINAL")
+            or (state == "EMPTY" and install_started)
         ):
             raise StartupRecoveryAssessmentError(
                 "Resumo do journal incompleto ou inválido. Inicialização segura bloqueada."
@@ -81,7 +89,7 @@ def inspect_startup_recovery_by_handle(journal_parent_handle) -> dict[str, Any]:
                 "transaction_id": transaction_id,
                 "state": "INSTALL_INTERRUPTED",
                 "startup_action": "HOLD_FOR_OPERATOR_DECISION",
-                "rollback_supported": True,
+                "rollback_supported": rollback_supported,
                 "requires_operator_attention": True,
                 "last_event": item.get("last_event"),
             })
