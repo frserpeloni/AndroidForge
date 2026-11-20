@@ -200,9 +200,11 @@ class LauncherStatusTests(unittest.TestCase):
     def test_status_with_free_lock_is_stopped(self):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
-            (data_dir / "platform-instance.lock").touch()
+            lock_path = data_dir / "platform-instance.lock"
+            lock_path.touch()
             status = launcher.inspect_instance_status(data_dir)
             self.assertEqual(status["state"], "stopped")
+            self.assertEqual(lock_path.stat().st_size, 0)
 
     def test_status_reports_lock_permission_error_without_crashing(self):
         with tempfile.TemporaryDirectory() as directory:
