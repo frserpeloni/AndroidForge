@@ -467,5 +467,254 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 shutil.rmtree(root, ignore_errors=True)
 
 
+    def test_in_place_restore_resumes_after_each_persisted_stage_failure(self):
+        import shutil
+        from sermax_windows_handle_io import close_handle, query_handle_metadata
+        from sermax_windows_private_area import create_private_directory_component
+        from sermax_windows_journal import create_journal_transaction_by_handle
+
+        with tempfile.TemporaryDirectory(
+            prefix="sermax-restore-resume-stages-"
+        ) as root:
+            active_path = os.path.join(root, "active")
+            os.makedirs(os.path.join(active_path, "bin"))
+            original = b"SERMAX original payload for interrupted restore"
+            source_path = os.path.join(active_path, "bin", "engine.dll")
+            with open(source_path, "wb") as stream:
+                stream.write(original)
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            create_file = kernel32.CreateFileW
+            create_file.argtypes = [
+                ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
+                ctypes.c_void_p,
+            ]
+            create_file.restype = ctypes.c_void_p
+            close = kernel32.CloseHandle
+            close.argtypes = [ctypes.c_void_p]
+            close.restype = ctypes.c_int
+            invalid = ctypes.c_void_p(-1).value
+            share = 0x00000001 | 0x00000002 | 0x00000004
+            flags = 0x02000000 | 0x00200000
+
+            parent_handle = create_file(
+                root,
+                0x0001 | 0x0004 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(parent_handle, (None, 0, invalid))
+            active_handle = create_file(
+                active_path,
+                0x0001 | 0x0080 | 0x00100000,
+                share, None, 3, flags, None,
+            )
+            self.assertNotIn(active_handle, (None, 0, invalid))
+            source_handle = create_file(
+                source_path,
+                0x00000001 | 0x00000080 | 0x00000100
+                | 0x00020000 | 0x00100000,
+                share, None, 3, 0x00000080, None,
+            )
+            self.assertNotIn(source_handle, (None, 0, invalid))
+
+            expected_timestamps = {
+                "creation_time": 132223104000000000,
+                "last_access_time": 132223104010000000,
+                "last_write_time": 132223104020000000,
+            }
+            backup._set_file_attributes_by_handle(
+                source_handle, backup.FILE_ATTRIBUTE_ARCHIVE
+            )
+            expected_timestamps = backup._set_file_timestamps_by_handle(
+                source_handle, expected_timestamps
+            )
+            self.assertTrue(close(source_handle))
+            source_handle = None
+
+            backups_handle = None
+            journal_handle = None
+            journal_session = None
+            snapshot = None
+            try:
+                backups_handle = create_private_directory_component(
+                    parent_handle, "backups"
+                )
+                journal_handle = create_private_directory_component(
+                    parent_handle, "journal"
+                )
+                manifest = Manifest((Item("bin/engine.dll", "replace"),))
+                snapshot = backup.backup_existing_files_by_handle(
+                    active_handle, backups_handle, manifest
+                )
+                self.assertEqual(len(snapshot.files), 1)
+                self.assertIsNotNone(snapshot.catalog)
+                backup_component = snapshot.component
+                catalog_hash = snapshot.catalog["sha256"]
+                snapshot.close()
+
+                journal_session = create_journal_transaction_by_handle(
+                    journal_handle
+                )
+                journal_session.append_event(
+                    "PREPARED",
+                    {
+                        "release_version": "restore-resume-test",
+                        "manifest_sha256": "a" * 64,
+                    },
+                )
+                journal_session.append_event(
+                    "BACKUP_COMPLETE",
+                    {
+                        "backup_component": backup_component,
+                        "catalog_sha256": catalog_hash,
+                    },
+                )
+                journal_session.append_event(
+                    "STAGING_COMPLETE",
+                    {
+                        "staging_component": "stage-" + "b" * 24,
+                        "archive_sha256": "c" * 64,
+                    },
+                )
+                journal_session.append_event("INSTALL_STARTED", {})
+                journal_session.append_event(
+                    "ROLLBACK_STARTED",
+                    {"reason": "fault-injection restore-resume test"},
+                )
+
+                changed = b"SERMAX partially updated payload"
+                with open(source_path, "wb") as active:
+                    active.write(changed)
+
+                # Falha depois da gravação/readback do conteúdo, antes da ACL.
+                with mock.patch.object(
+                    backup,
+                    "_restore_security_descriptor_by_handle",
+                    side_effect=backup.BackupError("injected after content"),
+                ):
+                    with self.assertRaisesRegex(
+                        backup.BackupError, "injected after content"
+                    ):
+                        backup.restore_backup_files_by_handle(
+                            active_handle, backups_handle,
+                            backup_component, journal_session,
+                        )
+                events = journal_session.read_events()
+                self.assertEqual(events[-1]["event"], "ROLLBACK_STARTED")
+                self.assertFalse(any(e["event"] == "FILE_RESTORED" for e in events))
+
+                # Falha na segunda chamada de atributos, depois da restauração da ACL.
+                real_set_attributes = backup._set_file_attributes_by_handle
+                attribute_calls = {"count": 0}
+
+                def fail_after_security(handle, attributes):
+                    attribute_calls["count"] += 1
+                    if attribute_calls["count"] == 2:
+                        raise backup.BackupError("injected after security")
+                    return real_set_attributes(handle, attributes)
+
+                with mock.patch.object(
+                    backup,
+                    "_set_file_attributes_by_handle",
+                    side_effect=fail_after_security,
+                ):
+                    with self.assertRaisesRegex(
+                        backup.BackupError, "injected after security"
+                    ):
+                        backup.restore_backup_files_by_handle(
+                            active_handle, backups_handle,
+                            backup_component, journal_session,
+                        )
+                events = journal_session.read_events()
+                self.assertEqual(events[-1]["event"], "ROLLBACK_STARTED")
+                self.assertFalse(any(e["event"] == "FILE_RESTORED" for e in events))
+
+                # Falha depois de conteúdo, ACL e atributos, durante timestamps.
+                with mock.patch.object(
+                    backup,
+                    "_set_file_timestamps_by_handle",
+                    side_effect=backup.BackupError("injected after attributes"),
+                ):
+                    with self.assertRaisesRegex(
+                        backup.BackupError, "injected after attributes"
+                    ):
+                        backup.restore_backup_files_by_handle(
+                            active_handle, backups_handle,
+                            backup_component, journal_session,
+                        )
+                events = journal_session.read_events()
+                self.assertEqual(events[-1]["event"], "ROLLBACK_STARTED")
+                self.assertFalse(any(e["event"] == "FILE_RESTORED" for e in events))
+
+                # Falha após todos os metadados, antes de persistir FILE_RESTORED.
+                append_event = journal_session.append_event
+
+                def fail_before_restored_event(event, payload):
+                    if event == "FILE_RESTORED":
+                        raise RuntimeError("injected before FILE_RESTORED")
+                    return append_event(event, payload)
+
+                with mock.patch.object(
+                    journal_session,
+                    "append_event",
+                    side_effect=fail_before_restored_event,
+                ):
+                    with self.assertRaisesRegex(
+                        backup.BackupError, "injected before FILE_RESTORED"
+                    ):
+                        backup.restore_backup_files_by_handle(
+                            active_handle, backups_handle,
+                            backup_component, journal_session,
+                        )
+                events = journal_session.read_events()
+                self.assertEqual(events[-1]["event"], "ROLLBACK_STARTED")
+                self.assertFalse(any(e["event"] == "FILE_RESTORED" for e in events))
+
+                resumed = backup.restore_backup_files_by_handle(
+                    active_handle, backups_handle,
+                    backup_component, journal_session,
+                )
+                self.assertEqual(resumed["restored_count"], 0)
+                self.assertEqual(resumed["already_restored_count"], 1)
+                self.assertEqual(resumed["journal_last_event"], "FILE_RESTORED")
+
+                restored_handle = create_file(
+                    source_path,
+                    0x00000080 | 0x00000100 | 0x00020000 | 0x00100000,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(restored_handle, (None, 0, invalid))
+                metadata = query_handle_metadata(restored_handle)
+                self.assertEqual(
+                    metadata["attributes"], backup.FILE_ATTRIBUTE_ARCHIVE
+                )
+                self.assertEqual(
+                    backup._query_file_timestamps_by_handle(restored_handle),
+                    expected_timestamps,
+                )
+                self.assertTrue(close(restored_handle))
+                restored_handle = None
+
+                with open(source_path, "rb") as active:
+                    self.assertEqual(active.read(), original)
+            finally:
+                if journal_session is not None:
+                    journal_session.close()
+                if journal_handle is not None:
+                    close_handle(journal_handle)
+                if snapshot is not None:
+                    snapshot.close()
+                if backups_handle is not None:
+                    close_handle(backups_handle)
+                if source_handle is not None:
+                    self.assertTrue(close(source_handle))
+                if restored_handle is not None:
+                    self.assertTrue(close(restored_handle))
+                self.assertTrue(close(active_handle))
+                self.assertTrue(close(parent_handle))
+                shutil.rmtree(root, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
