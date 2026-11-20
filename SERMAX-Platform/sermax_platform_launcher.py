@@ -133,6 +133,11 @@ def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5
             "state": "unresponsive",
             "detail": "O lock está ocupado, mas a API não confirmou saúde. Não encerre processos automaticamente.",
         }
+    except OSError as exc:
+        return {
+            "state": "error",
+            "detail": f"Não foi possível consultar o lock da Plataforma: {type(exc).__name__}: {exc}",
+        }
     else:
         handle.close()
         return {"state": "stopped", "detail": "Lock livre; nenhuma instância mantém o diretório de dados."}
@@ -181,6 +186,8 @@ def parse_args(argv=None):
     args = parser.parse_args(raw_args)
     if args.health_timeout <= 0 or args.shutdown_timeout <= 0:
         parser.error("Os tempos de health check e encerramento devem ser positivos.")
+    if args.status and args.autostart_action:
+        parser.error("--status não pode ser combinado com uma operação de inicialização automática.")
     return args
 
 
@@ -262,7 +269,7 @@ def main(argv=None) -> int:
         data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
         status = inspect_instance_status(data_dir)
         print(json.dumps(status, ensure_ascii=False))
-        return 0 if status["state"] in {"running", "stopped"} else 6
+        return 0 if status["state"] in {"running", "stopped"} else (7 if status["state"] == "error" else 6)
     if args.autostart_action:
         backend = root / "backend"
         if not (backend / "windows_autostart.py").is_file():
