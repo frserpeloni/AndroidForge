@@ -35,8 +35,17 @@ def build_task_xml(platform_root: Path, executable: str | None = None,
         command = executable or sys.executable
         arguments = ["--no-browser"]
     else:
-        backend_venv_python = root_path / "backend" / ".venv" / "Scripts" / "python.exe"
-        command = executable or (str(backend_venv_python) if backend_venv_python.is_file() else sys.executable)
+        backend_venv_dir = root_path / "backend" / ".venv" / "Scripts"
+        backend_venv_pythonw = backend_venv_dir / "pythonw.exe"
+        backend_venv_python = backend_venv_dir / "python.exe"
+        if executable:
+            command = executable
+        elif backend_venv_pythonw.is_file():
+            command = str(backend_venv_pythonw)
+        elif backend_venv_python.is_file():
+            command = str(backend_venv_python)
+        else:
+            command = sys.executable
         arguments = [str(root_path / "sermax_platform_launcher.py"), "--no-browser"]
 
     task = ET.Element("Task", {"version": "1.4", "xmlns": "http://schemas.microsoft.com/windows/2004/02/mit/task"})
