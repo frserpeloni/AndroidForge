@@ -109,6 +109,50 @@ class WorkspaceAdapterTests(unittest.TestCase):
                 self.assertFalse((sandbox / ".sermax_dev_backups").exists())
                 self.assertEqual(mocked.call_count, 2)
 
+    def test_isolated_runner_restores_sandbox_ownership_and_disables_bytecode(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "workspace"
+            (root / "tests").mkdir(parents=True)
+            (root / "tests" / "test_smoke.py").write_text(
+                "import unittest\\nclass Smoke(unittest.TestCase):\\n"
+                "    def test_ok(self): self.assertTrue(True)\\n",
+                encoding="utf-8",
+            )
+            runner = TestRunner(
+                WorkspaceAdapter(root), isolate_as_nobody=True
+            )
+            captured = {}
+
+            class FakeProcess:
+                returncode = 0
+
+                def poll(self):
+                    return 0
+
+            def fake_popen(_command, **kwargs):
+                captured["env"] = kwargs["env"]
+                kwargs["stdout"].write(b"simulated test output")
+                kwargs["stdout"].flush()
+                return FakeProcess()
+
+            with (
+                patch("sermax_workspace.os.getuid", return_value=1234, create=True),
+                patch("sermax_workspace.os.getgid", return_value=5678, create=True),
+                patch("sermax_workspace.subprocess.run") as mocked_run,
+                patch("sermax_workspace.subprocess.Popen", side_effect=fake_popen),
+            ):
+                result = runner.run("unittest")
+
+            self.assertEqual(result["status"], "passed", result["output"])
+            self.assertEqual(captured["env"]["PYTHONDONTWRITEBYTECODE"], "1")
+            commands = [call.args[0] for call in mocked_run.call_args_list]
+            self.assertEqual(len(commands), 4)
+            self.assertEqual(commands[-2][2], "chown")
+            self.assertIn("1234:5678", commands[-2])
+            self.assertIn("--no-dereference", commands[-2])
+            self.assertEqual(commands[-1][2], "chmod")
+            self.assertIn("u+rwX", commands[-1])
+
     def test_windows_install_path_is_rejected_by_path_guard(self):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX\\workspace"))
