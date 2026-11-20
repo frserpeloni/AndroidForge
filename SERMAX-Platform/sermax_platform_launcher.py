@@ -77,6 +77,21 @@ def shutdown_server(server, worker: threading.Thread, timeout: float = 15.0) -> 
     return not worker.is_alive()
 
 
+def _serve_server(server, stop: threading.Event, failed: threading.Event) -> None:
+    """Run Uvicorn and distinguish an expected shutdown from an unexpected exit."""
+    try:
+        server.run()
+    except BaseException:
+        failed.set()
+        logging.exception("Falha não tratada no servidor da Plataforma.")
+    else:
+        if not stop.is_set():
+            failed.set()
+            logging.error("Servidor Uvicorn encerrou sem solicitação de parada.")
+    finally:
+        stop.set()
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Inicializador local da Plataforma SERMAX.")
     parser.add_argument(
@@ -139,6 +154,7 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
                             log_level="warning", access_log=False)
     server = uvicorn.Server(config)
     stop = threading.Event()
+    worker_failed = threading.Event()
 
     def request_shutdown(signum=None, frame=None):
         logging.info("Solicitação de encerramento recebida: %s", signum)
@@ -151,7 +167,12 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
         except (ValueError, OSError):
             pass
 
-    worker = threading.Thread(target=server.run, name="SERMAX-Platform-API", daemon=True)
+    worker = threading.Thread(
+        target=_serve_server,
+        args=(server, stop, worker_failed),
+        name="SERMAX-Platform-API",
+        daemon=True,
+    )
     logging.info("Iniciando API local em %s", URL)
     worker.start()
 
@@ -175,6 +196,9 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
 
     if not shutdown_server(server, worker, timeout=args.shutdown_timeout):
         logging.error("Servidor não encerrou dentro do prazo.")
+        return 3
+    if worker_failed.is_set():
+        logging.error("Plataforma encerrou por falha do servidor; o Agendador poderá aplicar a política de reinício.")
         return 3
     logging.info("Plataforma encerrada.")
     return 0
