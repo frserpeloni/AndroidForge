@@ -119,7 +119,7 @@ class StartupGatePathTests(unittest.TestCase):
     def test_development_directory_is_not_treated_as_installed_sermax(self):
         with mock.patch.object(gate.os, "name", "nt"):
             result = gate.inspect_update_recovery_at_startup(
-                r"C:\\work\\AndroidForge\\SERMAX-Windows"
+                r"C:\work\AndroidForge\SERMAX-Windows"
             )
 
         self.assertTrue(result["startup_allowed"])
