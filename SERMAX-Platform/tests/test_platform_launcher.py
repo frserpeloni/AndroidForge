@@ -165,6 +165,60 @@ class LauncherHealthTests(unittest.TestCase):
         open_url.assert_not_called()
 
 
+class LauncherStatusTests(unittest.TestCase):
+    def test_status_without_lock_is_stopped_and_does_not_create_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "stopped")
+            self.assertFalse((data_dir / "platform-instance.lock").exists())
+
+    def test_status_with_free_lock_is_stopped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            (data_dir / "platform-instance.lock").touch()
+            status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "stopped")
+
+    def test_status_reports_running_only_when_lock_and_health_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock = instance_lock.acquire_instance_lock(data_dir)
+            try:
+                with patch.object(
+                    launcher.urllib.request,
+                    "urlopen",
+                    return_value=_Response({
+                        "service": "sermax-platform-api",
+                        "version": "0.3.0",
+                        "core": "loaded",
+                    }),
+                ):
+                    status = launcher.inspect_instance_status(data_dir)
+                self.assertEqual(status["state"], "running")
+                self.assertEqual(status["version"], "0.3.0")
+            finally:
+                lock.close()
+
+    def test_status_reports_unresponsive_without_killing_locked_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock = instance_lock.acquire_instance_lock(data_dir)
+            try:
+                with patch.object(
+                    launcher.urllib.request,
+                    "urlopen",
+                    side_effect=urllib.error.URLError("offline"),
+                ):
+                    status = launcher.inspect_instance_status(data_dir)
+                self.assertEqual(status["state"], "unresponsive")
+                self.assertIn("Não encerre processos", status["detail"])
+                with self.assertRaises(instance_lock.InstanceLockError):
+                    instance_lock.acquire_instance_lock(data_dir)
+            finally:
+                lock.close()
+
+
 class LauncherWorkerFailureTests(unittest.TestCase):
     def test_unrequested_server_exit_is_marked_as_failure(self):
         class Server:
