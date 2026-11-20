@@ -168,6 +168,11 @@ def main(argv=None) -> int:
     args = parse_args(argv)
     root = platform_root()
     data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
+    backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
+    backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
+    if backend is None:
+        raise FileNotFoundError("Backend da Plataforma não encontrado nas pastas esperadas.")
+    sys.path.insert(0, str(backend))
     configure_logging(data_dir)
     from instance_lock import acquire_instance_lock
 
