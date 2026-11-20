@@ -536,6 +536,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
             journal_handle = None
             journal_session = None
             snapshot = None
+            restored_handle = None
             try:
                 backups_handle = create_private_directory_component(
                     parent_handle, "backups"
