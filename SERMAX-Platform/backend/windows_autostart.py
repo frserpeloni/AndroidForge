@@ -73,7 +73,7 @@ def build_task_xml(platform_root: Path, executable: str | None = None,
     ET.SubElement(action, "Command").text = command
     ET.SubElement(action, "Arguments").text = subprocess.list2cmdline(arguments)
     ET.SubElement(action, "WorkingDirectory").text = str(root_path)
-    return ET.tostring(task, encoding="unicode", xml_declaration=True)
+    return ET.tostring(task, encoding="utf-16", xml_declaration=True).decode("utf-16")
 
 
 def _run_schtasks(arguments: list[str], runner=None):
