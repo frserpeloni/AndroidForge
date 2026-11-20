@@ -57,3 +57,16 @@ A varredura do journal agora informa se `INSTALL_STARTED` aparece na cadeia vali
 ## Estado de entrega
 
 Implementação isolada em branch e PR em rascunho, aguardando CI e revisão. Sem merge, sem release e sem escrita em `C:\\SERMAX`.
+
+
+## Evidência CI, 20/11/2026
+
+- Run `44787796107`, commit `985e42fdf1fcf9091b7298f7a4014bc02be8ca3e`.
+- Runner Windows, Python 3.14.
+- A compilação dos módulos passou.
+- Os testes de journal e avaliação de inicialização passaram.
+- O teste nativo Windows `test_assessment_reads_persistent_journal_without_mutating_it` passou e confirmou que a cadeia de hashes permanece inalterada durante a inspeção.
+- Todas as etapas do workflow `SERMAX Update Staging Validation` concluíram com sucesso.
+- Run: https://github.com/frserpeloni/AndroidForge/actions/runs/44787796107.
+
+A execução comprova o comportamento no runner Windows. Não comprova integração ao launcher nem homologação na instalação local do Windows 11.
