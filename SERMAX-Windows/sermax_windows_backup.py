@@ -1329,18 +1329,17 @@ def restore_backup_files_by_handle(
                 current_hash = _hash_and_rewind(
                     NativeHandleReader(target_handle), target_meta["end_of_file"]
                 )
-                expected_timestamps = record.get("source_timestamps")
-                timestamps_match = (
-                    expected_timestamps is None
-                    or _query_file_timestamps_by_handle(target_handle)
-                    == _validate_file_timestamps(expected_timestamps)
-                )
-                already_matches = (
+                content_and_security_match = (
                     current_hash.lower() == expected_hash
                     and target_meta["attributes"] == record["source_attributes"]
                     and _security_descriptor_matches(target_handle, descriptor_bytes)
-                    and timestamps_match
                 )
+                expected_timestamps = record.get("source_timestamps")
+                if content_and_security_match and expected_timestamps is not None:
+                    # A leitura do hash pode atualizar LastAccessTime no Windows.
+                    # Reaplica os metadados originais sem regravar o conteúdo.
+                    _set_file_timestamps_by_handle(target_handle, expected_timestamps)
+                already_matches = content_and_security_match
                 if already_matches:
                     if path not in restored_paths:
                         journal_session.append_event(
