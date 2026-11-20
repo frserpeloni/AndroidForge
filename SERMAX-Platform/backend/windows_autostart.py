@@ -79,6 +79,9 @@ def build_task_xml(platform_root: Path, executable: str | None = None,
     }
     for tag, value in settings_values.items():
         ET.SubElement(settings, tag).text = value
+    restart = ET.SubElement(settings, "RestartOnFailure")
+    ET.SubElement(restart, "Interval").text = "PT1M"
+    ET.SubElement(restart, "Count").text = "3"
 
     actions = ET.SubElement(task, "Actions", {"Context": "Author"})
     action = ET.SubElement(actions, "Exec")
