@@ -37,6 +37,35 @@ class WindowsAutostartXmlTests(unittest.TestCase):
             self.assertIn(f"{root / 'sermax_platform_launcher.py'}", xml_text)
             self.assertIn("--no-browser", xml_text)
 
+
+    def test_source_task_falls_back_to_python_exe_when_pythonw_is_missing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            venv_python = root / "backend" / ".venv" / "Scripts" / "python.exe"
+            venv_python.parent.mkdir(parents=True)
+            venv_python.write_text("", encoding="utf-8")
+            xml_text = autostart.build_task_xml(
+                root, frozen=False, user_id="PC\\\\fabiano"
+            )
+            self.assertIn(f"<Command>{venv_python}</Command>", xml_text)
+
+    def test_generated_task_xml_is_well_formed_and_has_user_logon_trigger(self):
+        namespace = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+        xml_text = autostart.build_task_xml(
+            Path("C:/SERMAX-Platform"),
+            executable="C:/Python/python.exe",
+            frozen=False,
+            user_id="PC\\\\fabiano",
+        )
+        task = autostart.ET.fromstring(xml_text)
+        self.assertEqual(task.tag, f"{namespace}Task")
+        trigger = task.find(f"{namespace}Triggers/{namespace}LogonTrigger")
+        self.assertIsNotNone(trigger)
+        self.assertEqual(trigger.findtext(f"{namespace}UserId"), "PC\\\\fabiano")
+        principal = task.find(f"{namespace}Principals/{namespace}Principal")
+        self.assertEqual(principal.findtext(f"{namespace}LogonType"), "InteractiveToken")
+        self.assertEqual(principal.findtext(f"{namespace}RunLevel"), "LeastPrivilege")
+
     def test_frozen_launcher_does_not_pass_python_script_path(self):
         xml_text = autostart.build_task_xml(
             Path("C:/SERMAX"),
