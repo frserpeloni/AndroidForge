@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from attachment_service import router as attachments_router
+from ocr_service import get_ocr_engine_status
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
@@ -250,7 +251,7 @@ def models():
 
 @app.get("/api/engines/status")
 def engines_status():
-    """Diagnóstico local. Não inicia motores nem envia prompts."""
+    """Diagnóstico local. Consulta Tesseract --list-langs, sem OCR ou prompts."""
     with CHAT_LOCK:
         core = CORE_MODULE
         route_info = getattr(core, "ultimo_diagnostico_roteamento", {}) if core is not None else {}
@@ -287,6 +288,8 @@ def engines_status():
     jarvis_worker = adapter_root / "sermax_jarvis_worker.py"
     jarvis_configured = jarvis_python.is_file() and jarvis_worker.is_file()
 
+    ocr = get_ocr_engine_status()
+
     last_backend = route_info.get("backend")
     if last_backend not in {"openjarvis", "ollama", "nao_executado"}:
         last_backend = "nao_executado"
@@ -294,6 +297,7 @@ def engines_status():
     return {
         "core_loaded": core is not None,
         "ollama": ollama,
+        "ocr": ocr,
         "openjarvis": {
             "environment_files_present": jarvis_configured,
             "detail": (
@@ -585,9 +589,23 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
     for row in rows[:5]:
         name = str(row["original_name"])[:180]
         extracted = row["extracted_text"]
+        if extracted is not None and not str(extracted).strip():
+            extracted = None
+        row_keys = row.keys()
+        method = str(row["extraction_method"] or "native") if "extraction_method" in row_keys else "native"
+        status = str(row["extraction_status"] or "completed") if "extraction_status" in row_keys else "completed"
         if extracted is None:
-            selected.append({"arquivo": name, "conteudo_textual": None,
-                             "observacao": "Imagem armazenada. OCR e análise visual não estão disponíveis."})
+            if status in {"engine_unavailable", "dependency_unavailable", "renderer_unavailable"}:
+                observation = "OCR local indisponível neste computador."
+            elif status == "language_unavailable":
+                observation = "Pacote de idioma do OCR ausente. Instale os dados de português e inglês."
+            elif status == "timeout":
+                observation = "OCR local excedeu o tempo limite."
+            elif status == "not_processed":
+                observation = "OCR ainda não foi executado para este anexo."
+            else:
+                observation = "Nenhum texto foi extraído deste arquivo."
+            selected.append({"arquivo": name, "conteudo_textual": None, "observacao": observation})
             continue
         paragraphs = [
             part.strip() for part in re.split(r"(?<=[.!?])\s+|[\r\n]+", str(extracted))
@@ -618,8 +636,14 @@ def build_attachment_context(rows, user_message: str) -> dict[str, str] | None:
                 break
         excerpt = " ".join(excerpt_parts)
         if excerpt:
+            source = {
+                "ocr": "Texto reconhecido por OCR local. A leitura pode conter erros.",
+                "mixed": "Texto nativo e texto reconhecido por OCR local. A leitura por OCR pode conter erros.",
+            }.get(method, "Texto extraído do documento.")
             selected.append({
                 "arquivo": name,
+                "origem": source,
+                "estado_extracao": status,
                 "trecho": excerpt,
                 "trecho_limitado": len(excerpt) < len(str(extracted)),
             })
@@ -696,8 +720,8 @@ def _chat_request(payload: ChatInput, on_update=None):
                 if effective_project_id:
                     project = project_or_404(conn, effective_project_id, include_archived=True)
                 attachments = conn.execute(
-                    "SELECT original_name,extracted_text FROM attachments "
-                    "WHERE conversation_id=? ORDER BY created_at,id LIMIT 5",
+                    "SELECT original_name,extension,extracted_text,extraction_method,extraction_status "
+                    "FROM attachments WHERE conversation_id=? ORDER BY created_at,id LIMIT 5",
                     (conversation_id,),
                 ).fetchall()
             conversation_context = [dict(row) for row in reversed(prior)]

@@ -1,6 +1,7 @@
 """Launcher isolado da Plataforma SERMAX. Ainda em fase de desenvolvimento."""
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import os
@@ -35,14 +36,34 @@ def configure_logging(data_dir: Path) -> None:
     )
 
 
-def wait_for_health(url: str, stop: threading.Event, timeout: float = 30.0) -> bool:
+def wait_for_health(
+    url: str,
+    stop: threading.Event,
+    timeout: float = 30.0,
+    worker: threading.Thread | None = None,
+    server=None,
+) -> bool:
+    """Wait for health and verify this launcher's own Uvicorn server started."""
     deadline = time.monotonic() + timeout
     health_url = url.rstrip("/") + "/api/health"
     while time.monotonic() < deadline and not stop.is_set():
+        # A different SERMAX process may already own the port. Its health
+        # endpoint must not make this launcher report a successful startup.
+        if worker is not None and not worker.is_alive():
+            return False
+        if server is not None and not server.started:
+            time.sleep(0.1)
+            continue
         try:
             with urllib.request.urlopen(health_url, timeout=1.5) as response:
                 payload = json.loads(response.read().decode("utf-8"))
-                if response.status == 200 and isinstance(payload, dict) and payload.get("service") == "sermax-platform-api":
+                if (
+                    response.status == 200
+                    and isinstance(payload, dict)
+                    and payload.get("service") == "sermax-platform-api"
+                    and (worker is None or worker.is_alive())
+                    and (server is None or server.started)
+                ):
                     return True
         except (urllib.error.URLError, TimeoutError, OSError, ValueError):
             time.sleep(0.25)
@@ -56,7 +77,33 @@ def shutdown_server(server, worker: threading.Thread, timeout: float = 15.0) -> 
     return not worker.is_alive()
 
 
-def main() -> int:
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description="Inicializador local da Plataforma SERMAX.")
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="Mantém a API local em execução sem abrir uma janela do navegador.",
+    )
+    parser.add_argument(
+        "--health-timeout",
+        type=float,
+        default=30.0,
+        help="Tempo máximo em segundos para aguardar a inicialização da API.",
+    )
+    parser.add_argument(
+        "--shutdown-timeout",
+        type=float,
+        default=15.0,
+        help="Tempo máximo em segundos para aguardar o encerramento do servidor.",
+    )
+    args = parser.parse_args(argv)
+    if args.health_timeout <= 0 or args.shutdown_timeout <= 0:
+        parser.error("Os tempos de health check e encerramento devem ser positivos.")
+    return args
+
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
     root = platform_root()
     backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
     backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
@@ -101,14 +148,17 @@ def main() -> int:
     logging.info("Iniciando API local em %s", URL)
     worker.start()
 
-    if not wait_for_health(URL, stop):
+    if not wait_for_health(URL, stop, timeout=args.health_timeout, worker=worker, server=server):
         logging.error("API não ficou saudável dentro do prazo.")
         if not shutdown_server(server, worker, timeout=10):
             logging.error("Servidor não encerrou após falha no health check.")
         return 2
 
-    logging.info("API saudável. Abrindo interface.")
-    webbrowser.open(URL)
+    if args.no_browser:
+        logging.info("API saudável. Modo sem navegador ativo.")
+    else:
+        logging.info("API saudável. Abrindo interface.")
+        webbrowser.open(URL)
 
     try:
         while worker.is_alive() and not stop.wait(0.5):
@@ -116,7 +166,7 @@ def main() -> int:
     except KeyboardInterrupt:
         request_shutdown()
 
-    if not shutdown_server(server, worker, timeout=15):
+    if not shutdown_server(server, worker, timeout=args.shutdown_timeout):
         logging.error("Servidor não encerrou dentro do prazo.")
         return 3
     logging.info("Plataforma encerrada.")

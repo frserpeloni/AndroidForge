@@ -33,6 +33,96 @@ class LauncherHealthTests(unittest.TestCase):
             "http://127.0.0.1:8765/api/health", timeout=1.5
         )
 
+    def test_wait_for_health_does_not_probe_when_launcher_worker_has_exited(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return False
+
+        with patch.object(launcher.urllib.request, "urlopen") as open_url:
+            self.assertFalse(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, worker=Worker()
+            ))
+        open_url.assert_not_called()
+
+    def test_wait_for_health_accepts_api_when_own_worker_is_alive(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return True
+
+        with patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=_Response({"service": "sermax-platform-api"}),
+        ):
+            self.assertTrue(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, worker=Worker()
+            ))
+
+    def test_wait_for_health_waits_until_own_uvicorn_server_started(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return True
+
+        class Server:
+            started = False
+
+        server = Server()
+        with patch.object(launcher.time, "monotonic", side_effect=[0.0, 0.2, 1.0]), \
+             patch.object(launcher.time, "sleep") as sleep, \
+             patch.object(launcher.urllib.request, "urlopen") as open_url:
+            self.assertFalse(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, timeout=0.5,
+                worker=Worker(), server=server
+            ))
+        open_url.assert_not_called()
+        sleep.assert_called()
+
+    def test_wait_for_health_requires_own_uvicorn_server_started(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return True
+
+        class Server:
+            started = True
+
+        with patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=_Response({"service": "sermax-platform-api"}),
+        ):
+            self.assertTrue(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, timeout=0.2,
+                worker=Worker(), server=Server()
+            ))
+
+    def test_wait_for_health_rejects_healthy_endpoint_from_another_process(self):
+        stop = threading.Event()
+
+        class Worker:
+            alive = True
+            def is_alive(self):
+                return self.alive
+
+        worker = Worker()
+
+        def foreign_health_response(*args, **kwargs):
+            worker.alive = False
+            return _Response({"service": "sermax-platform-api"})
+
+        with patch.object(launcher.urllib.request, "urlopen",
+                          side_effect=foreign_health_response):
+            self.assertFalse(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, timeout=0.2, worker=worker
+            ))
+
     def test_wait_for_health_rejects_another_service(self):
         stop = threading.Event()
         with patch.object(launcher.urllib.request, "urlopen",
@@ -65,6 +155,26 @@ class LauncherHealthTests(unittest.TestCase):
         with patch.object(launcher.urllib.request, "urlopen") as open_url:
             self.assertFalse(launcher.wait_for_health("http://127.0.0.1:8765", stop))
         open_url.assert_not_called()
+
+
+class LauncherArgumentTests(unittest.TestCase):
+    def test_no_browser_mode_is_available_for_background_hosting(self):
+        args = launcher.parse_args(["--no-browser"])
+        self.assertTrue(args.no_browser)
+        self.assertEqual(args.health_timeout, 30.0)
+        self.assertEqual(args.shutdown_timeout, 15.0)
+
+    def test_timeouts_can_be_configured(self):
+        args = launcher.parse_args([
+            "--health-timeout", "45",
+            "--shutdown-timeout", "20",
+        ])
+        self.assertEqual(args.health_timeout, 45.0)
+        self.assertEqual(args.shutdown_timeout, 20.0)
+
+    def test_non_positive_timeout_is_rejected(self):
+        with self.assertRaises(SystemExit):
+            launcher.parse_args(["--health-timeout", "0"])
 
 
 class LauncherShutdownTests(unittest.TestCase):

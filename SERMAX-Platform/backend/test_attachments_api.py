@@ -1,5 +1,6 @@
 import io
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -7,6 +8,9 @@ from fastapi.testclient import TestClient
 from PIL import Image
 from docx import Document
 from pypdf import PdfWriter
+from unittest.mock import patch
+import attachment_service
+import ocr_service
 import server
 
 
@@ -104,17 +108,35 @@ class AttachmentApiTests(unittest.TestCase):
         self.assertEqual(self.client.get(url + "/content", headers=self.headers).status_code, 404)
         self.assertEqual(self.client.delete(url, headers=self.headers).status_code, 404)
 
-    def test_image_is_validated_and_stored_without_ocr(self):
+    def test_image_upload_survives_missing_ocr_engine(self):
         buffer = io.BytesIO()
         Image.new("RGB", (8, 8)).save(buffer, format="PNG")
-        response = self.upload("pixel.png", buffer.getvalue())
+        with patch.object(ocr_service, "_tesseract_path", return_value=None):
+            response = self.upload("pixel.png", buffer.getvalue())
         self.assertEqual(response.status_code, 201, response.text)
         self.assertFalse(response.json()["has_extracted_text"])
+        self.assertEqual(response.json()["extraction_method"], "none")
+        self.assertEqual(response.json()["extraction_status"], "engine_unavailable")
         content = self.client.get(
             f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
             headers=self.headers,
         )
         self.assertEqual(content.status_code, 415)
+
+    def test_image_ocr_text_is_stored_and_available_to_context(self):
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8)).save(buffer, format="PNG")
+        with patch.object(ocr_service, "_run_tesseract", return_value=("Texto reconhecido na imagem", "completed")):
+            response = self.upload("documento.png", buffer.getvalue())
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["extraction_method"], "ocr")
+        self.assertEqual(response.json()["extraction_status"], "completed")
+        content = self.client.get(
+            f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
+            headers=self.headers,
+        )
+        self.assertEqual(content.status_code, 200)
+        self.assertEqual(content.json()["text"], "Texto reconhecido na imagem")
 
     def test_delete_removes_metadata_and_file(self):
         response = self.upload("remove.txt", b"apagar")
@@ -156,9 +178,11 @@ class AttachmentApiTests(unittest.TestCase):
         writer = PdfWriter()
         writer.add_blank_page(width=72, height=72)
         writer.write(pdf_buffer)
-        pdf_response = self.upload("folha.pdf", pdf_buffer.getvalue())
+        with patch.object(attachment_service, "ocr_pdf_pages", return_value=({}, "engine_unavailable")):
+            pdf_response = self.upload("folha.pdf", pdf_buffer.getvalue())
         self.assertEqual(pdf_response.status_code, 201, pdf_response.text)
-        self.assertTrue(pdf_response.json()["has_extracted_text"])
+        self.assertFalse(pdf_response.json()["has_extracted_text"])
+        self.assertEqual(pdf_response.json()["extraction_status"], "engine_unavailable")
 
     def test_corrupt_docx_and_encrypted_pdf_are_rejected(self):
         corrupt = self.upload("quebrado.docx", bytes([0x50, 0x4B, 0x03, 0x04]) + b"nao-e-zip")
@@ -171,6 +195,93 @@ class AttachmentApiTests(unittest.TestCase):
         writer.write(pdf_buffer)
         encrypted = self.upload("protegido.pdf", pdf_buffer.getvalue())
         self.assertEqual(encrypted.status_code, 422)
+
+
+    def test_scanned_pdf_ocr_uses_local_renderer_with_mocked_engine(self):
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        writer.add_blank_page(width=72, height=72)
+        writer.write(pdf_buffer)
+        with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
+             patch.object(ocr_service, "_run_tesseract", return_value=("Texto reconhecido na página", "completed")):
+            response = self.upload("digitalizado.pdf", pdf_buffer.getvalue())
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["extraction_method"], "ocr")
+        self.assertEqual(response.json()["extraction_status"], "completed")
+        content = self.client.get(
+            f"/api/conversations/conversation-a/attachments/{response.json()['id']}/content",
+            headers=self.headers,
+        )
+        self.assertEqual(content.status_code, 200)
+        self.assertIn("[OCR página 1]", content.json()["text"])
+        self.assertIn("Texto reconhecido na página", content.json()["text"])
+
+
+    def test_schema_migration_adds_extraction_metadata_for_existing_images(self):
+        with server.database() as conn:
+            conn.execute("DROP TABLE attachments")
+            conn.execute("""
+                CREATE TABLE attachments (
+                    id TEXT PRIMARY KEY,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    original_name TEXT NOT NULL,
+                    extension TEXT NOT NULL,
+                    detected_mime TEXT NOT NULL,
+                    size_bytes INTEGER NOT NULL CHECK(size_bytes > 0),
+                    sha256 TEXT NOT NULL,
+                    storage_name TEXT NOT NULL UNIQUE,
+                    extracted_text TEXT,
+                    created_at TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "INSERT INTO attachments(id,conversation_id,original_name,extension,detected_mime,size_bytes,sha256,storage_name,extracted_text,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                ("legacy-image", "conversation-a", "old.png", ".png", "image/png", 8, "abc", "legacy.bin", None, server.utc_now()),
+            )
+        attachment_service.initialize_attachment_schema()
+        with server.database() as conn:
+            row = conn.execute(
+                "SELECT extraction_method,extraction_status FROM attachments WHERE id=?",
+                ("legacy-image",),
+            ).fetchone()
+        self.assertEqual(row["extraction_method"], "none")
+        self.assertEqual(row["extraction_status"], "not_processed")
+
+    def test_pdf_ocr_page_limit_is_enforced(self):
+        pdf_buffer = io.BytesIO()
+        writer = PdfWriter()
+        for _ in range(6):
+            writer.add_blank_page(width=72, height=72)
+        writer.write(pdf_buffer)
+        with patch.object(ocr_service, "_tesseract_path", return_value="C:/fake/tesseract.exe"), \
+             patch.object(ocr_service, "_run_tesseract", return_value=("texto", "completed")) as recognize:
+            pages, status = ocr_service.ocr_pdf_pages(pdf_buffer.getvalue(), range(6))
+        self.assertEqual(len(pages), 5)
+        self.assertEqual(recognize.call_count, 5)
+        self.assertEqual(status, "partial")
+
+
+    def test_document_extraction_runs_outside_async_event_loop(self):
+        original_run_in_threadpool = attachment_service.run_in_threadpool
+        original_extract = attachment_service._validate_and_extract
+        observed = {}
+
+        async def tracked_run(func, *args, **kwargs):
+            observed["event_loop_thread"] = threading.get_ident()
+            return await original_run_in_threadpool(func, *args, **kwargs)
+
+        def tracked_extract(*args, **kwargs):
+            observed["worker_thread"] = threading.get_ident()
+            return original_extract(*args, **kwargs)
+
+        with patch.object(attachment_service, "run_in_threadpool", side_effect=tracked_run), \
+             patch.object(attachment_service, "_validate_and_extract", side_effect=tracked_extract):
+            response = self.upload("thread-check.txt", b"extraido fora do event loop")
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertIn("event_loop_thread", observed)
+        self.assertIn("worker_thread", observed)
+        self.assertNotEqual(observed["event_loop_thread"], observed["worker_thread"])
 
     def test_sixth_attachment_is_rejected(self):
         for index in range(5):

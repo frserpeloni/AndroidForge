@@ -66,6 +66,7 @@ function setup() {
       return response({
         core_loaded: true,
         ollama: {reachable: true, models: ["sermax:latest"], detail: "API local respondeu."},
+        ocr: {status: "ready", languages: ["eng", "por"], missing_languages: [], detail: "Tesseract pronto. Idiomas português e inglês encontrados."},
         openjarvis: {environment_files_present: true, detail: "Arquivos encontrados; execução ainda não testada."},
         last_route: {backend: "ollama", fallback: ""},
         read_only: true,
@@ -160,6 +161,8 @@ test("painel de motores verifica serviços sem iniciar inferência", async () =>
   assert.match(win.document.getElementById("engineStatus").textContent, /Ollama local/);
   assert.match(win.document.getElementById("engineStatus").textContent, /sermax:latest/);
   assert.match(win.document.getElementById("engineStatus").textContent, /OpenJarvis/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /OCR local/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /eng, por/);
   assert.match(win.document.getElementById("engineStatus").textContent, /Último backend registrado: ollama/);
   assert.match(win.document.querySelector(".engine-safety-note").textContent, /não envia prompts/i);
 });

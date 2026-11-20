@@ -139,7 +139,7 @@ A segunda entrega funcional da Fase B foi implementada na branch de prontidão:
 - Foi adicionado teste de interface para estado inicial, consulta, busca e indicação de somente leitura.
 - O CI foi atualizado para executar os novos testes em Python 3.12, Python 3.14 e Windows.
 
-A execução CI `44137981040` aprovou os testes de memória em Python 3.12, Python 3.14 e Windows. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\\SERMAX` durante esta etapa.
+A execução CI `44137981040` aprovou os testes de memória em Python 3.12, Python 3.14 e Windows. O painel só exibe dados depois que uma conversa carregar o núcleo na sessão da API. A configuração do caminho de memória no ambiente de instalação continua precisando de homologação local, sem acesso ou alteração em `C:\SERMAX` durante esta etapa.
 
 
 ## 9. Atualização de execução, diagnóstico dos motores, 2026-11-17
@@ -172,7 +172,7 @@ Os testes incluíram API, tarefas, memória somente leitura, diagnóstico local 
 
 Após o commit validado, foi feita uma alteração visual pequena no commit `f4a6d3e26b1d45e4c9e91bf42d7e6789f5777759`, para mostrar o índice original de cada memória na lista filtrada. Essa alteração ainda aguarda uma execução CI própria.
 
-A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\\SERMAX` foi acessado ou alterado.
+A execução não comprova conversa real com Ollama/OpenJarvis, teste em navegador real ou homologação no computador do usuário. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
 
 Nenhum teste físico no computador do usuário foi realizado nesta auditoria. Nenhum arquivo de `C:\SERMAX` foi acessado ou alterado.
 
@@ -187,7 +187,7 @@ O núcleo atual chama o callback com snapshots acumulados durante a geração do
 
 Foram adicionados testes de API para snapshots, persistência da resposta final, restauração da sessão, falha do núcleo e mensagem vazia. A interface consome os eventos SSE e atualiza o texto progressivamente. A validação CI inicial encontrou falhas nos testes porque o primeiro commit emitia separadores SSE escapados incorretamente. A codificação foi corrigida nos commits seguintes. A execução CI `44191365375` aprovou a revisão corrigida nos cinco jobs, conforme seção 12.
 
-Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
+Nenhuma inferência real foi iniciada. Nenhum arquivo de `C:\SERMAX`, memória pessoal ou backup foi acessado ou alterado.
 
 
 ## 12. Evidência CI do streaming, 2026-11-17
@@ -202,7 +202,7 @@ A execução GitHub Actions `44191365375`, no commit `0804396d2a28c2b4709c149fd3
 
 A primeira execução da revisão, `44191163899`, falhou nos novos testes porque a serialização inicial usava separadores SSE escapados em excesso. A correção foi aplicada, a revisão foi aberta em PR #12 e a execução `44191365375` validou o commit corrigido. PR #11 foi fechado como supersedido, sem merge e sem apagar código.
 
-A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
+A validação é automatizada em CI. Não comprova inferência real com Ollama/OpenJarvis no computador do usuário, teste visual em navegador real ou homologação em `C:\SERMAX`. Nenhuma inferência real foi iniciada nesta etapa.
 
 
 ## 13. Compatibilidade de streaming OpenJarvis, 2026-11-17
@@ -256,7 +256,7 @@ Implementado:
 Limitações deliberadas:
 - O conteúdo dos anexos ainda não é passado ao núcleo SERMAX.
 - OCR de imagens não implementado.
-- Não houve inferência real, instalação local ou teste em `C:\\SERMAX`.
+- Não houve inferência real, instalação local ou teste em `C:\SERMAX`.
 - Não houve alteração em memória pessoal, núcleo original, Terminal ou backups.
 
 A primeira execução CI `44197305925` encontrou falha nos testes porque o setup isolado não criava a tabela `attachments`. A falha foi reproduzida pelo log e corrigida no teste para inicializar explicitamente o schema. A execução de correção `44197404930` está em andamento; a etapa de testes de anexos já passou nos jobs Linux Python 3.12 e 3.14, conforme os jobs avançaram para as verificações finais. A validação Windows ainda precisa concluir antes de registrar aprovação geral.
@@ -301,7 +301,7 @@ A execução anterior `44198199167` falhou em Python 3.12 e 3.14 porque o fixtur
 
 A branch de anexos foi realinhada sobre a base atual da PR #12. A branch anterior foi preservada em `sermax-platform-attachments-20261117-pre-rebase`. O head de código/testes validado é `074d9f85b45748ee7114fe6221ed1083d5b2a63f`. A atualização deste relatório é documental e não altera o código validado.
 
-PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\\SERMAX`, memória pessoal ou backup foi realizada.
+PR #13 permanece aberta, em rascunho e sem merge. A implementação continua sem integração automática dos anexos ao prompt do núcleo e sem OCR. Nenhuma instalação local, inferência real, alteração em `C:\SERMAX`, memória pessoal ou backup foi realizada.
 
 
 ## 20. Contexto temporário dos anexos, 2026-11-17
@@ -356,3 +356,191 @@ A execução GitHub Actions `44199605658`, no commit de código/testes `546844df
 A revisão confirmou que as instruções de segurança permanecem em uma mensagem `system` separada e o JSON com o conteúdo dos anexos entra como mensagem `user`. Os testes verificam essa separação, o isolamento entre conversas e a não persistência do conteúdo documental na tabela de mensagens. O teste de integração do núcleo também verifica que a rotina de memória recebe somente a pergunta original.
 
 A atualização posterior deste relatório é documental. Nenhuma inferência real, instalação local ou gravação de memória pessoal foi executada. PR #14 permanece aberta, em rascunho e sem merge.
+
+
+## 24. OCR local para imagens e PDFs digitalizados, 2026-11-17
+
+Foi iniciada a etapa de OCR local na branch sermax-platform-ocr-20261117, empilhada sobre a branch da PR #14. A implementação mantém os anexos locais e não chama serviços externos.
+
+### Arquitetura
+
+- backend/ocr_service.py isola a integração com Tesseract e PDFium.
+- pytesseract chama o executável Tesseract instalado localmente.
+- pypdfium2 renderiza páginas PDF sem texto nativo.
+- O idioma configurado é por+eng.
+- A variável opcional SERMAX_TESSERACT_CMD aponta para o executável local. Sem ela, a aplicação procura tesseract no PATH.
+- OCR de imagem ocorre após a validação de assinatura, formato e dimensão.
+- Em PDF, a extração nativa continua primeiro. Somente páginas sem texto nativo seguem para renderização e OCR.
+- O resultado de OCR é marcado como origem ocr ou mixed e recebe aviso de possível erro.
+- O conteúdo permanece não confiável no contexto temporário do MAX.
+
+### Limites de execução
+
+- Timeout de 8 segundos por imagem ou página.
+- Até cinco páginas digitalizadas por PDF.
+- Renderização PDF em 150 DPI, limitada a 3.000 pixels no maior lado.
+- Imagens preparadas para OCR limitadas a 9 milhões de pixels.
+- O limite original de validação de imagem, 20 milhões de pixels, permanece.
+- Ausência do Tesseract, do pacote Python, dos dados de idioma ou do renderizador não bloqueia o upload.
+- O estado é persistido em extraction_method e extraction_status, com migração aditiva da tabela attachments.
+- A interface apresenta o estado de extração.
+
+### Segurança e preservação
+
+- OCR executado localmente, sem transmissão a serviços externos.
+- O texto reconhecido permanece sujeito ao limite de contexto de 2.600 caracteres agregados e 650 por arquivo.
+- Nenhuma alteração em SERMAX-Windows/sermax_core.py, Terminal, memória pessoal, main, C:\SERMAX ou backups.
+- Nenhuma inferência real com Ollama/OpenJarvis foi executada.
+- Nenhuma execução real do Tesseract foi realizada nesta etapa.
+
+### Dependências e licenças
+
+pytesseract e pypdfium2 foram adicionados às dependências Python. O executável Tesseract e os arquivos de idioma por e eng precisam existir no computador de execução. Tesseract declara licença Apache-2.0. pypdfium2 declara Apache-2.0/BSD-3-Clause; PDFium e suas dependências exigem revisão e inclusão dos avisos de licença na distribuição binária. Referências consultadas: documentação oficial do Tesseract e documentação do pypdfium2.
+
+### Validação pendente
+
+Os testes automatizados devem confirmar upload sem motor, extração simulada de imagem, renderização de PDF via PDFium com OCR simulado, migração de banco, isolamento entre conversas, contexto e interface. Esses testes não comprovam precisão do OCR nem funcionamento de uma instalação Tesseract real. A homologação local com por+eng, amostras de imagem e PDFs digitalizados permanece pendente.
+
+PR #15 será mantida em rascunho, sem merge. O CI da branch deve validar Python 3.12, Python 3.14, Windows e os testes de interação da interface.
+
+
+## 25. Validação automatizada do OCR, 2026-11-17
+
+A execução GitHub Actions `44213281399`, evento `pull_request`, commit `60c9f6f9da43d3cbdd0997fa77950d9af5745af9`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A bateria validou a migração dos metadados de extração, upload quando Tesseract não está disponível, integração simulada de OCR em imagem, renderização PDF pelo PDFium com reconhecimento simulado, limite de cinco páginas OCR, indicação de origem e incerteza do OCR no contexto do MAX, além dos testes anteriores de anexos, conversa, memória, streaming e interface.
+
+A validação não executou o binário Tesseract nem mediu precisão de reconhecimento. A homologação local com Tesseract real e os dados de idioma `por` e `eng` continua pendente. Nenhuma inferência real com Ollama/OpenJarvis foi executada. PR #15 permanece aberta, em rascunho e sem merge.
+
+
+## 26. Diagnóstico de prontidão do Tesseract, 2026-11-17
+
+O painel Motores da Plataforma passou a apresentar o estado do OCR local. O endpoint GET /api/engines/status chama uma consulta limitada de Tesseract --list-langs, com timeout de 2 segundos, sem processar arquivos ou iniciar reconhecimento.
+
+O diagnóstico diferencia executável ausente, timeout, falha ao listar idiomas e ausência dos dados obrigatórios por e eng. O painel apresenta o estado e os idiomas encontrados. O caminho completo do executável não é exposto na API.
+
+Testes adicionados cobrem executável ausente sem subprocesso, Tesseract pronto com por e eng, ausência do idioma português e timeout. A interface também verifica a apresentação do cartão OCR local. A homologação com binário real permanece pendente.
+
+
+## 27. CI do diagnóstico OCR no painel Motores, 2026-11-17
+
+A execução GitHub Actions `44213822225`, evento `pull_request`, commit `79c22b7f99d57715a57dac08f529ad03cf6000ff`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+A bateria validou a consulta limitada `Tesseract --list-langs`, os estados de executável ausente, idiomas ausentes e timeout, além da apresentação do cartão OCR local na interface. O diagnóstico não processa arquivos nem inicia inferência. A homologação de reconhecimento com Tesseract real continua pendente.
+
+
+## 28. Launcher de homologação local isolada, 2026-11-17
+
+Foi adicionado SERMAX-Platform/tools/run_homologation.py para permitir testes locais reais sem apontar a memória ou o banco para a instalação do usuário.
+
+- O launcher define SERMAX_ROOT e SERMAX_PLATFORM_DATA dentro de uma pasta temporária.
+- O núcleo é importado do diretório de código do repositório; nenhuma cópia de memoria_sermax.json ou memoria_neural_pestinha.json é feita.
+- O worker OpenJarvis é copiado para a pasta temporária. O executável Python OpenJarvis e o caminho Tesseract existentes são preservados por suas variáveis de ambiente.
+- O banco SQLite da Plataforma e os arquivos de memória do núcleo ficam na pasta temporária, removida após o encerramento.
+- As funções sermax_executor.executar e sermax_tarefas.executar_plano são substituídas em memória por bloqueios, impedindo comandos operacionais e execução de planos durante a homologação.
+- Consultas locais somente de leitura continuam habilitadas.
+- O launcher desativa gravação de bytecode no processo e nos subprocessos, não instala dependências, não baixa modelos e não altera C:\SERMAX.
+
+Testes automatizados verificam redirecionamento de memória e banco, preservação dos caminhos de motores, cópia do worker e bloqueio das ações operacionais. A execução real do launcher e a homologação com modelos locais dependem do computador de execução e permanecem pendentes.
+
+
+## 29. CI do launcher de homologação isolada, 2026-11-17
+
+A execução GitHub Actions `44214557379`, evento `pull_request`, commit `24edb5b7335d60ac242852296e40e8c3033a0d95`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes do launcher validaram a substituição de SERMAX_ROOT e SERMAX_PLATFORM_DATA por diretórios temporários, preservação dos caminhos configurados para Tesseract e OpenJarvis, cópia do worker, ausência de cópia de arquivos de memória e bloqueio de execução de comandos e planos. A validação CI não iniciou a Plataforma com modelos reais nem executou reconhecimento OCR real.
+
+
+## 30. Validação final do launcher isolado e proteções de escrita, 2026-11-17
+
+A execução GitHub Actions `44214779229`, evento `pull_request`, commit `fbb191ea8d28924dcffc2e7514cf61a6e51e59d3`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+O teste final incluiu o redirecionamento de memória e banco para diretório temporário, cópia do worker, preservação das variáveis de caminho dos motores, bloqueio de comandos e planos e desativação de gravação de bytecode no processo e nos subprocessos. A validação não executou modelos reais nem OCR real.
+
+
+## 31. OCR sem bloqueio do event loop e controle de concorrência, 2026-11-17
+
+A revisão de desempenho identificou que o OCR e a extração de documentos eram chamados diretamente dentro da rota assíncrona de upload. Como cada página digitalizada tem timeout de até oito segundos e o PDF admite até cinco páginas OCR, esse processamento síncrono poderia bloquear o event loop e atrasar conversas SSE e outras rotas.
+
+Correção aplicada:
+- `_validate_and_extract` agora roda por `starlette.concurrency.run_in_threadpool`.
+- O OCR de imagens e PDFs compartilha `OCR_JOB_LOCK`, serializando renderização e reconhecimento para limitar trabalhos simultâneos e picos de memória.
+- O bloqueio interno de Tesseract continua protegendo a alteração temporária do caminho do executável.
+- Novo teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
+
+CI `44226228270`, commit `59c01cdc224e0f92e583cffd1b59525eb18ed677`, concluiu com sucesso nos cinco jobs: Python 3.12, Python 3.14, Windows, frontend-check e frontend-interaction. A homologação real de OCR e inferência local continua pendente.
+
+
+## 32. Teste real local de OCR com amostra sintética, 2026-11-17
+
+Foi adicionado `SERMAX-Platform/tools/check_local_ocr.py` como verificação local anterior à homologação da Plataforma.
+
+- Gera uma imagem de teste em memória com texto conhecido.
+- Executa o Tesseract instalado localmente na imagem PNG.
+- Converte a mesma imagem para PDF digitalizado em memória e testa renderização PDFium mais OCR.
+- Confirma os marcadores SERMAX e 12345 no resultado de ambos os caminhos.
+- Emite relatório JSON com estado do motor, texto reconhecido e resultado por formato.
+- Não abre documentos pessoais, não grava arquivos e não acessa rede.
+- Retorna código distinto quando Tesseract/idiomas ou PDFium estão indisponíveis.
+
+O teste automatizado do script simula as respostas do OCR e valida o relatório e a interrupção segura quando o motor está ausente. A execução com Tesseract real continua dependente do computador de homologação. A amostra sintética verifica funcionamento básico, não a qualidade de OCR em documentos reais.
+
+
+## 33. CI do teste local de OCR sintético, 2026-11-17
+
+A execução GitHub Actions `44226515348`, evento `pull_request`, commit `571f73a6c3f4eea2df4d193461068fc4a4f403e4`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+O CI validou a construção da amostra sintética em memória, o relatório do teste local e o encerramento seguro quando o Tesseract não está disponível, com respostas de OCR simuladas. O teste real com o executável Tesseract e PDFium continua pendente no computador de homologação.
+
+
+## 34. Teste real local de inferência pelo roteamento SERMAX, 2026-11-17
+
+Foi adicionado `SERMAX-Platform/tools/check_local_inference.py` para executar uma solicitação fixa pelo método `sermax_core.perguntar` e registrar o backend selecionado.
+
+- O teste importa o núcleo do repositório e direciona `SERMAX_ROOT` para uma pasta temporária.
+- O worker OpenJarvis é copiado para a pasta temporária; o executável Python é lido da variável `SERMAX_JARVIS_PYTHON`, se configurada.
+- O núcleo tenta OpenJarvis local e mantém o fallback Ollama local existente.
+- A pergunta é fixa e não contém arquivos ou dados pessoais.
+- `sermax_executor.executar` e `sermax_tarefas.executar_plano` ficam bloqueados.
+- A memória pessoal e a memória neural apontam para a pasta temporária; nenhum arquivo de memória existente é lido ou copiado.
+- O relatório JSON informa backend, agente, fallback e resposta. A pasta temporária é removida ao finalizar.
+- O script não chama serviços remotos. A inferência real exige que Ollama e/ou OpenJarvis estejam instalados e operacionais.
+
+Os testes automatizados simulam a resposta do núcleo e verificam os relatórios de sucesso e falha. Eles não executam inferência. A homologação com modelos locais continua pendente.
+
+
+## 35. CI do teste isolado de inferência local, 2026-11-17
+
+A execução GitHub Actions `44226873486`, evento `pull_request`, commit `2e820d642d00019dd5ee4ce585fbc825f8f0ebe0`, concluiu com sucesso nos cinco jobs:
+- `backend-tests (3.12)`: sucesso.
+- `backend-tests (3.14)`: sucesso.
+- `windows-validation`: sucesso.
+- `frontend-check`: sucesso.
+- `frontend-interaction`: sucesso.
+
+Os testes automatizados verificaram o uso do prompt fixo, o relatório do backend e o caminho de erro sem acesso à memória pessoal. A execução real de inferência não foi feita pelo CI; o script deve ser executado no computador com Ollama/OpenJarvis instalados.

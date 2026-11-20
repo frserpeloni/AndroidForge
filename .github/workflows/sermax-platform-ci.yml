@@ -9,6 +9,7 @@ on:
       - sermax-platform-streaming-20261117-r2
       - sermax-platform-attachments-20261117
       - sermax-platform-attachment-context-20261117-r2
+      - sermax-platform-ocr-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -18,6 +19,8 @@ on:
       - sermax-cleanup-20261117
       - sermax-platform-streaming-20261117-r2
       - sermax-platform-attachments-20261117
+      - sermax-platform-attachment-context-20261117-r2
+      - sermax-platform-ocr-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
