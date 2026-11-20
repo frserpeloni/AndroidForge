@@ -210,7 +210,7 @@ class LauncherStatusTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
             lock_path = data_dir / "platform-instance.lock"
-            lock_path.write_bytes(b"\\x00")
+            lock_path.write_bytes(b"lock")
             with patch.object(instance_lock, "acquire_instance_lock",
                               side_effect=PermissionError("access denied")):
                 status = launcher.inspect_instance_status(data_dir)
