@@ -44,3 +44,14 @@ O SERMAX.spec declara os módulos do gate e suas dependências Windows como hidd
 ## Estado
 
 Implementação em branch isolada e PR em rascunho. CI e build congelado ainda precisam passar. A homologação no Windows 11 do mantenedor permanece pendente. Sem merge, sem release e sem alteração em C:\SERMAX.
+
+
+## Evidência de CI, 20/11/2026
+
+- Workflow SERMAX Update Staging Validation, run `44788421076`: todas as etapas passaram. O log confirma o teste do launcher que bloqueia o Terminal em instalação interrompida e os testes unitários do gate.
+- Workflow SERMAX Update Staging Validation, run `44788607573`: todas as etapas passaram após a atualização dos filtros de CI.
+- Workflow SERMAX Windows CI, run `44788592793`: em execução no momento deste registro, na etapa de compilação e suíte completa de integração. Build PyInstaller e smoke test congelado ainda não concluídos.
+- Execução da validação do atualizador: https://github.com/frserpeloni/AndroidForge/actions/runs/44788607573.
+- Execução do build congelado: https://github.com/frserpeloni/AndroidForge/actions/runs/44788592793.
+
+A aprovação da CI de staging não substitui o resultado do build congelado. A homologação na instalação Windows 11 do mantenedor continua pendente.
