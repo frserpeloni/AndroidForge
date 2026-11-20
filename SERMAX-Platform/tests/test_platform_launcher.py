@@ -252,6 +252,28 @@ class LauncherStatusTests(unittest.TestCase):
             finally:
                 lock.close()
 
+    def test_status_cli_returns_six_for_unresponsive_instance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": directory}),
+                patch.object(launcher, "inspect_instance_status",
+                             return_value={"state": "unresponsive", "detail": "offline"}),
+                patch("builtins.print"),
+            ):
+                self.assertEqual(launcher.main(["--status"]), 6)
+
+    def test_status_cli_returns_seven_for_lock_inspection_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": directory}),
+                patch.object(launcher, "inspect_instance_status",
+                             return_value={"state": "error", "detail": "access denied"}),
+                patch("builtins.print"),
+            ):
+                self.assertEqual(launcher.main(["--status"]), 7)
+
 
 class LauncherWorkerFailureTests(unittest.TestCase):
     def test_unrequested_server_exit_is_marked_as_failure(self):
