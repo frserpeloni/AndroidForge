@@ -117,10 +117,39 @@ class WindowsAutostartCommandTests(unittest.TestCase):
         runner = Mock(return_value=subprocess.CompletedProcess([], 0, "TaskName", ""))
         self.assertTrue(autostart.autostart_status(runner=runner))
 
+    def test_status_reports_missing_task_only_for_known_not_found_error(self):
+        runner = Mock(return_value=subprocess.CompletedProcess(
+            [], 1, "", "ERROR: 0x80070002"
+        ))
+        self.assertFalse(autostart.autostart_status(runner=runner))
+
+    def test_status_propagates_scheduler_access_denied(self):
+        runner = Mock(return_value=subprocess.CompletedProcess(
+            [], 1, "", "ERROR: Access is denied. 0x80070005"
+        ))
+        with self.assertRaisesRegex(RuntimeError, "Access is denied"):
+            autostart.autostart_status(runner=runner)
+
     def test_remove_is_idempotent_when_task_is_missing(self):
-        runner = Mock(return_value=subprocess.CompletedProcess([], 1, "", "not found"))
+        runner = Mock(return_value=subprocess.CompletedProcess(
+            [], 1, "", "ERROR: 0x80070002"
+        ))
         self.assertFalse(autostart.remove_autostart(runner=runner))
         runner.assert_called_once()
+
+    def test_remove_propagates_scheduler_query_failure(self):
+        runner = Mock(return_value=subprocess.CompletedProcess(
+            [], 1, "", "ERROR: Task Scheduler service is unavailable."
+        ))
+        with self.assertRaisesRegex(RuntimeError, "service is unavailable"):
+            autostart.remove_autostart(runner=runner)
+        runner.assert_called_once()
+
+    def test_missing_schtasks_executable_is_reported(self):
+        with patch.object(autostart.subprocess, "run",
+                          side_effect=FileNotFoundError("schtasks.exe")):
+            with self.assertRaisesRegex(RuntimeError, "schtasks.exe"):
+                autostart.autostart_status()
 
     def test_remove_deletes_existing_task(self):
         responses = [
