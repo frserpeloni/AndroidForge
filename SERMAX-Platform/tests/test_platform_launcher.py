@@ -173,6 +173,30 @@ class LauncherStatusTests(unittest.TestCase):
             self.assertEqual(status["state"], "stopped")
             self.assertFalse((data_dir / "platform-instance.lock").exists())
 
+    def test_status_cli_loads_backend_lock_module_when_run_standalone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            module = sys.modules.pop("instance_lock", None)
+            backend_path = str(Path(__file__).resolve().parents[1] / "backend")
+            had_backend_path = backend_path in sys.path
+            if had_backend_path:
+                sys.path.remove(backend_path)
+            try:
+                with (
+                    patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                    patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}),
+                    patch("builtins.print"),
+                ):
+                    self.assertEqual(launcher.main(["--status"]), 0)
+                self.assertIn(backend_path, sys.path)
+                self.assertFalse((data_dir / "platform-instance.lock").exists())
+            finally:
+                sys.modules.pop("instance_lock", None)
+                if module is not None:
+                    sys.modules["instance_lock"] = module
+                if had_backend_path and backend_path not in sys.path:
+                    sys.path.insert(0, backend_path)
+
     def test_status_with_free_lock_is_stopped(self):
         with tempfile.TemporaryDirectory() as directory:
             data_dir = Path(directory)
