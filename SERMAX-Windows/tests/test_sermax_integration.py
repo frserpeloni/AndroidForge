@@ -26,6 +26,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             "sermax_tarefas.py",
             "sermax_historico_comandos.py",
             "sermax_launcher.py",
+            "sermax_startup_gate.py",
             "SERMAX.spec",
             "SERMAX_terminal/sermax_terminal.py",
             "SERMAX_terminal/sermax_voz.py",
