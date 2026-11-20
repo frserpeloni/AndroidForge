@@ -10,7 +10,9 @@ on:
       - sermax-restore-resume-tests-20261120
       - sermax-startup-recovery-assessment-20261120
       - sermax-launcher-recovery-gate-20261120
+      - sermax-launcher-recovery-gate-20261120
     paths:
+      - "SERMAX-Windows/tests/test_sermax_startup_gate.py"
       - "SERMAX-Windows/sermax_startup_gate.py"
       - "SERMAX-Windows/sermax_launcher.py"
       - "SERMAX-Windows/tests/test_sermax_integration.py"
@@ -51,6 +53,7 @@ on:
       - sermax-windows-integration-20261029
       - sermax-installer-staging-20261118
     paths:
+      - "SERMAX-Windows/tests/test_sermax_startup_gate.py"
       - "SERMAX-Windows/sermax_startup_gate.py"
       - "SERMAX-Windows/sermax_launcher.py"
       - "SERMAX-Windows/tests/test_sermax_integration.py"
@@ -119,6 +122,9 @@ jobs:
 
       - name: Run startup recovery assessment tests
         run: python -m unittest discover -s tests -p "test_sermax_update_recovery.py" -v
+
+      - name: Run startup gate tests
+        run: python -m unittest discover -s tests -p "test_sermax_startup_gate.py" -v
 
       - name: Run SERMAX launcher integration tests
         run: python -m unittest discover -s tests -p "test_sermax_integration.py" -v
