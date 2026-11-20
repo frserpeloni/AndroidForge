@@ -1,11 +1,12 @@
 (() => {
   const $ = id => document.getElementById(id);
   const nav = [...document.querySelectorAll(".nav-item")];
-  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",memory:"memoryView"};
-  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",memory:"Memória"};
+  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",engines:"enginesView",memory:"memoryView"};
+  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",engines:"Motores",memory:"Memória"};
   let conversationId = null;
   let activeProjectId = null;
   let sending = false;
+  let pendingFiles = [];
 
   const toast = message => {
     $("toast").textContent = message;
@@ -20,6 +21,9 @@
     $("sectionName").textContent = names[name];
     $("sidebar").classList.remove("open");
     if (name === "projects") refreshProjects();
+    if (name === "tasks") refreshTasks();
+    if (name === "engines") refreshEngines();
+    if (name === "memory") refreshMemory();
   }
   async function refreshHealth() {
     try {
@@ -52,7 +56,8 @@
     if (sending) return;
     $("conversation").replaceChildren();
     $("conversation").classList.remove("has-messages");
-    $("welcome").style.display = "";
+    $("attachmentList").replaceChildren();
+    pendingFiles = [];
     $("messageInput").value = "";
     conversationId = null;
     updateProjectContext();
@@ -70,6 +75,7 @@
     if (status === "error") item.title = "Mensagem registrada, mas o núcleo não concluiu a solicitação.";
     area.appendChild(item);
     area.scrollTop = area.scrollHeight;
+    return item;
   }
 
   async function refreshRecent() {
@@ -126,9 +132,57 @@
       updateProjectContext();
       switchView("chat");
       await refreshRecent();
+      await refreshAttachments();
     } catch (error) {
       toast("Não foi possível abrir a conversa. " + error.message);
     }
+  }
+
+  async function consumeChatStream(response, onSnapshot) {
+    if (!response.body || typeof response.body.getReader !== "function") {
+      throw new Error("O navegador não disponibilizou leitura do streaming.");
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completed = null;
+
+    function dispatch(frame) {
+      if (!frame.trim()) return;
+      let eventName = "message";
+      const dataLines = [];
+      frame.split(/\r?\n/).forEach(line => {
+        if (line.startsWith("event:")) eventName = line.slice(6).trim();
+        else if (line.startsWith("data:")) dataLines.push(line.slice(5).trimStart());
+      });
+      if (!dataLines.length) return;
+      let data;
+      try { data = JSON.parse(dataLines.join("\n")); }
+      catch { throw new Error("O servidor enviou um evento de streaming inválido."); }
+      if (eventName === "snapshot") onSnapshot(data.text || "");
+      else if (eventName === "complete") {
+        completed = data;
+        onSnapshot(data.answer || "");
+      } else if (eventName === "error") {
+        throw new Error(data.detail || "O núcleo não concluiu a resposta.");
+      }
+    }
+
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, {stream:true});
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        dispatch(frame);
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) dispatch(buffer);
+    if (!completed) throw new Error("A conexão terminou antes da confirmação da resposta.");
+    return completed;
   }
 
   async function submitMessage(value) {
@@ -141,15 +195,22 @@
     $("sendButton").disabled = true;
     $("sendButton").textContent = "…";
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
-        headers: {"Content-Type":"application/json"},
+        headers: {"Content-Type":"application/json", "Accept":"text/event-stream"},
         body: JSON.stringify({message, conversation_id:conversationId, project_id:activeProjectId})
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Falha na solicitação.");
-      conversationId = data.conversation_id;
-      appendMessage("assistant", data.answer);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Falha na solicitação.");
+      }
+      const assistantBubble = appendMessage("assistant", "");
+      const result = await consumeChatStream(response, text => {
+        assistantBubble.textContent = text;
+        $("conversation").scrollTop = $("conversation").scrollHeight;
+      });
+      conversationId = result.conversation_id;
+      await uploadPendingFiles();
     } catch (error) {
       appendMessage("error", "Não foi possível obter resposta do MAX. " + error.message, "error");
     } finally {
@@ -157,6 +218,7 @@
       $("sendButton").disabled = false;
       $("sendButton").textContent = "↑";
       await refreshRecent();
+      if (conversationId) await refreshAttachments();
     }
   }
   $("sendButton").addEventListener("click", () => submitMessage($("messageInput").value));
@@ -174,7 +236,113 @@
     switchView("chat");
     submitMessage(button.dataset.prompt);
   }));
-  $("attachButton").addEventListener("click", () => toast("Anexos serão ativados após validação de segurança."));
+
+  function renderPendingFiles() {
+    const list = $("attachmentList");
+    list.querySelectorAll(".attachment-chip").forEach(item => item.remove());
+    pendingFiles.forEach((file, index) => {
+      const item = document.createElement("div");
+      item.className = "attachment-chip";
+      const label = document.createElement("span");
+      label.textContent = file.name + " (" + Math.ceil(file.size / 1024) + " KB)";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remover";
+      remove.addEventListener("click", () => {
+        pendingFiles.splice(index, 1);
+        renderPendingFiles();
+      });
+      item.append(label, remove);
+      list.appendChild(item);
+    });
+  }
+
+  async function refreshAttachments() {
+    const list = $("attachmentList");
+    if (!conversationId) return;
+    try {
+      const response = await fetch("/api/conversations/" + encodeURIComponent(conversationId) + "/attachments");
+      const items = await response.json();
+      if (!response.ok) throw new Error(items.detail || "Falha ao listar anexos.");
+      list.replaceChildren();
+      items.forEach(item => {
+        const row = document.createElement("div");
+        row.className = "attachment-row";
+        const name = document.createElement("span");
+        name.textContent = item.name + " (" + Math.ceil(item.size_bytes / 1024) + " KB)";
+        const extraction = document.createElement("small");
+        const extractionLabels = {
+          completed: item.extraction_method === "ocr" || item.extraction_method === "mixed" ? "OCR concluído" : "Texto extraído",
+          partial: "OCR parcial",
+          engine_unavailable: "OCR indisponível, instale o Tesseract",
+          dependency_unavailable: "Dependência OCR ausente",
+          renderer_unavailable: "Renderizador PDF ausente",
+          language_unavailable: "Instale os idiomas por e eng",
+          timeout: "OCR excedeu o tempo limite",
+          no_text: "Nenhum texto reconhecido",
+          not_processed: "OCR não executado",
+          render_failed: "Falha ao renderizar PDF",
+          failed: "Falha na extração"
+        };
+        extraction.textContent = extractionLabels[item.extraction_status] || "Extração: " + (item.extraction_status || "indisponível");
+        const download = document.createElement("a");
+        download.href = "/api/conversations/" + encodeURIComponent(conversationId) + "/attachments/" + encodeURIComponent(item.id);
+        download.textContent = "Baixar";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Excluir";
+        remove.addEventListener("click", async () => {
+          if (!window.confirm("Excluir o anexo " + item.name + "?")) return;
+          const result = await fetch(download.href, {method:"DELETE"});
+          if (!result.ok) return toast("Não foi possível excluir o anexo.");
+          await refreshAttachments();
+        });
+        row.append(name, extraction, download, remove);
+        list.appendChild(row);
+      });
+      renderPendingFiles();
+    } catch (error) {
+      toast(error.message);
+    }
+  }
+
+  async function uploadPendingFiles() {
+    if (!conversationId || !pendingFiles.length) return;
+    const remaining = [];
+    for (const file of pendingFiles) {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      try {
+        const response = await fetch("/api/conversations/" + encodeURIComponent(conversationId) + "/attachments", {
+          method:"POST", body:form
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail || "Falha ao enviar " + file.name);
+        toast("Anexo salvo: " + data.name + (data.extraction_method === "ocr" || data.extraction_method === "mixed" ? " (OCR concluído)" : data.extraction_status === "engine_unavailable" ? " (OCR indisponível)" : ""));
+      } catch (error) {
+        remaining.push(file);
+        toast(error.message);
+      }
+    }
+    pendingFiles = remaining;
+    await refreshAttachments();
+  }
+
+  $("attachButton").addEventListener("click", () => $("attachmentInput").click());
+  $("attachmentInput").addEventListener("change", event => {
+    const selected = [...event.currentTarget.files];
+    const allowed = /\.(pdf|docx|txt|jpe?g|png)$/i;
+    selected.forEach(file => {
+      if (!allowed.test(file.name)) toast("Formato não permitido: " + file.name);
+      else if (file.size > 10 * 1024 * 1024) toast("Arquivo acima de 10 MiB: " + file.name);
+      else if (pendingFiles.length < 5) pendingFiles.push(file);
+      else toast("Limite de 5 anexos por conversa.");
+    });
+    event.currentTarget.value = "";
+    renderPendingFiles();
+    if (conversationId) uploadPendingFiles();
+  });
+
   $("modelSelect").addEventListener("change", () => toast("O roteamento do núcleo atual permanece automático."));
 
   async function showProjectDetails(project) {
@@ -213,6 +381,8 @@
       activeProjectId = project.id;
       activeProjectName = project.name;
       conversationId = null;
+      $("attachmentList").replaceChildren();
+      pendingFiles = [];
       $("conversation").replaceChildren();
       $("conversation").classList.remove("has-messages");
       $("welcome").style.display = "";
@@ -391,6 +561,259 @@
     } catch (error) { toast(error.message); }
   }
   $("newProject").addEventListener("click", createProject);
+  const taskStatusLabels = {
+    pending: "Pendente",
+    in_progress: "Em andamento",
+    completed: "Concluída",
+    cancelled: "Cancelada"
+  };
+  const taskPriorityLabels = {
+    low: "Baixa",
+    normal: "Normal",
+    high: "Alta",
+    urgent: "Urgente"
+  };
+
+  async function refreshTasks() {
+    const list = $("taskList");
+    if (!list) return;
+    list.textContent = "Carregando tarefas...";
+    try {
+      const filter = $("taskStatusFilter").value;
+      const url = filter ? "/api/tasks?status=" + encodeURIComponent(filter) : "/api/tasks";
+      const response = await fetch(url);
+      const tasks = await response.json();
+      if (!response.ok) throw new Error(tasks.detail || "Falha ao consultar tarefas.");
+      list.replaceChildren();
+      if (!tasks.length) {
+        const empty = document.createElement("p");
+        empty.className = "task-empty";
+        empty.textContent = "Nenhuma tarefa neste filtro.";
+        list.appendChild(empty);
+        return;
+      }
+      tasks.forEach(task => {
+        const card = document.createElement("article");
+        card.className = "task-card";
+        const main = document.createElement("div");
+        main.className = "task-main";
+        const title = document.createElement("h2");
+        title.textContent = task.title;
+        const description = document.createElement("p");
+        description.textContent = task.description || "Sem descrição.";
+        const meta = document.createElement("div");
+        meta.className = "task-meta";
+        const priority = document.createElement("span");
+        priority.className = "task-priority priority-" + task.priority;
+        priority.textContent = "Prioridade: " + taskPriorityLabels[task.priority];
+        const due = document.createElement("span");
+        if (task.due_at) {
+          const parsed = new Date(task.due_at);
+          due.textContent = "Prazo: " + (Number.isNaN(parsed.getTime()) ? task.due_at : parsed.toLocaleString("pt-BR"));
+        } else {
+          due.textContent = "Sem prazo";
+        }
+        meta.append(priority, due);
+        main.append(title, description, meta);
+        const controls = document.createElement("div");
+        controls.className = "task-controls";
+        const status = document.createElement("select");
+        status.className = "task-status";
+        status.setAttribute("aria-label", "Estado da tarefa " + task.title);
+        Object.entries(taskStatusLabels).forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          status.appendChild(option);
+        });
+        status.value = task.status;
+        status.addEventListener("change", () => updateTaskStatus(task.id, status.value));
+        controls.appendChild(status);
+        card.append(main, controls);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      list.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  async function updateTaskStatus(taskId, status) {
+    try {
+      const response = await fetch("/api/tasks/" + encodeURIComponent(taskId) + "/status", {
+        method: "PATCH",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao atualizar tarefa.");
+      toast("Estado da tarefa atualizado.");
+      await refreshTasks();
+    } catch (error) {
+      toast(error.message);
+      await refreshTasks();
+    }
+  }
+
+  $("taskForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const title = $("taskTitle").value.trim();
+    if (!title) return toast("Informe o título da tarefa.");
+    const dueValue = $("taskDueAt").value;
+    const payload = {
+      title,
+      description: $("taskDescription").value.trim(),
+      priority: $("taskPriority").value,
+      due_at: dueValue ? new Date(dueValue).toISOString() : null
+    };
+    try {
+      const response = await fetch("/api/tasks", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao salvar tarefa.");
+      $("taskForm").reset();
+      $("taskStatusFilter").value = "";
+      toast("Tarefa registrada.");
+      await refreshTasks();
+    } catch (error) {
+      toast(error.message);
+    }
+  });
+  $("taskStatusFilter").addEventListener("change", refreshTasks);
+
+  function addEngineCard(container, title, state, detail) {
+    const card = document.createElement("article");
+    card.className = "engine-card";
+    const heading = document.createElement("div");
+    heading.className = "engine-card-heading";
+    const name = document.createElement("h2");
+    name.textContent = title;
+    const badge = document.createElement("span");
+    badge.className = "engine-state " + (state === "ok" ? "engine-ok" : state === "warn" ? "engine-warn" : "engine-offline");
+    badge.textContent = state === "ok" ? "Respondendo" : state === "warn" ? "Não confirmado" : "Indisponível";
+    const description = document.createElement("p");
+    description.textContent = detail;
+    heading.append(name, badge);
+    card.append(heading, description);
+    container.appendChild(card);
+  }
+
+  async function refreshEngines() {
+    const panel = $("engineStatus");
+    if (!panel) return;
+    panel.textContent = "Consultando serviços locais...";
+    try {
+      const response = await fetch("/api/engines/status", {method:"GET", cache:"no-store"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao verificar os motores.");
+      panel.replaceChildren();
+
+      addEngineCard(
+        panel,
+        "Núcleo SERMAX",
+        data.core_loaded ? "ok" : "warn",
+        data.core_loaded
+          ? "Núcleo carregado nesta sessão da API."
+          : "Ainda não carregado. A primeira conversa inicia o núcleo."
+      );
+
+      const ollamaDetail = data.ollama.models.length
+        ? "API local respondeu. Modelos encontrados: " + data.ollama.models.join(", ")
+        : data.ollama.detail + (data.ollama.reachable ? " Nenhum modelo foi listado." : "");
+      addEngineCard(panel, "Ollama local", data.ollama.reachable ? "ok" : "offline", ollamaDetail);
+
+      const ocrStatus = data.ocr || {status:"engine_unavailable", languages:[], detail:"Diagnóstico OCR indisponível."};
+      const ocrDetail = ocrStatus.detail + (ocrStatus.languages.length ? " Idiomas: " + ocrStatus.languages.join(", ") + "." : "");
+      const ocrState = ocrStatus.status === "ready" ? "ok" : ocrStatus.status === "language_unavailable" ? "warn" : "offline";
+      addEngineCard(panel, "OCR local", ocrState, ocrDetail);
+
+      addEngineCard(
+        panel,
+        "OpenJarvis",
+        data.openjarvis.environment_files_present ? "warn" : "offline",
+        data.openjarvis.detail
+      );
+
+      const route = data.last_route.backend === "nao_executado"
+        ? "Nenhuma rota foi registrada nesta sessão."
+        : "Último backend registrado: " + data.last_route.backend
+          + (data.last_route.fallback ? ". Fallback: " + data.last_route.fallback : "");
+      addEngineCard(panel, "Último roteamento", data.last_route.backend === "nao_executado" ? "warn" : "ok", route);
+
+      const note = document.createElement("p");
+      note.className = "engine-diagnostic-footnote";
+      note.textContent = "Verificação somente leitura. Nenhuma inferência foi iniciada.";
+      panel.appendChild(note);
+    } catch (error) {
+      panel.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  $("refreshEngines").addEventListener("click", refreshEngines);
+
+  async function refreshMemory() {
+    const list = $("memoryList");
+    const count = $("memoryCount");
+    if (!list || !count) return;
+    list.textContent = "Consultando memória carregada pelo núcleo...";
+    count.textContent = "Consultando...";
+    try {
+      const query = $("memorySearch").value.trim();
+      const params = new URLSearchParams({limit: "100"});
+      if (query) params.set("q", query);
+      const response = await fetch("/api/memory?" + params.toString(), {
+        method: "GET",
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao consultar a memória.");
+      list.replaceChildren();
+      if (data.status === "core_not_loaded") {
+        count.textContent = "Núcleo ainda não carregado";
+        const empty = document.createElement("p");
+        empty.className = "memory-empty";
+        empty.textContent = data.message;
+        list.appendChild(empty);
+        return;
+      }
+      count.textContent = data.returned + " de " + data.total + " registros encontrados";
+      if (!data.items.length) {
+        const empty = document.createElement("p");
+        empty.className = "memory-empty";
+        empty.textContent = query ? "Nenhuma memória corresponde à busca." : "Não há registros pessoais disponíveis.";
+        list.appendChild(empty);
+        return;
+      }
+      data.items.forEach((memory, index) => {
+        const card = document.createElement("article");
+        card.className = "memory-card";
+        const number = document.createElement("span");
+        number.className = "memory-index";
+        number.textContent = String(Number.isInteger(memory.id) ? memory.id + 1 : index + 1).padStart(2, "0");
+        const text = document.createElement("p");
+        text.textContent = memory.content;
+        card.append(number, text);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      count.textContent = "Consulta indisponível";
+      list.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  $("refreshMemory").addEventListener("click", refreshMemory);
+  $("memorySearch").addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      refreshMemory();
+    }
+  });
+
   refreshHealth();
   refreshRecent();
   setInterval(refreshHealth, 15000);

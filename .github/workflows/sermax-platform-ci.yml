@@ -5,6 +5,11 @@ on:
     branches:
       - sermax-platform-prototype-20261115
       - sermax-cleanup-20261117
+      - sermax-platform-readiness-20261117-r4
+      - sermax-platform-streaming-20261117-r2
+      - sermax-platform-attachments-20261117
+      - sermax-platform-attachment-context-20261117-r2
+      - sermax-platform-ocr-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -12,6 +17,10 @@ on:
     branches:
       - sermax-windows-integration-20261029
       - sermax-cleanup-20261117
+      - sermax-platform-streaming-20261117-r2
+      - sermax-platform-attachments-20261117
+      - sermax-platform-attachment-context-20261117-r2
+      - sermax-platform-ocr-20261117
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -65,9 +74,24 @@ jobs:
       - name: Run backend tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_api.py
+      - name: Run streaming chat API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_chat_stream.py
+      - name: Run conversation attachment API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_attachments_api.py
+      - name: Run real SERMAX core streaming integration test
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_core_stream_integration.py
       - name: Run persistent task API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
+      - name: Run read-only memory API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_memory_api.py
+      - name: Run local engine diagnostics API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Verify real SERMAX core import without model execution
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_real_core_import.py
@@ -109,9 +133,24 @@ jobs:
       - name: Run backend tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_api.py
+      - name: Run streaming chat API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_chat_stream.py
+      - name: Run conversation attachment API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_attachments_api.py
+      - name: Run real SERMAX core streaming integration test on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_core_stream_integration.py
       - name: Run persistent task API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_tasks_api.py
+      - name: Run read-only memory API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_memory_api.py
+      - name: Run local engine diagnostics API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_engines_status.py
       - name: Verify real SERMAX core import on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_real_core_import.py
