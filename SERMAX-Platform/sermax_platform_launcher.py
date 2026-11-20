@@ -85,6 +85,18 @@ def parse_args(argv=None):
         help="Mantém a API local em execução sem abrir uma janela do navegador.",
     )
     parser.add_argument(
+        "--install-autostart", action="store_const", const="install", dest="autostart_action",
+        help="Registra inicialização no logon do usuário atual do Windows.",
+    )
+    parser.add_argument(
+        "--remove-autostart", action="store_const", const="remove", dest="autostart_action",
+        help="Remove a tarefa de inicialização automática do SERMAX.",
+    )
+    parser.add_argument(
+        "--autostart-status", action="store_const", const="status", dest="autostart_action",
+        help="Consulta se a tarefa de inicialização automática está registrada.",
+    )
+    parser.add_argument(
         "--health-timeout",
         type=float,
         default=30.0,
@@ -96,7 +108,11 @@ def parse_args(argv=None):
         default=15.0,
         help="Tempo máximo em segundos para aguardar o encerramento do servidor.",
     )
-    args = parser.parse_args(argv)
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    autostart_flags = {"--install-autostart", "--remove-autostart", "--autostart-status"}
+    if sum(flag in raw_args for flag in autostart_flags) > 1:
+        parser.error("Escolha somente uma operação de inicialização automática.")
+    args = parser.parse_args(raw_args)
     if args.health_timeout <= 0 or args.shutdown_timeout <= 0:
         parser.error("Os tempos de health check e encerramento devem ser positivos.")
     return args
@@ -167,6 +183,28 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
 def main(argv=None) -> int:
     args = parse_args(argv)
     root = platform_root()
+    if args.autostart_action:
+        backend = root / "backend"
+        if not (backend / "windows_autostart.py").is_file():
+            backend = root / "SERMAX-Platform" / "backend"
+        if not (backend / "windows_autostart.py").is_file():
+            print("Módulo de inicialização automática não encontrado.", file=sys.stderr)
+            return 5
+        sys.path.insert(0, str(backend))
+        from windows_autostart import autostart_status, install_autostart, remove_autostart
+        try:
+            if args.autostart_action == "install":
+                install_autostart(root)
+                print("Inicialização automática registrada para o logon do usuário atual.")
+            elif args.autostart_action == "remove":
+                removed = remove_autostart()
+                print("Tarefa de inicialização removida." if removed else "Nenhuma tarefa registrada.")
+            else:
+                print("Tarefa registrada." if autostart_status() else "Tarefa não registrada.")
+            return 0
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 5
     data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
     backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
     backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
