@@ -165,6 +165,44 @@ class LauncherHealthTests(unittest.TestCase):
         open_url.assert_not_called()
 
 
+class LauncherWorkerFailureTests(unittest.TestCase):
+    def test_unrequested_server_exit_is_marked_as_failure(self):
+        class Server:
+            def run(self):
+                return None
+
+        stop = threading.Event()
+        failed = threading.Event()
+        launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertTrue(failed.is_set())
+
+    def test_requested_server_shutdown_is_not_marked_as_failure(self):
+        class Server:
+            def run(self):
+                return None
+
+        stop = threading.Event()
+        failed = threading.Event()
+        stop.set()
+        launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertFalse(failed.is_set())
+
+    def test_server_exception_is_logged_and_marked_as_failure(self):
+        class Server:
+            def run(self):
+                raise RuntimeError("simulated uvicorn crash")
+
+        stop = threading.Event()
+        failed = threading.Event()
+        with patch.object(launcher.logging, "exception") as log_exception:
+            launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertTrue(failed.is_set())
+        log_exception.assert_called_once()
+
+
 class LauncherArgumentTests(unittest.TestCase):
     def test_no_browser_mode_is_available_for_background_hosting(self):
         args = launcher.parse_args(["--no-browser"])
