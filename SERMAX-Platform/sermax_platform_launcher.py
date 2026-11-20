@@ -116,7 +116,7 @@ def main() -> int:
     logging.info("Iniciando API local em %s", URL)
     worker.start()
 
-    if not wait_for_health(URL, stop):
+    if not wait_for_health(URL, stop, worker=worker):
         logging.error("API não ficou saudável dentro do prazo.")
         if not shutdown_server(server, worker, timeout=10):
             logging.error("Servidor não encerrou após falha no health check.")
