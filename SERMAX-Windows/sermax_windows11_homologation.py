@@ -138,6 +138,7 @@ def collect_report(
     version = platform.version() if version is None else version
     machine = platform.machine() if machine is None else machine
 
+    root_error = None
     try:
         root_info = os.lstat(root)
         root_exists = True
