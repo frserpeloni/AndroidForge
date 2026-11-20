@@ -303,6 +303,8 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                     "last_write_time": 132223104020000000,
                 },
             )
+            self.assertTrue(close(source_file_handle))
+            source_file_handle = None
 
             backups_handle = None
             journal_handle = None
@@ -406,6 +408,12 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertEqual(restored["journal_last_event"], "FILE_RESTORED")
                 with open(source_path, "rb") as active:
                     self.assertEqual(active.read(), source)
+                source_file_handle = create_file(
+                    source_path,
+                    0x00000080 | 0x00000100 | 0x00100000,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(source_file_handle, (None, 0, invalid))
                 self.assertEqual(
                     backup._query_file_timestamps_by_handle(source_file_handle),
                     expected_timestamps,
@@ -414,6 +422,8 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 backup._set_file_timestamps_by_handle(
                     source_file_handle, expected_timestamps
                 )
+                self.assertTrue(close(source_file_handle))
+                source_file_handle = None
 
                 repeated = backup.restore_backup_files_by_handle(
                     active_handle,
