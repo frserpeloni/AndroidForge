@@ -48,6 +48,7 @@ on:
       - "SERMAX-Windows/tests/test_sermax_update_staging.py"
       - "SERMAX-Windows/tests/test_sermax_update_transaction.py"
       - ".github/workflows/sermax-update-staging-ci.yml"
+      - ".github/workflows/sermax-windows-ci.yml"
   pull_request:
     branches:
       - sermax-windows-integration-20261029
@@ -89,6 +90,7 @@ on:
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
       - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
       - ".github/workflows/sermax-update-staging-ci.yml"
+      - ".github/workflows/sermax-windows-ci.yml"
 
 permissions:
   contents: read
