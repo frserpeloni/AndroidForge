@@ -102,15 +102,12 @@ def parse_args(argv=None):
     return args
 
 
-def main(argv=None) -> int:
-    args = parse_args(argv)
-    root = platform_root()
+def _run_server(args, root: Path, data_dir: Path) -> int:
     backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
     backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
     if backend is None:
         raise FileNotFoundError("Backend da Plataforma não encontrado nas pastas esperadas.")
 
-    data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
     configure_logging(data_dir)
     os.environ.setdefault("SERMAX_PLATFORM_DATA", str(data_dir))
     core_candidates = (root / "SERMAX-Windows", root.parent / "SERMAX-Windows")
@@ -122,14 +119,8 @@ def main(argv=None) -> int:
 
     import uvicorn
 
-    config = uvicorn.Config(
-        "server:app",
-        host=HOST,
-        port=PORT,
-        reload=False,
-        log_level="warning",
-        access_log=False,
-    )
+    config = uvicorn.Config("server:app", host=HOST, port=PORT, reload=False,
+                            log_level="warning", access_log=False)
     server = uvicorn.Server(config)
     stop = threading.Event()
 
@@ -172,6 +163,23 @@ def main(argv=None) -> int:
     logging.info("Plataforma encerrada.")
     return 0
 
+
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    root = platform_root()
+    data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
+    configure_logging(data_dir)
+    from instance_lock import acquire_instance_lock
+
+    try:
+        lock_handle = acquire_instance_lock(data_dir)
+    except RuntimeError as exc:
+        logging.error("%s", exc)
+        return 4
+    try:
+        return _run_server(args, root, data_dir)
+    finally:
+        lock_handle.close()
 
 if __name__ == "__main__":
     raise SystemExit(main())
