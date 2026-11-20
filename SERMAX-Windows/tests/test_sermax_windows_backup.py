@@ -48,6 +48,62 @@ class HandleBackupUnitTests(unittest.TestCase):
                 with self.assertRaisesRegex(backup.BackupError, "não suportados"):
                     backup._validate_restorable_attributes(attributes)
 
+    def test_schema_v1_catalog_remains_valid_without_timestamp_fields(self):
+        descriptor = b"SERMAX legacy security descriptor"
+        descriptor_hash = hashlib.sha256(descriptor).hexdigest()
+        content_hash = hashlib.sha256(b"data").hexdigest()
+        record = {
+            "path": "bin/engine.dll",
+            "source_file_id_128": "a" * 32,
+            "source_volume_serial_number": 123,
+            "source_attributes": backup.FILE_ATTRIBUTE_ARCHIVE,
+            "source_security_descriptor_b64": __import__("base64").b64encode(descriptor).decode("ascii"),
+            "source_security_descriptor_sha256": descriptor_hash,
+            "size": 4,
+            "sha256": content_hash,
+            "backup_file_id_128": "b" * 32,
+            "backup_volume_serial_number": 123,
+            "backup_number_of_links": 1,
+            "backup_size": 4,
+            "backup_sha256": content_hash,
+        }
+        catalog = {
+            "schema_version": 1,
+            "backup_component": "backup-" + "c" * 24,
+            "files": [record],
+        }
+        self.assertEqual(
+            backup._validate_backup_catalog(catalog, catalog["backup_component"], 123),
+            (record,),
+        )
+
+    def test_schema_v2_catalog_requires_timestamp_fields(self):
+        descriptor = b"SERMAX legacy security descriptor"
+        descriptor_hash = hashlib.sha256(descriptor).hexdigest()
+        content_hash = hashlib.sha256(b"data").hexdigest()
+        record = {
+            "path": "bin/engine.dll",
+            "source_file_id_128": "a" * 32,
+            "source_volume_serial_number": 123,
+            "source_attributes": backup.FILE_ATTRIBUTE_ARCHIVE,
+            "source_security_descriptor_b64": __import__("base64").b64encode(descriptor).decode("ascii"),
+            "source_security_descriptor_sha256": descriptor_hash,
+            "size": 4,
+            "sha256": content_hash,
+            "backup_file_id_128": "b" * 32,
+            "backup_volume_serial_number": 123,
+            "backup_number_of_links": 1,
+            "backup_size": 4,
+            "backup_sha256": content_hash,
+        }
+        catalog = {
+            "schema_version": 2,
+            "backup_component": "backup-" + "c" * 24,
+            "files": [record],
+        }
+        with self.assertRaisesRegex(backup.BackupError, "campos ausentes"):
+            backup._validate_backup_catalog(catalog, catalog["backup_component"], 123)
+
     def test_file_timestamp_validation_accepts_windows_filetime_values(self):
         values = {
             "creation_time": 132223104000000000,
