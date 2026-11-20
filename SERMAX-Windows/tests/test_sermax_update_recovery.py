@@ -102,6 +102,24 @@ class StartupRecoveryAssessmentTests(unittest.TestCase):
             "REVIEW_WITHOUT_AUTOMATIC_CLEANUP",
         )
 
+    def test_inconsistent_pending_flag_fails_closed(self):
+        with mock.patch(
+            "sermax_windows_journal.scan_journal_transactions_by_handle",
+            return_value=(
+                {
+                    "transaction_id": "txn-" + "e" * 24,
+                    "state": "IN_PROGRESS",
+                    "install_started": False,
+                    "requires_recovery": False,
+                    "last_event": "STAGING_COMPLETE",
+                },
+            ),
+        ):
+            with self.assertRaisesRegex(
+                recovery.StartupRecoveryAssessmentError, "resumo do journal"
+            ):
+                recovery.inspect_startup_recovery_by_handle(123)
+
     def test_corrupt_journal_fails_closed_without_recovery_action(self):
         with mock.patch(
             "sermax_windows_journal.scan_journal_transactions_by_handle",
