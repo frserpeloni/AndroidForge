@@ -90,6 +90,7 @@ class StartupRecoveryAssessmentTests(unittest.TestCase):
                     "state": "EMPTY",
                     "install_started": False,
                     "requires_recovery": True,
+                    "rollback_supported": False,
                     "last_event": None,
                 },
             ),
@@ -158,7 +159,10 @@ class StartupRecoveryAssessmentWindowsTests(unittest.TestCase):
 
         from sermax_windows_handle_io import close_handle
         from sermax_windows_private_area import create_private_directory_component
-        from sermax_windows_journal import create_journal_transaction_by_handle
+        from sermax_windows_journal import (
+            create_journal_transaction_by_handle,
+            open_journal_transaction_by_handle,
+        )
 
         with tempfile.TemporaryDirectory(prefix="sermax-startup-recovery-") as root:
             kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -204,8 +208,16 @@ class StartupRecoveryAssessmentWindowsTests(unittest.TestCase):
                 )
                 session.append_event("INSTALL_STARTED", {})
                 before = session.read_events()
+                transaction_id = session.transaction_id
+                # Fechar a sessão de escrita antes da enumeração. O journal
+                # usa handles com compartilhamento restrito por segurança.
+                session.close()
+                session = None
                 result = recovery.inspect_startup_recovery_by_handle(
                     journal_parent
+                )
+                session = open_journal_transaction_by_handle(
+                    journal_parent, transaction_id
                 )
                 after = session.read_events()
 
