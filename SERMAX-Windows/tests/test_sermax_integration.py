@@ -185,8 +185,8 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         executar_interface.assert_called_once_with(script_interface, run_name="__main__")
 
     def test_launcher_bloqueia_terminal_quando_instalacao_foi_interrompida(self):
-        raiz_instalacao = r"C:\\SERMAX"
-        script_interface = r"C:\\Temp\\_MEI12345\\SERMAX_terminal\\sermax_terminal.py"
+        raiz_instalacao = r"C:\SERMAX"
+        script_interface = r"C:\Temp\_MEI12345\SERMAX_terminal\sermax_terminal.py"
         recovery = {
             "configured": True,
             "startup_allowed": False,
@@ -200,10 +200,10 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             ],
         }
         with patch.object(sermax_launcher.sys, "frozen", True, create=True), \
-             patch.object(sermax_launcher.sys, "executable", r"C:\\SERMAX\\SERMAX.exe"), \
-             patch.object(sermax_launcher.sys, "_MEIPASS", r"C:\\Temp\\_MEI12345", create=True), \
+             patch.object(sermax_launcher.sys, "executable", r"C:\SERMAX\SERMAX.exe"), \
+             patch.object(sermax_launcher.sys, "_MEIPASS", r"C:\Temp\_MEI12345", create=True), \
              patch.object(sermax_launcher, "resolver_caminhos",
-                          return_value=(raiz_instalacao, r"C:\\Temp\\_MEI12345",
+                          return_value=(raiz_instalacao, r"C:\Temp\_MEI12345",
                                         os.path.dirname(script_interface), script_interface)), \
              patch.object(sermax_launcher.os.path, "isfile", return_value=True), \
              patch.object(sermax_launcher, "inspect_update_recovery_at_startup",
