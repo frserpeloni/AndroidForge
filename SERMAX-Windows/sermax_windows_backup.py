@@ -1317,7 +1317,10 @@ def restore_backup_files_by_handle(
                 raise BackupError(f"Arquivo de backup não confere: {path}")
 
             target_handle, target_parents, target_meta = _open_source_file(
-                active_root_handle, path, active_root_metadata["volume_serial_number"]
+                active_root_handle,
+                path,
+                active_root_metadata["volume_serial_number"],
+                desired_access=FILE_READ_DATA | FILE_WRITE_ATTRIBUTES | READ_CONTROL | SYNCHRONIZE,
             )
             if target_handle is not None and target_meta is not None:
                 opened_active_files.append((target_handle, target_parents))
