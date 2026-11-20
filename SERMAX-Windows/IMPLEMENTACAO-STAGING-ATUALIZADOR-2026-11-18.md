@@ -411,3 +411,19 @@ Foi ampliado o teste nativo para reabrir a transação depois do encerramento do
 - Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44641017113.
 
 A recuperação continua sendo uma operação explícita chamada com transaction_id e manifesto autenticado. O início automático na inicialização, a política de seleção de transações e a recuperação de escrita in-place interrompida seguem pendentes.
+
+
+## Preservação de timestamps no backup, 2026-11-20
+
+A branch `sermax-backup-timestamps-20261120` acrescenta metadados temporais ao catálogo de backup.
+
+- Catálogos novos usam `schema_version: 2`.
+- Cada arquivo registra `CreationTime`, `LastAccessTime` e `LastWriteTime` obtidos por `GetFileInformationByHandleEx(FileBasicInfo)`.
+- A restauração aplica esses três campos por `SetFileInformationByHandle(FileBasicInfo)`, depois de restaurar conteúdo, descritor de segurança e atributos.
+- A conferência final relê os valores pelo mesmo handle.
+- A verificação de idempotência considera os timestamps. Se conteúdo, ACL e atributos já estiverem corretos, reaplica os timestamps originais sem regravar o conteúdo. Isso também neutraliza eventual atualização de `LastAccessTime` causada pela própria leitura de verificação.
+- O validador mantém leitura de catálogos `schema_version: 1`. Esses backups antigos continuam restauráveis sem timestamps, pois não contêm os valores históricos.
+- `ChangeTime` não é armazenado nem restaurado. O Windows administra esse campo como horário de alteração de metadados e não é tratado como timestamp preservável neste fluxo.
+- Valores zero são recusados, pois zero em `FILE_BASIC_INFO` significa não alterar o campo. O fluxo falha fechado em vez de declarar restauração temporal sem confirmação.
+
+A alteração está em branch isolada. A validação CI e a homologação local ainda precisam ser executadas. Nenhum arquivo de `C:\\SERMAX` foi tocado.
