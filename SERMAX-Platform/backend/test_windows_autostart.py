@@ -70,6 +70,9 @@ class WindowsAutostartXmlTests(unittest.TestCase):
         principal = task.find(f"{namespace}Principals/{namespace}Principal")
         self.assertEqual(principal.findtext(f"{namespace}LogonType"), "InteractiveToken")
         self.assertEqual(principal.findtext(f"{namespace}RunLevel"), "LeastPrivilege")
+        restart = task.find(f"{namespace}Settings/{namespace}RestartOnFailure")
+        self.assertEqual(restart.findtext(f"{namespace}Interval"), "PT1M")
+        self.assertEqual(restart.findtext(f"{namespace}Count"), "3")
 
     def test_frozen_launcher_does_not_pass_python_script_path(self):
         xml_text = autostart.build_task_xml(
