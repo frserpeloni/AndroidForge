@@ -1,5 +1,5 @@
 name: SERMAX Update Staging Validation
-# CI validation includes interrupted in-place restore tests.
+# CI validation includes interrupted in-place restore tests and retry assertions.
 
 on:
   push:
