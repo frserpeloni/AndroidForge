@@ -110,6 +110,9 @@ jobs:
       - name: Run platform launcher tests
         working-directory: SERMAX-Platform
         run: python -m unittest discover -s tests -p "test_platform_launcher.py" -v
+      - name: Run platform instance lock tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_instance_lock.py
       - name: Check installer, builder and launcher syntax
         run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py SERMAX-Platform/sermax_platform_launcher.py
 
@@ -171,6 +174,9 @@ jobs:
       - name: Run platform launcher tests on Windows
         working-directory: SERMAX-Platform
         run: python -m unittest discover -s tests -p "test_platform_launcher.py" -v
+      - name: Run platform instance lock tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_instance_lock.py
       - name: Check installer, builder and launcher syntax on Windows
         run: python -m py_compile SERMAX-Platform/installer/installer_gui.py SERMAX-Platform/installer/sermax_package_builder.py SERMAX-Platform/sermax_platform_launcher.py
       - name: Verify Windows launcher is present
