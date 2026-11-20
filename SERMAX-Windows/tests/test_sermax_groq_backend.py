@@ -35,7 +35,7 @@ class GroqBackendTests(unittest.TestCase):
         self.assertEqual(backend.max_tokens, 4096)
 
     @patch("sermax_groq_backend.urllib.request.urlopen")
-    def test_sends_configured_token_budget_and_returns_content(self, mocked_open):
+    def test_sends_completion_budget_and_reasoning_controls(self, mocked_open):
         mocked_open.return_value = FakeResponse({
             "choices": [{"message": {"content": "resposta"}}]
         })
@@ -43,9 +43,53 @@ class GroqBackendTests(unittest.TestCase):
         self.assertEqual(backend("Analista", "Analise esta tarefa"), "resposta")
         request = mocked_open.call_args.args[0]
         payload = json.loads(request.data.decode("utf-8"))
-        self.assertEqual(payload["max_tokens"], 2048)
+        self.assertEqual(payload["max_completion_tokens"], 2048)
+        self.assertNotIn("max_tokens", payload)
         self.assertEqual(payload["model"], "openai/gpt-oss-20b")
+        self.assertEqual(payload["reasoning_effort"], "low")
+        self.assertEqual(payload["reasoning_format"], "hidden")
+        self.assertNotIn("response_format", payload)
         self.assertNotIn("test-key", request.data.decode("utf-8"))
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_requests_json_mode_for_programmer_and_tester(self, mocked_open):
+        mocked_open.side_effect = [
+            FakeResponse({"choices": [{"message": {"content": "{}"}}]}),
+            FakeResponse({"choices": [{"message": {"content": "{}"}}]}),
+        ]
+        backend = self.make_backend()
+        self.assertEqual(backend("programador", "Retorne JSON"), "{}")
+        self.assertEqual(backend("testador", "Retorne JSON"), "{}")
+        payloads = [
+            json.loads(call.args[0].data.decode("utf-8"))
+            for call in mocked_open.call_args_list
+        ]
+        for payload in payloads:
+            self.assertEqual(payload["response_format"], {"type": "json_object"})
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_does_not_send_gpt_oss_controls_to_other_models(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{"message": {"content": "resposta"}}]
+        })
+        backend = self.make_backend(model="llama-3.3-70b-versatile")
+        self.assertEqual(backend("Analista", "Analise"), "resposta")
+        payload = json.loads(mocked_open.call_args.args[0].data.decode("utf-8"))
+        self.assertNotIn("reasoning_effort", payload)
+        self.assertNotIn("reasoning_format", payload)
+        self.assertNotIn("response_format", payload)
+
+    @patch("sermax_groq_backend.urllib.request.urlopen")
+    def test_empty_content_reports_finish_reason(self, mocked_open):
+        mocked_open.return_value = FakeResponse({
+            "choices": [{
+                "message": {"content": ""},
+                "finish_reason": "length",
+            }]
+        })
+        backend = self.make_backend()
+        with self.assertRaisesRegex(GroqAPIError, "finish_reason=length"):
+            backend("programador", "Retorne JSON")
 
     @patch("sermax_groq_backend.time.sleep")
     @patch("sermax_groq_backend.urllib.request.urlopen")

@@ -19,6 +19,11 @@ class GroqAPIError(RuntimeError):
 
 class GroqChatBackend:
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+    GPT_OSS_MODELS = frozenset({
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-120b",
+    })
+    JSON_ROLES = frozenset({"programador", "testador"})
 
     def __init__(
         self,
@@ -64,8 +69,16 @@ class GroqChatBackend:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": self.max_tokens,
+            "max_completion_tokens": self.max_tokens,
         }
+        if self.model in self.GPT_OSS_MODELS:
+            # GPT-OSS separa raciocínio e resposta final. Hidden + low mantém
+            # o orçamento concentrado na saída consumida pelo pipeline.
+            payload["reasoning_effort"] = "low"
+            payload["reasoning_format"] = "hidden"
+            if str(role).casefold() in self.JSON_ROLES:
+                payload["response_format"] = {"type": "json_object"}
+
         request = urllib.request.Request(
             self.ENDPOINT,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -83,9 +96,22 @@ class GroqChatBackend:
                 ) as response:
                     raw = response.read(2_000_000)
                 data = json.loads(raw.decode("utf-8"))
-                answer = data["choices"][0]["message"]["content"]
+                if not isinstance(data, dict):
+                    raise GroqAPIError("Resposta da Groq não é um objeto JSON.")
+                choices = data.get("choices")
+                if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                    raise GroqAPIError("Resposta da Groq sem choices válidas.")
+                choice = choices[0]
+                message = choice.get("message")
+                if not isinstance(message, dict):
+                    raise GroqAPIError("Resposta da Groq sem message válida.")
+                answer = message.get("content")
                 if not isinstance(answer, str) or not answer.strip():
-                    raise GroqAPIError("A Groq retornou conteúdo vazio.")
+                    finish_reason = choice.get("finish_reason") or "unknown"
+                    raise GroqAPIError(
+                        "A Groq retornou conteúdo vazio "
+                        f"(finish_reason={finish_reason})."
+                    )
                 return answer
             except urllib.error.HTTPError as exc:
                 try:
