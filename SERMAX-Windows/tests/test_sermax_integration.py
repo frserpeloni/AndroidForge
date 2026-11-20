@@ -49,6 +49,9 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
             '"sermax_executor"',
             '"sermax_tarefas"',
             '"ferramenta_windows"',
+            '"sermax_startup_gate"', '"sermax_update_recovery"',
+            '"sermax_windows_journal"', '"sermax_windows_private_area"',
+            '"win32api"', '"win32security"',
             '"Pestinha-GPL-3.0.txt"',
             '"Pestinha-ORIGIN.md"',
         ):
