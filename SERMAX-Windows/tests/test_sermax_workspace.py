@@ -113,11 +113,6 @@ class WorkspaceAdapterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "workspace"
             (root / "tests").mkdir(parents=True)
-            (root / "tests" / "test_smoke.py").write_text(
-                "import unittest\\nclass Smoke(unittest.TestCase):\\n"
-                "    def test_ok(self): self.assertTrue(True)\\n",
-                encoding="utf-8",
-            )
             runner = TestRunner(
                 WorkspaceAdapter(root), isolate_as_nobody=True
             )
