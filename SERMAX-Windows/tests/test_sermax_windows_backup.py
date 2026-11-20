@@ -414,13 +414,19 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                     share, None, 3, 0x00000080, None,
                 )
                 self.assertNotIn(source_file_handle, (None, 0, invalid))
+                # A leitura usada para conferir o conteúdo pode atualizar LastAccessTime.
+                backup._set_file_timestamps_by_handle(
+                    source_file_handle, expected_timestamps
+                )
                 self.assertEqual(
                     backup._query_file_timestamps_by_handle(source_file_handle),
                     expected_timestamps,
                 )
-                # A leitura usada para conferir o conteúdo pode atualizar LastAccessTime.
+                divergent_timestamps = {
+                    key: value + 1000 for key, value in expected_timestamps.items()
+                }
                 backup._set_file_timestamps_by_handle(
-                    source_file_handle, expected_timestamps
+                    source_file_handle, divergent_timestamps
                 )
                 self.assertTrue(close(source_file_handle))
                 source_file_handle = None
@@ -433,6 +439,18 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(repeated["restored_count"], 0)
                 self.assertEqual(repeated["already_restored_count"], 1)
+                source_file_handle = create_file(
+                    source_path,
+                    0x00000080,
+                    share, None, 3, 0x00000080, None,
+                )
+                self.assertNotIn(source_file_handle, (None, 0, invalid))
+                self.assertEqual(
+                    backup._query_file_timestamps_by_handle(source_file_handle),
+                    expected_timestamps,
+                )
+                self.assertTrue(close(source_file_handle))
+                source_file_handle = None
             finally:
                 if journal_session is not None:
                     journal_session.close()
