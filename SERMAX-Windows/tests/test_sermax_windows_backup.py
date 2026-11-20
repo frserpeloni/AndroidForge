@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import ctypes
 import hashlib
 import json
@@ -57,7 +58,7 @@ class HandleBackupUnitTests(unittest.TestCase):
             "source_file_id_128": "a" * 32,
             "source_volume_serial_number": 123,
             "source_attributes": backup.FILE_ATTRIBUTE_ARCHIVE,
-            "source_security_descriptor_b64": __import__("base64").b64encode(descriptor).decode("ascii"),
+            "source_security_descriptor_b64": base64.b64encode(descriptor).decode("ascii"),
             "source_security_descriptor_sha256": descriptor_hash,
             "size": 4,
             "sha256": content_hash,
