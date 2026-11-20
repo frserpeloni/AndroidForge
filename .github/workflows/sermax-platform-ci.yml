@@ -10,6 +10,7 @@ on:
       - sermax-platform-attachments-20261117
       - sermax-platform-attachment-context-20261117-r2
       - sermax-platform-ocr-20261117
+      - sermax-platform-single-instance-20261120
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
