@@ -57,6 +57,7 @@ def inspect_startup_recovery_by_handle(journal_parent_handle) -> dict[str, Any]:
             or state not in {"EMPTY", "TERMINAL", "IN_PROGRESS", "RECOVERY_REQUIRED"}
             or type(install_started) is not bool
             or type(requires_recovery) is not bool
+            or requires_recovery != (state != "TERMINAL")
         ):
             raise StartupRecoveryAssessmentError(
                 "Resumo do journal incompleto ou inválido. Inicialização segura bloqueada."
