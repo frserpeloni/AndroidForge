@@ -33,6 +33,35 @@ class LauncherHealthTests(unittest.TestCase):
             "http://127.0.0.1:8765/api/health", timeout=1.5
         )
 
+    def test_wait_for_health_does_not_probe_when_launcher_worker_has_exited(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return False
+
+        with patch.object(launcher.urllib.request, "urlopen") as open_url:
+            self.assertFalse(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, worker=Worker()
+            ))
+        open_url.assert_not_called()
+
+    def test_wait_for_health_accepts_api_when_own_worker_is_alive(self):
+        stop = threading.Event()
+
+        class Worker:
+            def is_alive(self):
+                return True
+
+        with patch.object(
+            launcher.urllib.request,
+            "urlopen",
+            return_value=_Response({"service": "sermax-platform-api"}),
+        ):
+            self.assertTrue(launcher.wait_for_health(
+                "http://127.0.0.1:8765", stop, worker=Worker()
+            ))
+
     def test_wait_for_health_rejects_healthy_endpoint_from_another_process(self):
         stop = threading.Event()
 
