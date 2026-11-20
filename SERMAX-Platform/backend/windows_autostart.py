@@ -31,10 +31,13 @@ def build_task_xml(platform_root: Path, executable: str | None = None,
     """Gera tarefa ONLOGON limitada ao usuário interativo atual."""
     root_path = Path(platform_root).resolve()
     is_frozen = bool(getattr(sys, "frozen", False)) if frozen is None else frozen
-    command = executable or sys.executable
-    arguments = ["--no-browser"] if is_frozen else [
-        str(root_path / "sermax_platform_launcher.py"), "--no-browser"
-    ]
+    if is_frozen:
+        command = executable or sys.executable
+        arguments = ["--no-browser"]
+    else:
+        backend_venv_python = root_path / "backend" / ".venv" / "Scripts" / "python.exe"
+        command = executable or (str(backend_venv_python) if backend_venv_python.is_file() else sys.executable)
+        arguments = [str(root_path / "sermax_platform_launcher.py"), "--no-browser"]
 
     task = ET.Element("Task", {"version": "1.4", "xmlns": "http://schemas.microsoft.com/windows/2004/02/mit/task"})
     registration = ET.SubElement(task, "RegistrationInfo")
