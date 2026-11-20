@@ -6,6 +6,7 @@ on:
       - sermax-installer-staging-20261118
       - sermax-backup-timestamps-20261120
       - sermax-subprocess-recovery-20261120
+      - sermax-restore-resume-tests-20261120
     paths:
       - "SERMAX-Windows/sermax_update_staging.py"
       - "SERMAX-Windows/sermax_update_transaction.py"
