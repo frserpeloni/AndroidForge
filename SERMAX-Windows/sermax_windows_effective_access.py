@@ -79,8 +79,11 @@ def _native_handle_value(handle) -> int:
     return value
 
 
-def read_security_descriptor_binary(directory_handle) -> bytes:
+def read_security_descriptor_binary(directory_handle, *, require_directory: bool = True) -> bytes:
     """Lê OWNER, GROUP e DACL pelo handle já aberto com READ_CONTROL.
+
+    Por padrão exige diretório regular. require_directory=False permite arquivo
+    regular, mantendo as mesmas validações de reparse point e DeletePending.
 
     Usa GetSecurityInfo com SE_FILE_OBJECT e copia o SECURITY_DESCRIPTOR
     self-relative retornado pelo Windows antes de liberar sua memória.
@@ -92,12 +95,13 @@ def read_security_descriptor_binary(directory_handle) -> bytes:
         from sermax_windows_handle_io import query_handle_metadata
         metadata = query_handle_metadata(directory_handle)
         if (
-            not metadata["is_directory"]
+            metadata["is_directory"] != bool(require_directory)
             or metadata["is_reparse_point"]
             or metadata["delete_pending"]
         ):
+            expected = "diretório" if require_directory else "arquivo"
             raise EffectiveAccessError(
-                "O descritor exige diretório regular, sem reparse point ou DeletePending."
+                f"O descritor exige {expected} regular, sem reparse point ou DeletePending."
             )
 
         advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
