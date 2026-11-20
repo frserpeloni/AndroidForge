@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - sermax-launcher-recovery-gate-20261120
+      - sermax-windows11-readonly-homologation-20261120
     paths:
       - "SERMAX-Windows/**"
       - ".github/workflows/sermax-windows-ci.yml"
