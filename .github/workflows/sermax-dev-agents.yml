@@ -11,6 +11,8 @@ on:
       - "SERMAX-Windows/tests/test_sermax_groq_backend.py"
       - "SERMAX-Windows/sermax_workspace.py"
       - "SERMAX-Windows/tests/test_sermax_workspace.py"
+      - "SERMAX-Windows/sermax_dev_proposal.py"
+      - "SERMAX-Windows/tests/test_sermax_dev_proposal.py"
   workflow_dispatch:
     inputs:
       task:

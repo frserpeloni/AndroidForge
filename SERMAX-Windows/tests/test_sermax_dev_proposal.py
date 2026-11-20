@@ -98,8 +98,10 @@ class DevelopmentProposalTests(unittest.TestCase):
                 ],
                 "tests": ["unittest"],
             }))
-            with self.assertRaises(RuntimeError):
+            with self.assertRaises(RuntimeError) as raised:
                 apply_and_test_proposal(workspace, proposal, FailedRunner())
+            self.assertIn('"suite":"unittest"', str(raised.exception))
+            self.assertIn('"output":"failure"', str(raised.exception))
             self.assertEqual(workspace.read_text("module.py"), "ORIGINAL = True\n")
             self.assertFalse((root / "new_module.py").exists())
 

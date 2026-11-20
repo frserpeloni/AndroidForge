@@ -132,8 +132,27 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
     try:
         written = apply_proposal(workspace, proposal)
         results = [test_runner.run(suite) for suite in proposal.tests]
-        if any(result.get("status") != "passed" for result in results):
-            raise RuntimeError("Testes da proposta falharam.")
+        failed_results = [
+            result for result in results
+            if not isinstance(result, dict) or result.get("status") != "passed"
+        ]
+        if failed_results:
+            details = []
+            for result in failed_results:
+                if isinstance(result, dict):
+                    details.append({
+                        "suite": str(result.get("suite", "unknown"))[:80],
+                        "status": str(result.get("status", "unknown"))[:40],
+                        "returncode": result.get("returncode"),
+                        "output": str(result.get("output", ""))[-1000:],
+                        "truncated": bool(result.get("truncated", False)),
+                    })
+                else:
+                    details.append({"status": "invalid_result", "type": type(result).__name__})
+            raise RuntimeError(
+                "Testes da proposta falharam: "
+                + json.dumps(details, ensure_ascii=False, separators=(",", ":"))
+            )
         return written, results
     except Exception:
         for relative, (existed, content) in snapshots.items():
