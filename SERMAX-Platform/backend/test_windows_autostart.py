@@ -33,8 +33,11 @@ class WindowsAutostartXmlTests(unittest.TestCase):
             xml_text = autostart.build_task_xml(
                 root, frozen=False, user_id="PC\\fabiano"
             )
-            self.assertIn(f"<Command>{venv_python}</Command>", xml_text)
-            self.assertIn(f"{root / 'sermax_platform_launcher.py'}", xml_text)
+            task = autostart.ET.fromstring(xml_text)
+            namespace = "{http://schemas.microsoft.com/windows/2004/02/mit/task}"
+            command = task.findtext(f".//{namespace}Command")
+            arguments = task.findtext(f".//{namespace}Arguments")
+            self.assertEqual(Path(command).resolve(), venv_python.resolve())
             self.assertIn("--no-browser", xml_text)
 
 
