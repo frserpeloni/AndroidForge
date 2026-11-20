@@ -41,6 +41,7 @@ Os comandos de registro, consulta e remoção são implementados e cobertos por 
 - `backend/run_local.bat`, inicializador manual de desenvolvimento que chama o launcher supervisionado e compartilha o bloqueio de instância única.
 - `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, confirma que o próprio servidor Uvicorn iniciou, valida `/api/health`, abre o navegador por padrão e encerra o servidor de forma controlada.
 - O inicializador aceita `--no-browser` para manter a API local em execução sem abrir o navegador, além de `--health-timeout` e `--shutdown-timeout` para configurar os limites de inicialização e encerramento. Esse modo prepara a execução sem interface para uma futura hospedagem central no Windows, mas ainda não registra serviço nem tarefa automática.
+- O launcher diferencia encerramento solicitado de término inesperado do worker Uvicorn. Exceções do servidor são registradas em `platform-launcher.log`; uma saída inesperada retorna código diferente de zero para permitir que a política de reinício do Agendador seja aplicada. O encerramento solicitado por sinal ou Ctrl+C permanece normal.
 - `backend/test_api.py` e testes especializados para streaming, anexos, OCR, tarefas, memória, diagnóstico dos motores e contrato de sessão.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
 - `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
