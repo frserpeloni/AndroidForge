@@ -157,6 +157,26 @@ class LauncherHealthTests(unittest.TestCase):
         open_url.assert_not_called()
 
 
+class LauncherArgumentTests(unittest.TestCase):
+    def test_no_browser_mode_is_available_for_background_hosting(self):
+        args = launcher.parse_args(["--no-browser"])
+        self.assertTrue(args.no_browser)
+        self.assertEqual(args.health_timeout, 30.0)
+        self.assertEqual(args.shutdown_timeout, 15.0)
+
+    def test_timeouts_can_be_configured(self):
+        args = launcher.parse_args([
+            "--health-timeout", "45",
+            "--shutdown-timeout", "20",
+        ])
+        self.assertEqual(args.health_timeout, 45.0)
+        self.assertEqual(args.shutdown_timeout, 20.0)
+
+    def test_non_positive_timeout_is_rejected(self):
+        with self.assertRaises(SystemExit):
+            launcher.parse_args(["--health-timeout", "0"])
+
+
 class LauncherShutdownTests(unittest.TestCase):
     def test_shutdown_requests_exit_and_joins_worker(self):
         class Server:
