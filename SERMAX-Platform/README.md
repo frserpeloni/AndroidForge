@@ -8,7 +8,10 @@ Primeira implementação isolada da interface gráfica e do serviço local da Pl
 2. Abra `SERMAX-Platform/backend`.
 3. Execute `run_local.bat`.
 4. Aguarde a instalação das dependências no ambiente virtual.
-5. Abra no navegador: **http://127.0.0.1:8765**
+5. O inicializador inicia a API, adquire o bloqueio de instância única e abre o navegador após o health check.
+6. Para encerrar, feche a janela do inicializador ou use Ctrl+C.
+
+O `run_local.bat` chama `sermax_platform_launcher.py`. Não inicie `server.py` diretamente para operar a Plataforma, pois esse caminho ignora o bloqueio de instância única. O arquivo `platform-instance.lock` fica no diretório de dados e o sistema operacional libera o bloqueio quando o processo encerra.
 
 O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a internet e não exponha a API em rede pública.
 
@@ -18,13 +21,14 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `styles.css`, identidade visual responsiva.
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
-- `backend/run_local.bat`, inicializador manual de desenvolvimento.
+- `backend/run_local.bat`, inicializador manual de desenvolvimento que chama o launcher supervisionado e compartilha o bloqueio de instância única.
 - `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, confirma que o próprio servidor Uvicorn iniciou, valida `/api/health`, abre o navegador por padrão e encerra o servidor de forma controlada.
 - O inicializador aceita `--no-browser` para manter a API local em execução sem abrir o navegador, além de `--health-timeout` e `--shutdown-timeout` para configurar os limites de inicialização e encerramento. Esse modo prepara a execução sem interface para uma futura hospedagem central no Windows, mas ainda não registra serviço nem tarefa automática.
 - `backend/test_api.py` e testes especializados para streaming, anexos, OCR, tarefas, memória, diagnóstico dos motores e contrato de sessão.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
 - `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
 - `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
+- `backend/instance_lock.py` e `backend/test_instance_lock.py`, bloqueio exclusivo de instância com testes para Windows e sistemas POSIX.
 - `package.json`, dependências e comando dos testes de interface.
 
 ## Integração com o núcleo
