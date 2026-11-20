@@ -526,13 +526,18 @@ def scan_journal_transactions_by_handle(
             )
             last_event = events[-1]["event"] if events else None
             terminal = last_event in {"COMMITTED", "ROLLED_BACK"}
+            install_started = any(
+                item["event"] == "INSTALL_STARTED" for item in events
+            )
             summaries.append({
                 "transaction_id": entry.name,
                 "event_count": len(events),
+                "first_event": events[0]["event"] if events else None,
                 "last_event": last_event,
                 "last_record_sha256": (
                     events[-1]["record_sha256"] if events else None
                 ),
+                "install_started": install_started,
                 "state": (
                     "EMPTY" if not events
                     else "TERMINAL" if terminal
@@ -541,6 +546,7 @@ def scan_journal_transactions_by_handle(
                     else "IN_PROGRESS"
                 ),
                 "requires_recovery": not terminal,
+                "rollback_supported": install_started and not terminal,
             })
         except JournalError:
             raise
