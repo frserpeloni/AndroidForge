@@ -15,6 +15,23 @@ O `run_local.bat` chama `sermax_platform_launcher.py`. Não inicie `server.py` d
 
 O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a internet e não exponha a API em rede pública.
 
+
+## Inicialização automática no Windows
+
+A inicialização automática é opcional e exige comando explícito. O registro usa o Agendador de Tarefas do Windows, dispara no logon do usuário atual, usa token interativo e menor privilégio. Não cria serviço Windows, não usa LocalSystem e não instala a tarefa durante a inicialização normal da Plataforma.
+
+No diretório da Plataforma, execute no terminal:
+
+```powershell
+python sermax_platform_launcher.py --install-autostart
+python sermax_platform_launcher.py --autostart-status
+python sermax_platform_launcher.py --remove-autostart
+```
+
+A tarefa inicia o launcher com `--no-browser`, mantém a API em `127.0.0.1:8765` e grava logs no diretório de dados do usuário. O PC precisa estar ligado e o usuário precisa entrar na sessão do Windows. A tarefa não oferece acesso remoto e não abre portas no firewall.
+
+Os comandos de registro, consulta e remoção são implementados e cobertos por testes com o Agendador simulado. A criação efetiva da tarefa no Windows do usuário continua pendente de homologação explícita. Nenhum comando foi executado neste desenvolvimento.
+
 ## Componentes
 
 - `index.html`, interface gráfica, incluindo painel de detalhes dos projetos.
