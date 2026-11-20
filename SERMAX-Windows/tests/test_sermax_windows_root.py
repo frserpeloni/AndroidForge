@@ -351,6 +351,10 @@ class DriveRootWindowsIntegrationTests(unittest.TestCase):
                 self.assertTrue(close(parent))
 
 
+@unittest.skipUnless(
+    os.name == "nt" and ctypes.sizeof(ctypes.c_void_p) == 8,
+    "WinDLL e Win32 API exigem Windows x64.",
+)
 class DriveRootHandleLifecycleTests(unittest.TestCase):
     def setUp(self):
         self.platform = mock.patch.object(root, "_require_windows_x64")

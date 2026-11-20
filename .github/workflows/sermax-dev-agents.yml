@@ -14,6 +14,7 @@ on:
       - "SERMAX-Windows/sermax_dev_proposal.py"
       - "SERMAX-Windows/tests/test_sermax_dev_proposal.py"
       - "SERMAX-Windows/tests/test_sermax_integration.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_root.py"
   workflow_dispatch:
     inputs:
       task:
@@ -24,6 +25,10 @@ on:
           Examine os módulos e testes fornecidos. Identifique lacunas reproduzíveis em abertura
           por handle, identidade de volume/FileId, reparse points, ACL, enumeração, concorrência
           e falhas. Implemente uma correção pequena, limitada a no máximo três arquivos, com unittest. Evite reescrever módulos extensos. No JSON, o campo tests deve ser uma lista de strings simples, por exemplo ["unittest"], nunca objetos. Trabalhe somente em sandbox.
+          Todos os testes da proposta precisam passar no sandbox Ubuntu. Para comportamento
+          exclusivo de Windows x64, use mocks de _require_windows_x64 ou marque os testes com
+          unittest.skipUnless(os.name == "nt"). Não chame ctypes.WinDLL ou win32api sem guarda
+          de plataforma.
           Não acesse C:\\SERMAX, não crie diretórios nem altere ACL na instalação. Não implemente
           staging, backup, journal, instalação ou rollback. Não altere main, workflows,
           infraestrutura dos agentes, credenciais, memórias, configurações, Jarvis, Pestinha,
@@ -97,7 +102,7 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "4096"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Audite e implemente a etapa segura de validação da área privada _update, conforme os limites deste workflow. Limite a proposta a no máximo três arquivos, prefira uma correção pequena com teste e retorne tests como lista de strings, por exemplo ["unittest"].' }}
+          SERMAX_DEV_TASK: ${{ inputs.task || 'Audite e implemente a etapa segura de validação da área privada _update, conforme os limites deste workflow. Limite a proposta a no máximo três arquivos, prefira uma correção pequena com teste e retorne tests como lista de strings, por exemplo ["unittest"]. Todos os testes devem passar no sandbox Ubuntu. Para Windows x64, use mocks de _require_windows_x64 ou skipUnless(os.name == "nt"); não chame ctypes.WinDLL ou win32api sem guarda.' }}
         run: python sermax_github_agent_runner.py
 
       - name: Review patch format
