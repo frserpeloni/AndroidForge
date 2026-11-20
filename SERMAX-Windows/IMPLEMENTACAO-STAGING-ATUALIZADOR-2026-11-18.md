@@ -450,3 +450,27 @@ Foi acrescentado um teste nativo Windows que valida o limite entre a renomeaçã
 - Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44784361812.
 
 O cenário valida encerramento abrupto de processo e recuperação em outro processo no runner Windows. Não simula perda física de energia nem substitui a homologação no Windows 11 local. Nenhum arquivo de `C:\\SERMAX` foi alterado; não houve merge ou release.
+
+
+## Retomada de restauração in-place interrompida, 2026-11-20
+
+Foi acrescentado um teste nativo Windows que injeta falhas em quatro pontos da restauração:
+
+1. Depois da gravação e do readback do conteúdo, antes da restauração de ACL/owner/group.
+2. Depois da restauração de ACL/owner/group, durante a aplicação dos atributos.
+3. Depois de conteúdo, ACL e atributos, durante a aplicação dos timestamps.
+4. Depois de todos os metadados, antes da persistência de `FILE_RESTORED`.
+
+Depois de cada falha, o teste confirma que o journal permanece sem `FILE_RESTORED`. A chamada seguinte retoma a restauração de forma idempotente. O teste também confere o conteúdo original, o atributo somente leitura e os três timestamps preservados.
+
+### Evidência CI
+
+- Commit de código/teste: `64ebeb161a36dd7badb542016ce8f9582703a518`.
+- Run: `44785162718`.
+- Runner Windows, Python 3.14.
+- O log confirma `test_in_place_restore_resumes_after_each_persisted_stage_failure ... ok`.
+- A suíte de backup executou 18 testes em 1,026 segundo.
+- Todas as etapas do workflow concluíram com sucesso.
+- Execução CI: https://github.com/frserpeloni/AndroidForge/actions/runs/44785162718.
+
+O teste comprova retomada após falhas simuladas no runner Windows. Não comprova recuperação após perda física de energia e não substitui a homologação no Windows 11 local. Nenhum arquivo de `C:\\SERMAX` foi alterado; não houve merge ou release.
