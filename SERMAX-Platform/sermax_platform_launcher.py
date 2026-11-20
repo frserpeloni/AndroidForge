@@ -94,6 +94,11 @@ def _serve_server(server, stop: threading.Event, failed: threading.Event) -> Non
 
 def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5) -> dict:
     """Inspeciona o lock e o health check sem iniciar, encerrar ou alterar a instância."""
+    root = platform_root()
+    backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
+    backend = next((candidate for candidate in backend_candidates if (candidate / "instance_lock.py").is_file()), None)
+    if backend is not None and str(backend) not in sys.path:
+        sys.path.insert(0, str(backend))
     from instance_lock import InstanceLockError, acquire_instance_lock
 
     lock_path = data_dir / "platform-instance.lock"
