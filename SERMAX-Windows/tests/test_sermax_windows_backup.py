@@ -524,7 +524,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 "last_write_time": 132223104020000000,
             }
             backup._set_file_attributes_by_handle(
-                source_handle, backup.FILE_ATTRIBUTE_ARCHIVE
+                source_handle, backup.FILE_ATTRIBUTE_HIDDEN
             )
             expected_timestamps = backup._set_file_timestamps_by_handle(
                 source_handle, expected_timestamps
@@ -550,6 +550,10 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 )
                 self.assertEqual(len(snapshot.files), 1)
                 self.assertIsNotNone(snapshot.catalog)
+                self.assertEqual(
+                    snapshot.files[0]["source_attributes"],
+                    backup.FILE_ATTRIBUTE_HIDDEN,
+                )
                 backup_component = snapshot.component
                 catalog_hash = snapshot.catalog["sha256"]
                 snapshot.close()
@@ -688,7 +692,7 @@ class HandleBackupWindowsIntegrationTests(unittest.TestCase):
                 self.assertNotIn(restored_handle, (None, 0, invalid))
                 metadata = query_handle_metadata(restored_handle)
                 self.assertEqual(
-                    metadata["attributes"], backup.FILE_ATTRIBUTE_ARCHIVE
+                    metadata["attributes"], backup.FILE_ATTRIBUTE_HIDDEN
                 )
                 self.assertEqual(
                     backup._query_file_timestamps_by_handle(restored_handle),
