@@ -144,7 +144,7 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
                         "suite": str(result.get("suite", "unknown"))[:80],
                         "status": str(result.get("status", "unknown"))[:40],
                         "returncode": result.get("returncode"),
-                        "output": str(result.get("output", ""))[-1000:],
+                        "output": str(result.get("output", ""))[-6000:],
                         "truncated": bool(result.get("truncated", False)),
                     })
                 else:

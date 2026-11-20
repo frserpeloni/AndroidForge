@@ -134,6 +134,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertIn("from sermax_voz import localizar_whisper_e_modelo", integracao)
         self.assertIn("whisper, modelo_voz = localizar_whisper_e_modelo()", integracao)
 
+    @unittest.skipUnless(os.name == "nt", "Semântica de caminhos Windows")
     def test_launcher_separa_instalacao_do_bundle_temporario(self):
         root, bundle, terminal_dir, terminal_script = sermax_launcher.resolver_caminhos(
             True,
@@ -146,6 +147,7 @@ class TestEmpacotamentoSERMAX(unittest.TestCase):
         self.assertEqual(terminal_dir, bundle + r"\SERMAX_terminal")
         self.assertEqual(terminal_script, terminal_dir + r"\sermax_terminal.py")
 
+    @unittest.skipUnless(os.name == "nt", "Semântica de caminhos Windows")
     def test_launcher_em_codigo_fonte_usa_pasta_do_projeto(self):
         root, bundle, terminal_dir, terminal_script = sermax_launcher.resolver_caminhos(
             False,
