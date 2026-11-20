@@ -14,6 +14,13 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 TASK_NAME = "SERMAX Platform"
+_TASK_NOT_FOUND_MARKERS = (
+    "0x80070002",
+    "cannot find the file specified",
+    "não foi possível localizar o arquivo",
+    "não foi possível encontrar o arquivo",
+    "o sistema não pode encontrar o arquivo",
+)
 
 
 def _is_windows() -> bool:
@@ -95,13 +102,16 @@ def _run_schtasks(arguments: list[str], runner=None):
     if not _is_windows():
         raise RuntimeError("O gerenciamento de inicialização automática está disponível somente no Windows.")
     execute = runner or subprocess.run
-    return execute(
-        ["schtasks.exe", *arguments],
-        capture_output=True,
-        text=True,
-        check=False,
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-    )
+    try:
+        return execute(
+            ["schtasks.exe", *arguments],
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Não foi possível executar schtasks.exe: {exc}") from exc
 
 
 def install_autostart(platform_root: Path, runner=None) -> None:
@@ -128,7 +138,16 @@ def autostart_status(runner=None) -> bool:
     result = _run_schtasks(
         ["/Query", "/TN", TASK_NAME, "/FO", "LIST"], runner=runner
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True
+    detail = (result.stderr or result.stdout or "").strip()
+    normalized = detail.casefold()
+    if any(marker in normalized for marker in _TASK_NOT_FOUND_MARKERS):
+        return False
+    raise RuntimeError(
+        "Falha ao consultar a tarefa do SERMAX no Agendador: "
+        + (detail or f"código de saída {result.returncode}")
+    )
 
 
 def remove_autostart(runner=None) -> bool:
