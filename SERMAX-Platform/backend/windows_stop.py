@@ -102,10 +102,11 @@ def _current_user_sid(api: _Win32) -> str:
         raise api.error("OpenProcessToken")
     try:
         required = wintypes.DWORD()
+        ctypes.set_last_error(0)
         api.advapi32.GetTokenInformation(
             token, TOKEN_USER_CLASS, None, 0, ctypes.byref(required)
         )
-        if not required.value:
+        if ctypes.get_last_error() != ERROR_INSUFFICIENT_BUFFER or not required.value:
             raise api.error("GetTokenInformation(size)")
         buffer = ctypes.create_string_buffer(required.value)
         if not api.advapi32.GetTokenInformation(
