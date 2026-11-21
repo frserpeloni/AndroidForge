@@ -281,6 +281,15 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
         worker.start()
     
         if not wait_for_health(URL, stop, timeout=args.health_timeout, worker=worker, server=server):
+            if stop.is_set():
+                if not shutdown_server(server, worker, timeout=10):
+                    logging.error("Servidor não encerrou após solicitação de parada durante a inicialização.")
+                    return 3
+                if worker_failed.is_set():
+                    logging.error("Canal de parada falhou durante a inicialização.")
+                    return 3
+                logging.info("Parada solicitada durante a inicialização; encerramento concluído.")
+                return 0
             logging.error("API não ficou saudável dentro do prazo.")
             if not shutdown_server(server, worker, timeout=10):
                 logging.error("Servidor não encerrou após falha no health check.")
