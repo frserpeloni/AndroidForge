@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import urllib.error
 import unittest
 from unittest.mock import patch
@@ -316,6 +317,45 @@ class LauncherWorkerFailureTests(unittest.TestCase):
         log_exception.assert_called_once()
 
 
+class LauncherStopChannelTests(unittest.TestCase):
+    def test_stop_event_requests_graceful_shutdown(self):
+        class MonitorStop:
+            calls = 0
+            def wait(self, timeout):
+                self.calls += 1
+                return self.calls > 1
+
+        class StopEvent:
+            def wait(self, timeout):
+                self.assert_timeout = timeout
+                return True
+
+        requests = []
+        failed = threading.Event()
+        launcher._watch_local_stop_event(
+            StopEvent(), MonitorStop(), requests.append, failed
+        )
+        self.assertEqual(requests, ["local-stop"])
+        self.assertFalse(failed.is_set())
+
+    def test_stop_event_failure_requests_shutdown_and_marks_failure(self):
+        class MonitorStop:
+            def wait(self, timeout):
+                return False
+
+        class StopEvent:
+            def wait(self, timeout):
+                raise RuntimeError("simulated wait failure")
+
+        requests = []
+        failed = threading.Event()
+        with patch.object(launcher.logging, "exception"):
+            launcher._watch_local_stop_event(
+                StopEvent(), MonitorStop(), requests.append, failed
+            )
+        self.assertEqual(requests, ["stop-channel-error"])
+        self.assertTrue(failed.is_set())
+
 class LauncherArgumentTests(unittest.TestCase):
     def test_no_browser_mode_is_available_for_background_hosting(self):
         args = launcher.parse_args(["--no-browser"])
@@ -338,6 +378,39 @@ class LauncherArgumentTests(unittest.TestCase):
     def test_status_cannot_be_combined_with_autostart_operation(self):
         with self.assertRaises(SystemExit):
             launcher.parse_args(["--status", "--autostart-status"])
+
+    def test_stop_flag_is_available(self):
+        self.assertTrue(launcher.parse_args(["--stop"]).stop)
+
+    def test_stop_cannot_be_combined_with_other_launcher_operations(self):
+        for arguments in (["--stop", "--status"], ["--stop", "--no-browser"], ["--stop", "--autostart-status"]):
+            with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
+                launcher.parse_args(arguments)
+
+    def test_stop_cli_signals_current_session_event(self):
+        fake_module = SimpleNamespace(
+            StopEventNotFound=type("StopEventNotFound", (RuntimeError,), {}),
+            signal_stop_event=lambda: None,
+        )
+        with (
+            patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+            patch.dict(sys.modules, {"windows_stop": fake_module}),
+            patch("builtins.print"),
+        ):
+            self.assertEqual(launcher.main(["--stop"]), 0)
+
+    def test_stop_cli_reports_missing_instance_distinctly(self):
+        missing = type("StopEventNotFound", (RuntimeError,), {})
+        fake_module = SimpleNamespace(
+            StopEventNotFound=missing,
+            signal_stop_event=lambda: (_ for _ in ()).throw(missing("not found")),
+        )
+        with (
+            patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+            patch.dict(sys.modules, {"windows_stop": fake_module}),
+            patch("builtins.print"),
+        ):
+            self.assertEqual(launcher.main(["--stop"]), 8)
 
 
 
