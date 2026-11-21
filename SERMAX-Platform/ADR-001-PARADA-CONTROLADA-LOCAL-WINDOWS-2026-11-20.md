@@ -1,6 +1,6 @@
 # ADR-001: parada controlada local da SERMAX Platform
 
-- Estado: proposta técnica aprovada para implementação nesta branch
+- Estado: implementado na branch de trabalho, validação automatizada Windows em andamento
 - Data: 2026-11-20
 - Escopo: launcher local da SERMAX Platform no Windows
 - Branch de trabalho: `sermax-platform-windows-autostart-20261120`
@@ -66,6 +66,15 @@ O comando não aceita nome de evento arbitrário, PID, caminho de processo ou de
 - Alteração da instalação `C:\\SERMAX`, Terminal original, memória pessoal, configurações ou backups.
 - Merge, release ou instalação.
 
+## Implementação registrada
+
+- `backend/windows_stop.py` obtém o SID do token primário do processo, deriva um identificador não reversível para o nome do evento e cria o objeto no namespace `Local\\`.
+- A DACL protegida concede `SYNCHRONIZE` e `EVENT_MODIFY_STATE` ao SID atual. O descritor de segurança é liberado após a criação.
+- O launcher mantém um monitor com espera temporizada, recebe o sinal e solicita `server.should_exit`. O encerramento aguarda o worker e respeita o timeout.
+- `--stop` abre o evento da mesma conta e sessão e chama `SetEvent`. Códigos: 0 solicitação enviada, 8 evento ausente, 9 falha de controle.
+- Evento preexistente com DACL restrita pode fazer `CreateEventW` retornar `ERROR_ACCESS_DENIED` em vez de `ERROR_ALREADY_EXISTS`. Ambos os caminhos agora recusam assumir a propriedade do objeto.
+- Testes incluem política SDDL, sinalização real entre handles da mesma conta, colisão de nome, evento ausente, CLI e monitoramento do encerramento.
+- A validação entre duas contas Windows distintas e a homologação no PC do usuário permanecem pendentes.
 ## Critérios de aceite
 
 A implementação só será considerada pronta após os testes automatizados no runner Windows, validação de que o launcher recebe o evento e encerra o Uvicorn dentro do timeout, revisão da DACL efetiva e CI completo da branch. O teste automatizado com uma única conta não comprova isolamento entre duas contas Windows; essa validação deve permanecer registrada como pendência até existir ambiente dedicado com duas identidades.
