@@ -82,6 +82,9 @@ O comando não aceita nome de evento arbitrário, PID, caminho de processo ou de
 - Python 3.12, Python 3.14, frontend check e frontend interaction também passaram.
 - O run `44847811333` havia identificado que `CreateEventW` retorna `ERROR_ACCESS_DENIED` para um objeto preexistente com DACL restrita. A correção trata esse retorno como colisão/posse não comprovada e recusa o handle.
 - A validação comprova o comportamento no runner Windows do GitHub Actions. Não comprova isolamento entre contas distintas nem homologação no PC do usuário.
+- Validação ponta a ponta do HEAD `a8288406c3b274558b92b01913f1162bf26f77c1`: run `44848557064`, conclusão `success`, 5 de 5 jobs. Windows Validation executou 42 testes combinados do launcher e canal Win32.
+- O teste de ciclo de vida iniciou o Uvicorn real em loopback, aguardou o health check, sinalizou o evento Win32 e confirmou encerramento gracioso do launcher com código 0. O teste de batch executou `run_local.bat --stop` em subprocesso e confirmou a sinalização.
+- Banco e logs do teste real ficaram em diretório temporário. Nenhuma instalação em `C:\\SERMAX` foi feita.
 ## Critérios de aceite
 
 A implementação só será considerada pronta após os testes automatizados no runner Windows, validação de que o launcher recebe o evento e encerra o Uvicorn dentro do timeout, revisão da DACL efetiva e CI completo da branch. O teste automatizado com uma única conta não comprova isolamento entre duas contas Windows; essa validação deve permanecer registrada como pendência até existir ambiente dedicado com duas identidades.
