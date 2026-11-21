@@ -92,6 +92,19 @@ def _serve_server(server, stop: threading.Event, failed: threading.Event) -> Non
         stop.set()
 
 
+def _watch_local_stop_event(stop_event, monitor_stop: threading.Event, request_shutdown, failed: threading.Event) -> None:
+    """Polls the Win32 event without blocking cleanup and requests graceful shutdown."""
+    while not monitor_stop.wait(0.25):
+        try:
+            if stop_event.wait(250):
+                request_shutdown("local-stop")
+                return
+        except Exception:
+            failed.set()
+            logging.exception("Falha no canal local de parada da Plataforma.")
+            request_shutdown("stop-channel-error")
+            return
+
 def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5) -> dict:
     """Inspeciona o lock e o health check sem iniciar, encerrar ou alterar a instância."""
     root = platform_root()
@@ -244,20 +257,9 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
             server.should_exit = True
     
         if stop_event is not None:
-            def watch_local_stop():
-                while not stop_monitor_stop.wait(0.25):
-                    try:
-                        if stop_event.wait(250):
-                            request_shutdown("local-stop")
-                            return
-                    except Exception:
-                        worker_failed.set()
-                        logging.exception("Falha no canal local de parada da Plataforma.")
-                        request_shutdown("stop-channel-error")
-                        return
-    
             stop_monitor_worker = threading.Thread(
-                target=watch_local_stop,
+                target=_watch_local_stop_event,
+                args=(stop_event, stop_monitor_stop, request_shutdown, worker_failed),
                 name="SERMAX-Platform-Stop-Control",
                 daemon=True,
             )
