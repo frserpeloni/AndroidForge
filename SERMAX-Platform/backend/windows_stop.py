@@ -163,6 +163,11 @@ class WindowsStopEvent:
         return False
 
 
+def _event_security_sddl(sid: str) -> str:
+    """Builds a protected DACL granting only the current SID stop and wait rights."""
+    return f"D:P(A;;0x00100002;;;{sid})"
+
+
 def create_stop_event() -> WindowsStopEvent:
     """Cria evento novo com DACL protegida e acesso concedido ao SID atual."""
     api = _Win32()
@@ -170,7 +175,7 @@ def create_stop_event() -> WindowsStopEvent:
     name = f"Local\\SERMAX.Platform.Stop.{hashlib.sha256(sid.encode('ascii')).hexdigest()[:32]}"
     # D:P protege a DACL contra herança. O SID recebe SYNCHRONIZE e
     # EVENT_MODIFY_STATE, necessários para esperar e sinalizar o evento.
-    sddl = f"D:P(A;;0x00100002;;;{sid})"
+    sddl = _event_security_sddl(sid)
     descriptor = wintypes.LPVOID()
     descriptor_size = wintypes.DWORD()
     if not api.advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
