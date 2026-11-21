@@ -8,6 +8,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 import windows_stop
 
 
+class WindowsStopSecurityPolicyTests(unittest.TestCase):
+    def test_event_dacl_is_protected_and_grants_only_the_current_sid(self):
+        sid = "S-1-5-21-100-200-300-1001"
+        self.assertEqual(
+            windows_stop._event_security_sddl(sid),
+            f"D:P(A;;0x00100002;;;{sid})",
+        )
+
 @unittest.skipUnless(os.name == "nt", "Teste de integração Win32 executado somente no Windows.")
 class WindowsStopEventIntegrationTests(unittest.TestCase):
     def test_event_can_be_signaled_by_the_same_user_and_session(self):
