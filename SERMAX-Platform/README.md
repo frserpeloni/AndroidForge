@@ -15,6 +15,40 @@ O `run_local.bat` chama `sermax_platform_launcher.py`. Não inicie `server.py` d
 
 O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a internet e não exponha a API em rede pública.
 
+
+
+## Encerramento controlado no Windows
+
+A Plataforma oferece o comando `--stop` para solicitar o encerramento gracioso da instância iniciada na mesma sessão e pela mesma conta Windows:
+
+```powershell
+.\\backend\\run_local.bat --stop
+```
+
+Também é possível chamar diretamente o launcher com `python .\\sermax_platform_launcher.py --stop`. O `run_local.bat` encaminha o comando sem instalar dependências quando a operação é de controle.
+
+O controle usa um evento nativo do Windows com DACL protegida e acesso concedido ao SID da conta atual. O launcher recebe a sinalização e solicita a parada do Uvicorn, aguardando o encerramento dentro do timeout configurado. O comando não usa PID, não encerra outros processos e não adiciona rota HTTP.
+
+Se não houver evento ativo na sessão atual, o comando retorna código 8. Falhas de acesso ou do canal retornam código 9. A execução por outra conta ou sessão não controla esta instância. O mecanismo não protege contra processos maliciosos executados sob a mesma conta.
+
+Os testes de integração verificam criação, sinalização pela mesma identidade, rejeição de evento preexistente e ausência de instância. O isolamento entre contas Windows distintas ainda exige homologação em ambiente com duas contas.
+
+## Inicialização automática no Windows
+
+A inicialização automática é opcional e exige comando explícito. O registro usa o Agendador de Tarefas do Windows, dispara no logon do usuário atual, usa token interativo e menor privilégio. Não cria serviço Windows, não usa LocalSystem e não instala a tarefa durante a inicialização normal da Plataforma.
+
+No diretório da Plataforma, execute no terminal:
+
+```powershell
+.\\backend\\.venv\\Scripts\\python.exe .\\sermax_platform_launcher.py --install-autostart
+.\\backend\\.venv\\Scripts\\python.exe .\\sermax_platform_launcher.py --autostart-status
+.\\backend\\.venv\\Scripts\\python.exe .\\sermax_platform_launcher.py --remove-autostart
+```
+
+A tarefa prioriza `pythonw.exe` do ambiente virtual `backend\\.venv` criado pelo `run_local.bat`, para iniciar sem janela de console e com as dependências da Plataforma. Se `pythonw.exe` não existir, tenta `python.exe` do mesmo ambiente. Sem ambiente virtual, usa o interpretador que executou o comando de registro. Se o processo falhar, o Agendador tenta reiniciá-lo até três vezes, com intervalo de um minuto. A tarefa inicia o launcher com `--no-browser`, mantém a API em `127.0.0.1:8765` e grava logs no diretório de dados do usuário. O PC precisa estar ligado e o usuário precisa entrar na sessão do Windows. A tarefa não oferece acesso remoto e não abre portas no firewall.
+
+Os comandos de registro, consulta e remoção são implementados e cobertos por testes com o Agendador simulado. A criação efetiva da tarefa no Windows do usuário continua pendente de homologação explícita. Nenhum comando foi executado neste desenvolvimento.
+
 ## Componentes
 
 - `index.html`, interface gráfica, incluindo painel de detalhes dos projetos.
@@ -24,11 +58,14 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `backend/run_local.bat`, inicializador manual de desenvolvimento que chama o launcher supervisionado e compartilha o bloqueio de instância única.
 - `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, confirma que o próprio servidor Uvicorn iniciou, valida `/api/health`, abre o navegador por padrão e encerra o servidor de forma controlada.
 - O inicializador aceita `--no-browser` para manter a API local em execução sem abrir o navegador, além de `--health-timeout` e `--shutdown-timeout` para configurar os limites de inicialização e encerramento. Esse modo prepara a execução sem interface para uma futura hospedagem central no Windows, mas ainda não registra serviço nem tarefa automática.
+- O launcher diferencia encerramento solicitado de término inesperado do worker Uvicorn. Exceções do servidor são registradas em `platform-launcher.log`; uma saída inesperada retorna código diferente de zero para permitir que a política de reinício do Agendador seja aplicada. O encerramento solicitado por sinal ou Ctrl+C permanece normal.
+- `python sermax_platform_launcher.py --status` consulta o estado sem iniciar ou encerrar processos. Retorna `running` quando o lock está ocupado e a API confirma o serviço SERMAX, `stopped` quando o lock está livre e `unresponsive` quando há lock ocupado sem health check válido. O estado `unresponsive` exige investigação manual e retorna código 6; erro de acesso ao lock retorna código 7. O comando não mata processos.
 - `backend/test_api.py` e testes especializados para streaming, anexos, OCR, tarefas, memória, diagnóstico dos motores e contrato de sessão.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
 - `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
 - `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
 - `backend/instance_lock.py` e `backend/test_instance_lock.py`, bloqueio exclusivo de instância com testes para Windows e sistemas POSIX.
+- `backend/windows_stop.py` e `tests/test_platform_windows_stop.py`, canal de parada por evento Win32 com DACL restrita e testes de integração Windows.
 - `package.json`, dependências e comando dos testes de interface.
 
 ## Integração com o núcleo

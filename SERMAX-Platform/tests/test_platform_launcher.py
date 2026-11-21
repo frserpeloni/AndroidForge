@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import urllib.error
 import unittest
 from unittest.mock import patch
@@ -165,6 +166,196 @@ class LauncherHealthTests(unittest.TestCase):
         open_url.assert_not_called()
 
 
+class LauncherStatusTests(unittest.TestCase):
+    def test_status_without_lock_is_stopped_and_does_not_create_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "stopped")
+            self.assertFalse((data_dir / "platform-instance.lock").exists())
+
+    def test_status_cli_loads_backend_lock_module_when_run_standalone(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            module = sys.modules.pop("instance_lock", None)
+            backend_path = str(Path(__file__).resolve().parents[1] / "backend")
+            had_backend_path = backend_path in sys.path
+            if had_backend_path:
+                sys.path.remove(backend_path)
+            try:
+                with (
+                    patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                    patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}),
+                    patch("builtins.print"),
+                ):
+                    self.assertEqual(launcher.main(["--status"]), 0)
+                self.assertIn(backend_path, sys.path)
+                self.assertFalse((data_dir / "platform-instance.lock").exists())
+            finally:
+                sys.modules.pop("instance_lock", None)
+                if module is not None:
+                    sys.modules["instance_lock"] = module
+                if had_backend_path and backend_path not in sys.path:
+                    sys.path.insert(0, backend_path)
+
+    def test_status_with_free_lock_is_stopped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock_path = data_dir / "platform-instance.lock"
+            lock_path.touch()
+            status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "stopped")
+            self.assertEqual(lock_path.stat().st_size, 0)
+
+    def test_status_reports_lock_permission_error_without_crashing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock_path = data_dir / "platform-instance.lock"
+            lock_path.write_bytes(b"lock")
+            with patch.object(instance_lock, "acquire_instance_lock",
+                              side_effect=PermissionError("access denied")):
+                status = launcher.inspect_instance_status(data_dir)
+            self.assertEqual(status["state"], "error")
+            self.assertIn("access denied", status["detail"])
+
+    def test_status_reports_running_only_when_lock_and_health_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock = instance_lock.acquire_instance_lock(data_dir)
+            try:
+                with patch.object(
+                    launcher.urllib.request,
+                    "urlopen",
+                    return_value=_Response({
+                        "service": "sermax-platform-api",
+                        "version": "0.3.0",
+                        "core": "loaded",
+                    }),
+                ):
+                    status = launcher.inspect_instance_status(data_dir)
+                self.assertEqual(status["state"], "running")
+                self.assertEqual(status["version"], "0.3.0")
+            finally:
+                lock.close()
+
+    def test_status_reports_unresponsive_without_killing_locked_process(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            lock = instance_lock.acquire_instance_lock(data_dir)
+            try:
+                with patch.object(
+                    launcher.urllib.request,
+                    "urlopen",
+                    side_effect=urllib.error.URLError("offline"),
+                ):
+                    status = launcher.inspect_instance_status(data_dir)
+                self.assertEqual(status["state"], "unresponsive")
+                self.assertIn("Não encerre processos", status["detail"])
+                with self.assertRaises(instance_lock.InstanceLockError):
+                    instance_lock.acquire_instance_lock(data_dir)
+            finally:
+                lock.close()
+
+    def test_status_cli_returns_six_for_unresponsive_instance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": directory}),
+                patch.object(launcher, "inspect_instance_status",
+                             return_value={"state": "unresponsive", "detail": "offline"}),
+                patch("builtins.print"),
+            ):
+                self.assertEqual(launcher.main(["--status"]), 6)
+
+    def test_status_cli_returns_seven_for_lock_inspection_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+                patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": directory}),
+                patch.object(launcher, "inspect_instance_status",
+                             return_value={"state": "error", "detail": "access denied"}),
+                patch("builtins.print"),
+            ):
+                self.assertEqual(launcher.main(["--status"]), 7)
+
+
+class LauncherWorkerFailureTests(unittest.TestCase):
+    def test_unrequested_server_exit_is_marked_as_failure(self):
+        class Server:
+            def run(self):
+                return None
+
+        stop = threading.Event()
+        failed = threading.Event()
+        launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertTrue(failed.is_set())
+
+    def test_requested_server_shutdown_is_not_marked_as_failure(self):
+        class Server:
+            def run(self):
+                return None
+
+        stop = threading.Event()
+        failed = threading.Event()
+        stop.set()
+        launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertFalse(failed.is_set())
+
+    def test_server_exception_is_logged_and_marked_as_failure(self):
+        class Server:
+            def run(self):
+                raise RuntimeError("simulated uvicorn crash")
+
+        stop = threading.Event()
+        failed = threading.Event()
+        with patch.object(launcher.logging, "exception") as log_exception:
+            launcher._serve_server(Server(), stop, failed)
+        self.assertTrue(stop.is_set())
+        self.assertTrue(failed.is_set())
+        log_exception.assert_called_once()
+
+
+class LauncherStopChannelTests(unittest.TestCase):
+    def test_stop_event_requests_graceful_shutdown(self):
+        class MonitorStop:
+            calls = 0
+            def wait(self, timeout):
+                self.calls += 1
+                return self.calls > 1
+
+        class StopEvent:
+            def wait(self, timeout):
+                self.assert_timeout = timeout
+                return True
+
+        requests = []
+        failed = threading.Event()
+        launcher._watch_local_stop_event(
+            StopEvent(), MonitorStop(), requests.append, failed
+        )
+        self.assertEqual(requests, ["local-stop"])
+        self.assertFalse(failed.is_set())
+
+    def test_stop_event_failure_requests_shutdown_and_marks_failure(self):
+        class MonitorStop:
+            def wait(self, timeout):
+                return False
+
+        class StopEvent:
+            def wait(self, timeout):
+                raise RuntimeError("simulated wait failure")
+
+        requests = []
+        failed = threading.Event()
+        with patch.object(launcher.logging, "exception"):
+            launcher._watch_local_stop_event(
+                StopEvent(), MonitorStop(), requests.append, failed
+            )
+        self.assertEqual(requests, ["stop-channel-error"])
+        self.assertTrue(failed.is_set())
+
 class LauncherArgumentTests(unittest.TestCase):
     def test_no_browser_mode_is_available_for_background_hosting(self):
         args = launcher.parse_args(["--no-browser"])
@@ -183,6 +374,49 @@ class LauncherArgumentTests(unittest.TestCase):
     def test_non_positive_timeout_is_rejected(self):
         with self.assertRaises(SystemExit):
             launcher.parse_args(["--health-timeout", "0"])
+
+    def test_status_cannot_be_combined_with_autostart_operation(self):
+        with self.assertRaises(SystemExit):
+            launcher.parse_args(["--status", "--autostart-status"])
+
+    def test_stop_flag_is_available(self):
+        self.assertTrue(launcher.parse_args(["--stop"]).stop)
+
+    def test_run_local_batch_routes_control_commands_without_dependency_install(self):
+        batch = Path(__file__).resolve().parents[1] / "backend" / "run_local.bat"
+        content = batch.read_text(encoding="utf-8")
+        self.assertIn('if "%~1"=="--stop" goto control', content)
+        self.assertIn('"%LAUNCHER%" %*', content)
+        self.assertLess(content.index('if "%~1"=="--stop"'), content.index(' -m pip install '))
+    def test_stop_cannot_be_combined_with_other_launcher_operations(self):
+        for arguments in (["--stop", "--status"], ["--stop", "--no-browser"], ["--stop", "--autostart-status"]):
+            with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
+                launcher.parse_args(arguments)
+
+    def test_stop_cli_signals_current_session_event(self):
+        fake_module = SimpleNamespace(
+            StopEventNotFound=type("StopEventNotFound", (RuntimeError,), {}),
+            signal_stop_event=lambda: None,
+        )
+        with (
+            patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+            patch.dict(sys.modules, {"windows_stop": fake_module}),
+            patch("builtins.print"),
+        ):
+            self.assertEqual(launcher.main(["--stop"]), 0)
+
+    def test_stop_cli_reports_missing_instance_distinctly(self):
+        missing = type("StopEventNotFound", (RuntimeError,), {})
+        fake_module = SimpleNamespace(
+            StopEventNotFound=missing,
+            signal_stop_event=lambda: (_ for _ in ()).throw(missing("not found")),
+        )
+        with (
+            patch.object(launcher, "platform_root", return_value=Path(__file__).resolve().parents[1]),
+            patch.dict(sys.modules, {"windows_stop": fake_module}),
+            patch("builtins.print"),
+        ):
+            self.assertEqual(launcher.main(["--stop"]), 8)
 
 
 

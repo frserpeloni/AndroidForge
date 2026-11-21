@@ -77,12 +77,123 @@ def shutdown_server(server, worker: threading.Thread, timeout: float = 15.0) -> 
     return not worker.is_alive()
 
 
+def _serve_server(server, stop: threading.Event, failed: threading.Event) -> None:
+    """Run Uvicorn and distinguish an expected shutdown from an unexpected exit."""
+    try:
+        server.run()
+    except BaseException:
+        failed.set()
+        logging.exception("Falha não tratada no servidor da Plataforma.")
+    else:
+        if not stop.is_set():
+            failed.set()
+            logging.error("Servidor Uvicorn encerrou sem solicitação de parada.")
+    finally:
+        stop.set()
+
+
+def _watch_local_stop_event(stop_event, monitor_stop: threading.Event, request_shutdown, failed: threading.Event) -> None:
+    """Polls the Win32 event without blocking cleanup and requests graceful shutdown."""
+    while not monitor_stop.wait(0.25):
+        try:
+            if stop_event.wait(250):
+                request_shutdown("local-stop")
+                return
+        except Exception:
+            failed.set()
+            logging.exception("Falha no canal local de parada da Plataforma.")
+            request_shutdown("stop-channel-error")
+            return
+
+def inspect_instance_status(data_dir: Path, url: str = URL, timeout: float = 1.5) -> dict:
+    """Inspeciona o lock e o health check sem iniciar, encerrar ou alterar a instância."""
+    root = platform_root()
+    backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
+    backend = next((candidate for candidate in backend_candidates if (candidate / "instance_lock.py").is_file()), None)
+    if backend is not None and str(backend) not in sys.path:
+        sys.path.insert(0, str(backend))
+    from instance_lock import InstanceLockError, acquire_instance_lock
+
+    lock_path = data_dir / "platform-instance.lock"
+    if not lock_path.exists():
+        return {"state": "stopped", "detail": "Nenhum lock de instância encontrado."}
+    try:
+        # Windows locks a byte in the file; POSIX flock locks the file
+        # descriptor without changing its size. Only an empty Windows lock
+        # file can be treated as an unused lock without probing it.
+        if os.name == "nt" and lock_path.stat().st_size == 0:
+            return {"state": "stopped", "detail": "Arquivo de lock vazio; nenhuma instância mantém o bloqueio."}
+    except OSError as exc:
+        return {
+            "state": "error",
+            "detail": f"Não foi possível inspecionar o arquivo de lock: {type(exc).__name__}: {exc}",
+        }
+
+    try:
+        handle = acquire_instance_lock(data_dir)
+    except InstanceLockError:
+        try:
+            request = urllib.request.Request(
+                url.rstrip("/") + "/api/health",
+                headers={"Accept": "application/json"},
+                method="GET",
+            )
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if (
+                response.status == 200
+                and isinstance(payload, dict)
+                and payload.get("service") == "sermax-platform-api"
+            ):
+                return {
+                    "state": "running",
+                    "detail": "Lock ativo e API SERMAX saudável.",
+                    "version": payload.get("version"),
+                    "core": payload.get("core"),
+                }
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            pass
+        return {
+            "state": "unresponsive",
+            "detail": "O lock está ocupado, mas a API não confirmou saúde. Não encerre processos automaticamente.",
+        }
+    except OSError as exc:
+        return {
+            "state": "error",
+            "detail": f"Não foi possível consultar o lock da Plataforma: {type(exc).__name__}: {exc}",
+        }
+    else:
+        handle.close()
+        return {"state": "stopped", "detail": "Lock livre; nenhuma instância mantém o diretório de dados."}
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Inicializador local da Plataforma SERMAX.")
     parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Mantém a API local em execução sem abrir uma janela do navegador.",
+    )
+    parser.add_argument(
+        "--stop", action="store_true",
+        help="Solicita encerramento gracioso da instância local da Plataforma no Windows.",
+    )
+    parser.add_argument(
+        "--status",
+        action="store_true",
+        help="Consulta o estado local da Plataforma sem iniciar ou encerrar processos.",
+    )
+    parser.add_argument(
+        "--install-autostart", action="store_const", const="install", dest="autostart_action",
+        help="Registra inicialização no logon do usuário atual do Windows.",
+    )
+    parser.add_argument(
+        "--remove-autostart", action="store_const", const="remove", dest="autostart_action",
+        help="Remove a tarefa de inicialização automática do SERMAX.",
+    )
+    parser.add_argument(
+        "--autostart-status", action="store_const", const="status", dest="autostart_action",
+        help="Consulta se a tarefa de inicialização automática está registrada.",
     )
     parser.add_argument(
         "--health-timeout",
@@ -96,9 +207,17 @@ def parse_args(argv=None):
         default=15.0,
         help="Tempo máximo em segundos para aguardar o encerramento do servidor.",
     )
-    args = parser.parse_args(argv)
+    raw_args = list(sys.argv[1:] if argv is None else argv)
+    autostart_flags = {"--install-autostart", "--remove-autostart", "--autostart-status"}
+    if sum(flag in raw_args for flag in autostart_flags) > 1:
+        parser.error("Escolha somente uma operação de inicialização automática.")
+    args = parser.parse_args(raw_args)
     if args.health_timeout <= 0 or args.shutdown_timeout <= 0:
         parser.error("Os tempos de health check e encerramento devem ser positivos.")
+    if args.status and args.autostart_action:
+        parser.error("--status não pode ser combinado com uma operação de inicialização automática.")
+    if args.stop and (args.status or args.autostart_action or args.no_browser):
+        parser.error("--stop deve ser executado sem outras operações do launcher.")
     return args
 
 
@@ -123,50 +242,139 @@ def _run_server(args, root: Path, data_dir: Path) -> int:
                             log_level="warning", access_log=False)
     server = uvicorn.Server(config)
     stop = threading.Event()
-
-    def request_shutdown(signum=None, frame=None):
-        logging.info("Solicitação de encerramento recebida: %s", signum)
-        stop.set()
-        server.should_exit = True
-
-    for signum in (signal.SIGINT, signal.SIGTERM):
-        try:
-            signal.signal(signum, request_shutdown)
-        except (ValueError, OSError):
-            pass
-
-    worker = threading.Thread(target=server.run, name="SERMAX-Platform-API", daemon=True)
-    logging.info("Iniciando API local em %s", URL)
-    worker.start()
-
-    if not wait_for_health(URL, stop, timeout=args.health_timeout, worker=worker, server=server):
-        logging.error("API não ficou saudável dentro do prazo.")
-        if not shutdown_server(server, worker, timeout=10):
-            logging.error("Servidor não encerrou após falha no health check.")
-        return 2
-
-    if args.no_browser:
-        logging.info("API saudável. Modo sem navegador ativo.")
-    else:
-        logging.info("API saudável. Abrindo interface.")
-        webbrowser.open(URL)
+    worker_failed = threading.Event()
+    stop_event = None
+    stop_monitor_stop = threading.Event()
+    stop_monitor_worker = None
+    if os.name == "nt":
+        from windows_stop import create_stop_event
+        stop_event = create_stop_event()
 
     try:
-        while worker.is_alive() and not stop.wait(0.5):
-            pass
-    except KeyboardInterrupt:
-        request_shutdown()
-
-    if not shutdown_server(server, worker, timeout=args.shutdown_timeout):
-        logging.error("Servidor não encerrou dentro do prazo.")
-        return 3
-    logging.info("Plataforma encerrada.")
-    return 0
+        def request_shutdown(signum=None, frame=None):
+            logging.info("Solicitação de encerramento recebida: %s", signum)
+            stop.set()
+            server.should_exit = True
+    
+        if stop_event is not None:
+            stop_monitor_worker = threading.Thread(
+                target=_watch_local_stop_event,
+                args=(stop_event, stop_monitor_stop, request_shutdown, worker_failed),
+                name="SERMAX-Platform-Stop-Control",
+                daemon=True,
+            )
+            stop_monitor_worker.start()
+    
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            try:
+                signal.signal(signum, request_shutdown)
+            except (ValueError, OSError):
+                pass
+    
+        worker = threading.Thread(
+            target=_serve_server,
+            args=(server, stop, worker_failed),
+            name="SERMAX-Platform-API",
+            daemon=True,
+        )
+        logging.info("Iniciando API local em %s", URL)
+        worker.start()
+    
+        if not wait_for_health(URL, stop, timeout=args.health_timeout, worker=worker, server=server):
+            if stop.is_set():
+                if not shutdown_server(server, worker, timeout=10):
+                    logging.error("Servidor não encerrou após solicitação de parada durante a inicialização.")
+                    return 3
+                if worker_failed.is_set():
+                    logging.error("Canal de parada falhou durante a inicialização.")
+                    return 3
+                logging.info("Parada solicitada durante a inicialização; encerramento concluído.")
+                return 0
+            logging.error("API não ficou saudável dentro do prazo.")
+            if not shutdown_server(server, worker, timeout=10):
+                logging.error("Servidor não encerrou após falha no health check.")
+            return 2
+    
+        if args.no_browser:
+            logging.info("API saudável. Modo sem navegador ativo.")
+        else:
+            logging.info("API saudável. Abrindo interface.")
+            webbrowser.open(URL)
+    
+        try:
+            while worker.is_alive() and not stop.wait(0.5):
+                pass
+        except KeyboardInterrupt:
+            request_shutdown()
+    
+        if not shutdown_server(server, worker, timeout=args.shutdown_timeout):
+            logging.error("Servidor não encerrou dentro do prazo.")
+            return 3
+        if worker_failed.is_set():
+            logging.error("Plataforma encerrou por falha do servidor; o Agendador poderá aplicar a política de reinício.")
+            return 3
+        logging.info("Plataforma encerrada.")
+        return 0
+    finally:
+        stop_monitor_stop.set()
+        if stop_monitor_worker is not None:
+            stop_monitor_worker.join(timeout=1.0)
+        if stop_event is not None:
+            try:
+                stop_event.close()
+            except Exception:
+                logging.exception("Falha ao liberar o evento local de parada.")
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     root = platform_root()
+    if args.stop:
+        backend = root / "backend"
+        if not (backend / "windows_stop.py").is_file():
+            backend = root / "SERMAX-Platform" / "backend"
+        if not (backend / "windows_stop.py").is_file():
+            print("Módulo de parada local não encontrado.", file=sys.stderr)
+            return 9
+        sys.path.insert(0, str(backend))
+        try:
+            from windows_stop import StopEventNotFound, signal_stop_event
+            signal_stop_event()
+            print("Solicitação de encerramento enviada à instância SERMAX desta sessão.")
+            return 0
+        except StopEventNotFound as exc:
+            print(str(exc), file=sys.stderr)
+            return 8
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 9
+    if args.status:
+        data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
+        status = inspect_instance_status(data_dir)
+        print(json.dumps(status, ensure_ascii=False))
+        return 0 if status["state"] in {"running", "stopped"} else (7 if status["state"] == "error" else 6)
+    if args.autostart_action:
+        backend = root / "backend"
+        if not (backend / "windows_autostart.py").is_file():
+            backend = root / "SERMAX-Platform" / "backend"
+        if not (backend / "windows_autostart.py").is_file():
+            print("Módulo de inicialização automática não encontrado.", file=sys.stderr)
+            return 5
+        sys.path.insert(0, str(backend))
+        from windows_autostart import autostart_status, install_autostart, remove_autostart
+        try:
+            if args.autostart_action == "install":
+                install_autostart(root)
+                print("Inicialização automática registrada para o logon do usuário atual.")
+            elif args.autostart_action == "remove":
+                removed = remove_autostart()
+                print("Tarefa de inicialização removida." if removed else "Nenhuma tarefa registrada.")
+            else:
+                print("Tarefa registrada." if autostart_status() else "Tarefa não registrada.")
+            return 0
+        except RuntimeError as exc:
+            print(str(exc), file=sys.stderr)
+            return 5
     data_dir = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser()
     backend_candidates = (root / "backend", root / "SERMAX-Platform" / "backend")
     backend = next((candidate for candidate in backend_candidates if (candidate / "server.py").is_file()), None)
@@ -183,6 +391,9 @@ def main(argv=None) -> int:
         return 4
     try:
         return _run_server(args, root, data_dir)
+    except RuntimeError as exc:
+        logging.error("Falha no controle ou na execução local da Plataforma: %s", exc)
+        return 9
     finally:
         lock_handle.close()
 
