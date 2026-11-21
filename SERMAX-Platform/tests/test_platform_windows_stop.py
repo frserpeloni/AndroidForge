@@ -1,8 +1,11 @@
 import os
 import threading
 import unittest
+import sys
+from pathlib import Path
 
-from backend import windows_stop
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
+import windows_stop
 
 
 @unittest.skipUnless(os.name == "nt", "Teste de integração Win32 executado somente no Windows.")
