@@ -14,6 +14,7 @@ ERROR_ALREADY_EXISTS = 183
 EVENT_MODIFY_STATE = 0x0002
 SYNCHRONIZE = 0x00100000
 WAIT_OBJECT_0 = 0
+WAIT_TIMEOUT = 258
 WAIT_FAILED = 0xFFFFFFFF
 INFINITE = 0xFFFFFFFF
 TOKEN_QUERY = 0x0008
@@ -137,10 +138,12 @@ class WindowsStopEvent:
         self._handle = handle
         self.name = name
 
-    def wait(self) -> bool:
-        result = self._api.kernel32.WaitForSingleObject(self._handle, INFINITE)
+    def wait(self, timeout_ms: int = INFINITE) -> bool:
+        result = self._api.kernel32.WaitForSingleObject(self._handle, timeout_ms)
         if result == WAIT_OBJECT_0:
             return True
+        if result == WAIT_TIMEOUT:
+            return False
         if result == WAIT_FAILED:
             raise self._api.error("WaitForSingleObject")
         raise StopEventError(f"WaitForSingleObject retornou estado inesperado: {result}")
