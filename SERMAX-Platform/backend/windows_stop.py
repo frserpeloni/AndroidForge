@@ -181,6 +181,7 @@ def create_stop_event() -> WindowsStopEvent:
         attributes = SECURITY_ATTRIBUTES(
             ctypes.sizeof(SECURITY_ATTRIBUTES), descriptor, False
         )
+        ctypes.set_last_error(0)
         handle = api.kernel32.CreateEventW(
             ctypes.byref(attributes), False, False, name
         )
