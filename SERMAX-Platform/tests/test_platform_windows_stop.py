@@ -1,10 +1,11 @@
 import os
+import socket
 import subprocess
 import tempfile
 import threading
-import time
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 import sys
 from pathlib import Path
 
@@ -38,7 +39,7 @@ class WindowsStopEventIntegrationTests(unittest.TestCase):
             event.close()
 
     def test_real_launcher_stops_uvicorn_gracefully_after_event(self):
-        with __import__("socket").socket() as probe:
+        with socket.socket() as probe:
             try:
                 probe.bind(("127.0.0.1", 8765))
             except OSError:
@@ -51,7 +52,7 @@ class WindowsStopEventIntegrationTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as directory:
                 data_dir = Path(directory)
-                with __import__("unittest").mock.patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}):
+                with patch.dict(os.environ, {"SERMAX_PLATFORM_DATA": str(data_dir)}):
                     server_thread = threading.Thread(
                         target=lambda: results.append(launcher._run_server(args, root, data_dir)),
                         name="test-sermax-platform-server", daemon=True,
