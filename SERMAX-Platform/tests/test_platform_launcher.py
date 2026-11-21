@@ -382,6 +382,12 @@ class LauncherArgumentTests(unittest.TestCase):
     def test_stop_flag_is_available(self):
         self.assertTrue(launcher.parse_args(["--stop"]).stop)
 
+    def test_run_local_batch_routes_control_commands_without_dependency_install(self):
+        batch = Path(__file__).resolve().parents[1] / "backend" / "run_local.bat"
+        content = batch.read_text(encoding="utf-8")
+        self.assertIn('if "%~1"=="--stop" goto control', content)
+        self.assertIn('"%LAUNCHER%" %*', content)
+        self.assertLess(content.index('if "%~1"=="--stop"'), content.index(' -m pip install '))
     def test_stop_cannot_be_combined_with_other_launcher_operations(self):
         for arguments in (["--stop", "--status"], ["--stop", "--no-browser"], ["--stop", "--autostart-status"]):
             with self.subTest(arguments=arguments), self.assertRaises(SystemExit):
