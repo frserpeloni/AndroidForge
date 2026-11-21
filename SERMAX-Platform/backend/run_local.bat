@@ -26,6 +26,7 @@ if errorlevel 1 (
 )
 set "SERMAX_CORE_DIR=%~dp0..\..\SERMAX-Windows"
 ".venv\Scripts\python.exe" "%LAUNCHER%" %*
+set "EXIT_CODE=%ERRORLEVEL%"
 goto finish
 
 :control
@@ -39,9 +40,9 @@ if exist ".venv\Scripts\python.exe" (
     py -3 "%LAUNCHER%" %*
   )
 )
+set "EXIT_CODE=%ERRORLEVEL%"
 
 :finish
-set "EXIT_CODE=%ERRORLEVEL%"
 if not "%EXIT_CODE%"=="0" (
   echo A operacao da Plataforma encerrou com codigo %EXIT_CODE%.
   pause
