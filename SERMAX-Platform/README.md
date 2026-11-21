@@ -22,8 +22,10 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 A Plataforma oferece o comando `--stop` para solicitar o encerramento gracioso da instância iniciada na mesma sessão e pela mesma conta Windows:
 
 ```powershell
-python .\\sermax_platform_launcher.py --stop
+.\\backend\\run_local.bat --stop
 ```
+
+Também é possível chamar diretamente o launcher com `python .\\sermax_platform_launcher.py --stop`. O `run_local.bat` encaminha o comando sem instalar dependências quando a operação é de controle.
 
 O controle usa um evento nativo do Windows com DACL protegida e acesso concedido ao SID da conta atual. O launcher recebe a sinalização e solicita a parada do Uvicorn, aguardando o encerramento dentro do timeout configurado. O comando não usa PID, não encerra outros processos e não adiciona rota HTTP.
 
