@@ -16,6 +16,21 @@ O `run_local.bat` chama `sermax_platform_launcher.py`. Não inicie `server.py` d
 O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a internet e não exponha a API em rede pública.
 
 
+
+## Encerramento controlado no Windows
+
+A Plataforma oferece o comando `--stop` para solicitar o encerramento gracioso da instância iniciada na mesma sessão e pela mesma conta Windows:
+
+```powershell
+python .\\sermax_platform_launcher.py --stop
+```
+
+O controle usa um evento nativo do Windows com DACL protegida e acesso concedido ao SID da conta atual. O launcher recebe a sinalização e solicita a parada do Uvicorn, aguardando o encerramento dentro do timeout configurado. O comando não usa PID, não encerra outros processos e não adiciona rota HTTP.
+
+Se não houver evento ativo na sessão atual, o comando retorna código 8. Falhas de acesso ou do canal retornam código 9. A execução por outra conta ou sessão não controla esta instância. O mecanismo não protege contra processos maliciosos executados sob a mesma conta.
+
+Os testes de integração verificam criação, sinalização pela mesma identidade, rejeição de evento preexistente e ausência de instância. O isolamento entre contas Windows distintas ainda exige homologação em ambiente com duas contas.
+
 ## Inicialização automática no Windows
 
 A inicialização automática é opcional e exige comando explícito. O registro usa o Agendador de Tarefas do Windows, dispara no logon do usuário atual, usa token interativo e menor privilégio. Não cria serviço Windows, não usa LocalSystem e não instala a tarefa durante a inicialização normal da Plataforma.
@@ -48,6 +63,7 @@ Os comandos de registro, consulta e remoção são implementados e cobertos por 
 - `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
 - `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
 - `backend/instance_lock.py` e `backend/test_instance_lock.py`, bloqueio exclusivo de instância com testes para Windows e sistemas POSIX.
+- `backend/windows_stop.py` e `tests/test_platform_windows_stop.py`, canal de parada por evento Win32 com DACL restrita e testes de integração Windows.
 - `package.json`, dependências e comando dos testes de interface.
 
 ## Integração com o núcleo
