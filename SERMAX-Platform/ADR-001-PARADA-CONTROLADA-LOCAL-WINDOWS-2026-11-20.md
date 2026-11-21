@@ -75,6 +75,13 @@ O comando não aceita nome de evento arbitrário, PID, caminho de processo ou de
 - Evento preexistente com DACL restrita pode fazer `CreateEventW` retornar `ERROR_ACCESS_DENIED` em vez de `ERROR_ALREADY_EXISTS`. Ambos os caminhos agora recusam assumir a propriedade do objeto.
 - Testes incluem política SDDL, sinalização real entre handles da mesma conta, colisão de nome, evento ausente, CLI e monitoramento do encerramento.
 - A validação entre duas contas Windows distintas e a homologação no PC do usuário permanecem pendentes.
+## Validação automatizada registrada
+
+- Run GitHub Actions `44847886097`, commit de código `527210a29dd60b5576e21198de79e2474897ae47`: conclusão `success`, 5 de 5 jobs aprovados.
+- O job Windows executou 39 testes combinados de launcher e canal Win32. Os testes de sinalização entre handles, rejeição de objeto preexistente, evento ausente e política SDDL passaram.
+- Python 3.12, Python 3.14, frontend check e frontend interaction também passaram.
+- O run `44847811333` havia identificado que `CreateEventW` retorna `ERROR_ACCESS_DENIED` para um objeto preexistente com DACL restrita. A correção trata esse retorno como colisão/posse não comprovada e recusa o handle.
+- A validação comprova o comportamento no runner Windows do GitHub Actions. Não comprova isolamento entre contas distintas nem homologação no PC do usuário.
 ## Critérios de aceite
 
 A implementação só será considerada pronta após os testes automatizados no runner Windows, validação de que o launcher recebe o evento e encerra o Uvicorn dentro do timeout, revisão da DACL efetiva e CI completo da branch. O teste automatizado com uma única conta não comprova isolamento entre duas contas Windows; essa validação deve permanecer registrada como pendência até existir ambiente dedicado com duas identidades.
