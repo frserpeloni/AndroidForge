@@ -26,7 +26,7 @@ class StopEventError(RuntimeError):
 
 
 class StopEventAlreadyExists(StopEventError):
-    """Um objeto com o nome reservado já existia; sua propriedade é desconhecida."""
+    """O nome reservado está ocupado ou protegido por ACL incompatível; a propriedade é desconhecida."""
 
 
 class StopEventNotFound(StopEventError):
@@ -192,7 +192,12 @@ def create_stop_event() -> WindowsStopEvent:
             ctypes.byref(attributes), False, False, name
         )
         if not handle:
-            raise api.error("CreateEvent")
+            error_code = ctypes.get_last_error()
+            if error_code == ERROR_ACCESS_DENIED:
+                raise StopEventAlreadyExists(
+                    "O evento reservado já existe ou possui ACL incompatível. A Plataforma não assumirá sua propriedade."
+                )
+            raise StopEventError(f"CreateEvent falhou (Win32={error_code}).")
         if ctypes.get_last_error() == ERROR_ALREADY_EXISTS:
             api.kernel32.CloseHandle(handle)
             handle = None
