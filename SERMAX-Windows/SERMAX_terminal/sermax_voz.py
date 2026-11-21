@@ -10,6 +10,13 @@ TERMINAL_DIR = Path(__file__).resolve().parent
 SERMAX_DIR = Path(os.environ.get("SERMAX_ROOT", str(TERMINAL_DIR.parent))).resolve()
 USER_DOWNLOADS = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Downloads"
 
+# Cache positivo: evita repetir caminhadas recursivas após localizar os binários.
+# Cada caminho é revalidado com is_file() e os alvos prioritários são verificados
+# antes do cache, permitindo reconhecer instalações novas ou substituições.
+_CACHE_WHISPER: Path | None = None
+_CACHE_MODELO: Path | None = None
+
+
 def _arquivos_por_nome(raiz, nome):
     """Procura arquivos já instalados sem acessar a internet."""
     if not raiz.is_dir():
@@ -31,17 +38,30 @@ def localizar_whisper_e_modelo():
         SERMAX_DIR / "voz" / "whisper-cli.exe",
     ]
     mod_alvos = [SERMAX_DIR / "voz" / "modelos" / "ggml-tiny.bin"]
+    global _CACHE_WHISPER, _CACHE_MODELO
+
     exe = next((p for p in exe_alvos if p.is_file()), None)
     modelo = next((p for p in mod_alvos if p.is_file()), None)
+
+    if exe is None and _CACHE_WHISPER is not None and _CACHE_WHISPER.is_file():
+        exe = _CACHE_WHISPER
+    if modelo is None and _CACHE_MODELO is not None and _CACHE_MODELO.is_file():
+        modelo = _CACHE_MODELO
+
     raizes = [SERMAX_DIR, USER_DOWNLOADS]
-    if not exe:
+    if exe is None:
         for raiz in raizes:
             exe = next(_arquivos_por_nome(raiz, "whisper-cli.exe"), None)
-            if exe: break
-    if not modelo:
+            if exe:
+                break
+    if modelo is None:
         for raiz in raizes:
             modelo = next(_arquivos_por_nome(raiz, "ggml-tiny.bin"), None)
-            if modelo: break
+            if modelo:
+                break
+
+    _CACHE_WHISPER = exe
+    _CACHE_MODELO = modelo
     return (str(exe) if exe else None, str(modelo) if modelo else None)
 
 def diagnostico_voz():

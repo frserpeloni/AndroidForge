@@ -325,7 +325,9 @@ def responder_comando_local(mensagem):
         return "A integração é coordenada automaticamente pelo SERMAX. Envie sua solicitação normalmente; OpenJarvis e Ollama são selecionados internamente com fallback seguro."
     if comando in {"/plano","/planejar","planejar"}: return "Informe o objetivo após /plano. Exemplo: /plano organizar minhas tarefas da semana"
     if comando.startswith("/plano ") or comando.startswith("/planejar "):
-        return sermax_planejador.planejar(mensagem.split(" ",1)[1].strip(),modelo=MODELO,url=OLLAMA_URL)
+        prefixo = "/planejar " if comando.startswith("/planejar ") else "/plano "
+        objetivo = mensagem.strip()[len(prefixo):].strip()
+        return sermax_planejador.planejar(objetivo, modelo=MODELO, url=OLLAMA_URL)
     if comando in {"/memoria","memoria","memória"}:
         if not historico: return "Ainda não há informações guardadas na memória persistente."
         return "Últimas informações guardadas na memória:\n"+"\n".join(f"{i}. {x['content']}" for i,x in enumerate(historico[-10:],1) if str(x.get("content","")).strip())
