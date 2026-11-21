@@ -1,4 +1,5 @@
 import os
+import subprocess
 import threading
 import unittest
 import sys
@@ -31,6 +32,18 @@ class WindowsStopEventIntegrationTests(unittest.TestCase):
         finally:
             event.close()
 
+    def test_run_local_batch_signals_event_without_starting_server(self):
+        event = windows_stop.create_stop_event()
+        batch = Path(__file__).resolve().parents[1] / "backend" / "run_local.bat"
+        try:
+            result = subprocess.run(
+                ["cmd.exe", "/c", str(batch), "--stop"],
+                cwd=batch.parent, capture_output=True, text=True, timeout=20,
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertTrue(event.wait(1000), "O batch não sinalizou o evento de parada.")
+        finally:
+            event.close()
     def test_second_creator_does_not_assume_ownership_of_existing_event(self):
         event = windows_stop.create_stop_event()
         try:
