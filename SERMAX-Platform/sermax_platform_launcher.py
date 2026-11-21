@@ -382,6 +382,9 @@ def main(argv=None) -> int:
         return 4
     try:
         return _run_server(args, root, data_dir)
+    except RuntimeError as exc:
+        logging.error("Falha no controle ou na execução local da Plataforma: %s", exc)
+        return 9
     finally:
         lock_handle.close()
 
