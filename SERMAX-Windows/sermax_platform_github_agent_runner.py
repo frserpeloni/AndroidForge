@@ -39,11 +39,12 @@ class PlatformWorkspaceAdapter(WorkspaceAdapter):
 
 
 CONTEXT_FILES = (
-    "backend/server.py",
     "backend/instance_lock.py",
+    "backend/server.py",
     "backend/windows_autostart.py",
     "backend/windows_stop.py",
     "sermax_platform_launcher.py",
+    "tests/test_instance_lock.py",
     "tests/test_platform_launcher.py",
     "tests/test_platform_windows_stop.py",
     "backend/test_api.py",
@@ -63,8 +64,14 @@ def collect_code_context(project_root: Path) -> str:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(900, remaining)]
-        section = f"\n--- {relative} ---\n{excerpt}"
+        # Arquivos de contrato crítico precisam chegar completos ao agente.
+        # O limite anterior de 900 caracteres cortava a implementação de
+        # instance_lock.py e induzia diagnósticos baseados em código parcial.
+        file_limit = 1_800 if relative == "backend/instance_lock.py" else 900
+        excerpt = content[: min(file_limit, remaining)]
+        section = f"\n--- {relative} ---\n{excerpt}" 
+        if len(excerpt) < len(content):
+            section += "\n[ARQUIVO TRUNCADO PELO LIMITE DE CONTEXTO]"
         sections.append(section)
         remaining -= len(section)
     return "\n".join(sections)
@@ -94,8 +101,12 @@ def main() -> int:
         "backend/server.py é o servidor central protegido, somente leitura. "
         "NUNCA inclua backend/server.py em files. Se a correção exigir esse arquivo, "
         "registre o bloqueio e escolha outro defeito independente ou encerre sem proposta. "
-        "No máximo dois arquivos por proposta. Exija unittest. O TestRunner roda "
-        "unittest e compileall em sandbox descartável; falha provoca rollback. "
+        "No máximo dois arquivos por proposta. Exija unittest. Toda alteração de "
+        "comportamento deve incluir teste novo ou atualizado em tests/test_*.py. "
+        "Nunca declare que adicionou teste se nenhum arquivo de teste estiver em files. "
+        "Se o contexto de um arquivo estiver marcado como truncado, não infira código "
+        "ausente: peça o arquivo completo ou escolha outro defeito com evidência completa. "
+        "O TestRunner roda unittest e compileall em sandbox descartável; falha provoca rollback. "
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
         "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
