@@ -68,3 +68,18 @@ Execução [#23](https://github.com/frserpeloni/AndroidForge/actions/runs/450328
 A execução [#24](https://github.com/frserpeloni/AndroidForge/actions/runs/45032879598), commit `4aaa02be6b87089c17e6c0c38ef3f65e338e43e9`, repetiu os cinco jobs e todos passaram.
 
 O workflow foi ajustado para disparar em pull requests cujo branch-base é `sermax-platform-windows-autostart-20261120`. A branch de desenvolvimento permanece isolada e o PR #27 continua sem merge.
+
+
+## Acesso por Android e outros dispositivos da rede local
+
+**Estado atual: bloqueado por segurança, sem implementação de acesso remoto.**
+
+- O launcher inicia a API em `127.0.0.1:8765`.
+- O middleware da API aceita somente clientes com endereço IP de loopback e cabeçalhos Host/Origin locais.
+- O CORS permite somente `http://127.0.0.1:8765` e `http://localhost:8765`.
+- A interface usa URLs relativas, então ela acompanha a origem do navegador, mas isso não remove as restrições do servidor.
+- Não há autenticação, pareamento de dispositivos, gestão de sessões de usuário ou TLS configurado para acesso pela rede.
+
+Consequência: a Plataforma atual atende o navegador no próprio PC. Um celular Android ou outro computador não consegue acessar o serviço pela rede local. Isso ainda não atende ao requisito de clientes em vários dispositivos ligados a um cérebro central.
+
+Não alterar o bind para `0.0.0.0`, não remover o middleware e não liberar portas no firewall como solução improvisada. A etapa de acesso entre dispositivos exige desenho e implementação próprios de autenticação/pareamento, credenciais revogáveis, transporte protegido, política de origem, limites de sessão, firewall e testes de acesso autorizado e negado. Até concluir esses controles, manter a API restrita ao loopback.
