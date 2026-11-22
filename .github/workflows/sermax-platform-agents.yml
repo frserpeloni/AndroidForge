@@ -84,6 +84,10 @@ jobs:
           python -m pip install "numpy>=2.4.6"
           echo "SERMAX_ROOT=$GITHUB_WORKSPACE/SERMAX-Windows" >> "$GITHUB_ENV"
 
+      - name: Test Groq GPT-OSS request contract
+        working-directory: SERMAX-Windows
+        run: python -m unittest test_sermax_groq_backend -v
+
       - name: Run SERMAX Development Team against SERMAX Platform
         working-directory: SERMAX-Windows
         env:
