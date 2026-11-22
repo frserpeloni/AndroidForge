@@ -83,3 +83,71 @@ O workflow foi ajustado para disparar em pull requests cujo branch-base é `serm
 Consequência: a Plataforma atual atende o navegador no próprio PC. Um celular Android ou outro computador não consegue acessar o serviço pela rede local. Isso ainda não atende ao requisito de clientes em vários dispositivos ligados a um cérebro central.
 
 Não alterar o bind para `0.0.0.0`, não remover o middleware e não liberar portas no firewall como solução improvisada. A etapa de acesso entre dispositivos exige desenho e implementação próprios de autenticação/pareamento, credenciais revogáveis, transporte protegido, política de origem, limites de sessão, firewall e testes de acesso autorizado e negado. Até concluir esses controles, manter a API restrita ao loopback.
+
+## Proposta técnica: acesso seguro por dispositivos da rede local
+
+**Estado: desenho proposto. Nenhuma porta de rede foi aberta e nenhuma autenticação remota foi implementada.**
+
+### Objetivo e limite de confiança
+
+O computador Windows permanece como único servidor e único processo proprietário do núcleo MAX, da memória e do banco da Plataforma. Navegadores e Android funcionam como clientes. Um cliente nunca recebe acesso direto ao sistema de arquivos, ao SQLite ou ao processo Ollama.
+
+A primeira versão de rede deve atender somente à LAN privada configurada pelo operador. Não deve publicar a API na internet nem criar encaminhamento automático de portas.
+
+### Fluxo de ativação proposto
+
+1. O servidor inicia fechado para clientes de rede, mantendo o acesso local atual.
+2. O operador abre a função de pareamento no próprio PC.
+3. A Plataforma gera um código aleatório de uso único, com validade curta e limite de tentativas. O código é exibido localmente como QR e texto.
+4. O Android informa o código e solicita pareamento.
+5. O PC exige aprovação explícita do operador, identifica o dispositivo e emite uma credencial individual.
+6. A credencial fica vinculada ao dispositivo, armazenada no servidor somente em formato protegido por hash, com data de emissão, último uso e estado de revogação.
+7. O operador consulta os dispositivos autorizados e revoga cada credencial individualmente.
+
+O código de pareamento não é uma senha permanente e não concede acesso antes da aprovação local.
+
+### Transporte e fronteira de rede
+
+- HTTPS obrigatório para todo acesso pela LAN.
+- Certificado do servidor emitido por uma autoridade local controlada pelo PC, com procedimento explícito de confiança no dispositivo cliente. Não aceitar certificado inválido silenciosamente.
+- Bind restrito às interfaces privadas selecionadas pelo operador. Nunca usar exposição indiscriminada em todas as interfaces como padrão.
+- Firewall do Windows limitado ao perfil privado e à porta configurada. Não criar regra para perfil público.
+- Rejeitar conexões fora da sub-rede autorizada, além da autenticação. A sub-rede é uma barreira complementar, não substitui credenciais.
+- Manter CORS com lista explícita de origens HTTPS autorizadas. Validar Host, Origin e proteção CSRF nos endpoints que alteram dados.
+- Não permitir acesso remoto a endpoints administrativos, diagnóstico sensível ou operações locais sem política específica.
+
+### Identidade, sessão e autorização
+
+- Credencial aleatória independente por dispositivo, com escopo mínimo e revogação imediata.
+- Tokens nunca aparecem em logs, URLs, mensagens de erro ou telemetria.
+- Sessões curtas, renovação controlada e proteção contra repetição de requisições.
+- Limites de tentativas de pareamento e autenticação, tamanho de requisições e conexões simultâneas.
+- Toda requisição remota é associada a um dispositivo autorizado.
+- A primeira versão continua single-user: pareamento identifica dispositivos do mesmo proprietário, não cria contas independentes nem promete isolamento multiusuário.
+- Memória persistente global do núcleo permanece compartilhada entre conversas. Não declarar isolamento entre pessoas enquanto essa arquitetura não for alterada e testada.
+
+### Critérios obrigatórios de aceite
+
+1. Cliente não pareado recebe negação e não acessa dados.
+2. Código expirado, reutilizado ou incorreto é recusado.
+3. Aprovação no PC habilita somente o dispositivo solicitado.
+4. Revogação bloqueia imediatamente novas requisições desse dispositivo.
+5. Origem web não autorizada e requisição CSRF são recusadas.
+6. Certificado ausente, inválido ou incompatível impede conexão segura.
+7. Perfil público do Windows não recebe regra de entrada.
+8. Limites de tentativas, payload e conexões são testados.
+9. Acesso local em 127.0.0.1 continua funcionando sem pareamento.
+10. Testes positivos e negativos rodam no Windows CI e em navegador Android real antes de declarar compatibilidade.
+
+### Sequência de implementação após aprovação do desenho
+
+1. Implementar serviço de identidade de dispositivo e armazenamento de credenciais revogáveis, sem abrir a rede.
+2. Implementar fluxo de pareamento local e testes unitários.
+3. Implementar autenticação por requisição, proteção CSRF, política de origem e limites.
+4. Implementar HTTPS e gestão do certificado local.
+5. Adicionar configuração explícita de interface privada e regra de firewall restrita.
+6. Executar testes de segurança automatizados no Windows.
+7. Homologar pareamento, conexão, revogação e reconexão em Android físico.
+8. Somente então habilitar a opção de acesso LAN na interface.
+
+**Bloqueio de segurança:** não alterar o bind atual, middleware, CORS ou firewall antes de concluir os critérios de aceite e aprovar a sequência. Esta seção documenta uma proposta, não uma implementação nem uma autorização para expor a API.
