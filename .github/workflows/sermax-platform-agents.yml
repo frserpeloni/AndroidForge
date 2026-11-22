@@ -6,6 +6,8 @@ on:
       - sermax-platform-agent-scope-20261122
     paths:
       - "SERMAX-Windows/sermax_platform_github_agent_runner.py"
+      - "SERMAX-Windows/sermax_workspace.py"
+      - "SERMAX-Windows/tests/test_sermax_workspace.py"
   pull_request:
     types: [opened, reopened]
     branches:
