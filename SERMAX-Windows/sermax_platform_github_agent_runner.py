@@ -94,7 +94,7 @@ def main() -> int:
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
         "Formato obrigatório da proposta do Programador: JSON puro com exatamente estas chaves: "
         '{"summary":"...","files":[{"path":"backend/arquivo.py","content":"..."}],'
-        '"tests":["unittest"]}. A lista tests deve conter literalmente unittest. "
+        '"tests":["unittest"]}. A lista tests deve conter literalmente unittest.' 
         "Inclua os testes unittest correspondentes entre os arquivos propostos. "
         "Não retorne compileall como substituto de unittest. "
         "Baseie-se no código real abaixo e prefira uma correção pequena.\n"
