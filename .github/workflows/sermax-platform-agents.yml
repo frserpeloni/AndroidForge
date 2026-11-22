@@ -102,7 +102,7 @@ jobs:
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
-          GROQ_MAX_TOKENS: "1024"
+          GROQ_MAX_TOKENS: "4096"
           SERMAX_DEV_TASK: ${{ inputs.task || 'Audite backend e launcher. Escolha uma falha pequena e reproduzível. Corrija no máximo dois arquivos permitidos, incluindo teste unittest. Preserve contratos e registre limites do CI Linux e pendências de homologação Windows.' }}
         run: python sermax_platform_github_agent_runner.py
 
