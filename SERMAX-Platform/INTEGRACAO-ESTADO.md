@@ -182,3 +182,35 @@ Execução [#727](https://github.com/frserpeloni/AndroidForge/actions/runs/45037
 A PR #27 continua aberta em Draft, sem merge. A branch `main` permanece intocada. O servidor central `backend/server.py` conserva o blob SHA `238d764b7a761baee421cc2d36e64be533fb6d5d`, idêntico à branch-base.
 
 **Limites ainda pendentes:** a equipe de agentes não tem execução confirmada nesta etapa; o acesso Android/LAN permanece bloqueado; não há inferência real Ollama/OpenJarvis comprovada no PC de destino; não há instalador novo homologado.
+
+
+## Execução da equipe de agentes #22 e auditoria da proposta, 22/11/2026
+
+Workflow [SERMAX Platform Development Agents #22](https://github.com/frserpeloni/AndroidForge/actions/runs/45039518167), disparado no commit `aeab596f396c6ebf691731030cf1d0e215075798`:
+- OpenJarvis foi instalado no runner Linux.
+- Contrato Groq: 2 testes aprovados.
+- Workspace isolado: 10 testes aprovados.
+- A equipe executou os papéis Analista, Pesquisador, Programador e Testador.
+- A tarefa terminou com status `completed`; o workflow terminou com sucesso.
+- O commit gerado pelo agente foi `6b3e0b8f309cbf2d7193b9035ed64f00dd388191`.
+
+**Ressalva de auditoria:** a proposta do Programador listava dois arquivos, mas a aplicação registrou somente `backend/instance_lock.py`. O Testador retornou PASS apesar dessa divergência. O commit inicial também truncava o arquivo de lock Windows antes de adquirir o bloqueio, operação que foi considerada insegura e corrigida na revisão. Portanto, o PASS do agente não foi aceito como prova suficiente da proposta completa.
+
+## Correção auditada do lock e CI #731 a #733, 22/11/2026
+
+Na branch isolada `sermax-platform-agent-scope-20261122`:
+- O lock foi corrigido para não truncar o arquivo antes de adquirir a exclusividade Windows.
+- A compatibilidade com entrada `str` foi mantida convertendo o argumento para `Path`.
+- Foi acrescentado o teste `test_lock_accepts_string_data_directory` em `SERMAX-Platform/tests/test_instance_lock.py`.
+- O arquivo `SERMAX-Platform/backend/server.py` permaneceu idêntico à branch-base, blob SHA `238d764b7a761baee421cc2d36e64be533fb6d5d`.
+
+Execuções CI:
+- [#731](https://github.com/frserpeloni/AndroidForge/actions/runs/45040434714), commit `2d5a98cbdf7d0fa9212b1c197eb41df6e69fb75c`, cinco jobs aprovados.
+- [#732](https://github.com/frserpeloni/AndroidForge/actions/runs/45040438731), mesmo commit, cinco jobs aprovados.
+- [#733](https://github.com/frserpeloni/AndroidForge/actions/runs/45040442593), commit `951f313b88d3c33ce33a543b9934bb5a8fbc908b`, cinco jobs aprovados.
+
+No runner Windows do CI #733, os três testes de lock foram executados e passaram, incluindo exclusividade entre processos independentes. Os jobs de backend Python 3.12 e 3.14 e os dois jobs de frontend também passaram.
+
+**Limites:** a validação Windows ocorreu em runner hospedado pelo GitHub, não no PC físico do usuário. Não comprova inferência real com Ollama/OpenJarvis no PC de destino, instalação em `C:\\SERMAX`, acesso Android pela LAN ou instalador pronto.
+
+PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada. O acesso LAN continua bloqueado até aprovação específica do desenho de segurança.
