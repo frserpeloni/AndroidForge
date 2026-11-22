@@ -49,5 +49,11 @@ class TestInstanceLock(unittest.TestCase):
         handle1.close()
         handle2.close()
 
+    def test_lock_accepts_string_data_directory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            handle = acquire_instance_lock(tmpdir)
+            self.assertFalse(handle.closed)
+            handle.close()
+
 if __name__ == "__main__":
     unittest.main()
