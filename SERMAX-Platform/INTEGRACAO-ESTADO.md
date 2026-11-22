@@ -151,3 +151,18 @@ O código de pareamento não é uma senha permanente e não concede acesso antes
 8. Somente então habilitar a opção de acesso LAN na interface.
 
 **Bloqueio de segurança:** não alterar o bind atual, middleware, CORS ou firewall antes de concluir os critérios de aceite e aprovar a sequência. Esta seção documenta uma proposta, não uma implementação nem uma autorização para expor a API.
+
+
+
+## Validação CI #723, 22/11/2026
+
+Execução [#723](https://github.com/frserpeloni/AndroidForge/actions/runs/45036208580), commit `4571a1416e198edfe221d72389b2905bb5a0b7fe`:
+
+- Os cinco jobs terminaram com sucesso: backend Python 3.12, backend Python 3.14, frontend-check, frontend-interaction e windows-validation.
+- O runner Windows concluiu os testes de backend, streaming, anexos, integração controlada com o núcleo, tarefas persistentes, memória somente leitura, diagnóstico de motores, importação do núcleo, restauração de sessão, interface, segurança do instalador, construtor de pacote, launcher, lock de instância, política de inicialização automática e sintaxe.
+- Os jobs Python 3.12 e 3.14 também concluíram todos os testes previstos.
+- O resultado comprova a suíte automatizada nos runners do GitHub Actions. Não comprova inferência real com Ollama/OpenJarvis no computador de destino, homologação Android pela LAN, instalação em `C:\\SERMAX` ou operação contínua no PC do usuário.
+- O arquivo `SERMAX-Platform/backend/server.py` permanece byte a byte idêntico à branch-base, blob SHA `238d764b7a761baee421cc2d36e64be533fb6d5d`.
+- PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada.
+
+**Próximo bloqueio de arquitetura:** acesso LAN segue somente documentado. A API continua em loopback. Não abrir portas, alterar bind, CORS ou middleware sem aprovação específica do desenho e dos critérios de segurança. O workflow de agentes não foi executado por esta atualização documental; o resultado #723 corresponde ao CI da Plataforma.
