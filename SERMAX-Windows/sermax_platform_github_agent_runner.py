@@ -80,6 +80,7 @@ def main() -> int:
         return 2
 
     workspace = PlatformWorkspaceAdapter(project_root)
+    # O sandbox evita bytecode .pyc para permitir limpeza segura após testes isolados.
     test_runner = TestRunner(workspace, timeout_seconds=300, isolate_as_nobody=True)
     # Três tentativas permitem respeitar o Retry-After da Groq em HTTP 429.
     backend = GroqChatBackend(max_retries=3)
