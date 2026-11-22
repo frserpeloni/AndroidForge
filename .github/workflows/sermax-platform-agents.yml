@@ -10,26 +10,10 @@ on:
       - "SERMAX-Windows/sermax_dev_proposal.py"
       - "SERMAX-Windows/sermax_dev_team.py"
       - "SERMAX-Windows/tests/test_sermax_workspace.py"
-  workflow_dispatch:
-    inputs:
-      task:
-        description: "Tarefa técnica para os agentes SERMAX Platform"
-        required: false
-        default: >-
-          Implemente a primeira etapa isolada do acesso LAN seguro: serviço backend
-          de pareamento e credenciais por dispositivo, com código de uso único,
-          expiração, limite de tentativas, hash de credencial, autenticação e revogação.
-          Crie testes unittest abrangentes. Não altere server.py, launcher, bind,
-          middleware, CORS, TLS ou firewall nesta etapa. No máximo dois arquivos:
-          backend/lan_security.py e tests/test_lan_security.py. Preserve a API local.
 
 permissions:
   contents: write
   pull-requests: read
-
-concurrency:
-  group: sermax-platform-agents-${{ github.event.pull_request.head.ref || github.ref }}
-  cancel-in-progress: false
 
 jobs:
   develop:
@@ -39,7 +23,7 @@ jobs:
       - name: Validate isolated development branch
         shell: bash
         env:
-          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          TARGET_BRANCH: ${{ github.ref_name }}
         run: |
           if [ "$TARGET_BRANCH" != "sermax-platform-agent-scope-20261122" ]; then
             echo "Branch fora do escopo autorizado."
@@ -53,7 +37,7 @@ jobs:
       - name: Checkout isolated branch without persisted credentials
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          ref: ${{ github.ref }}
           persist-credentials: false
 
       - name: Set up Python 3.13 for OpenJarvis
@@ -97,7 +81,8 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "4096"
-          SERMAX_DEV_TASK: ${{ inputs.task || 'Implemente a primeira etapa isolada do acesso LAN seguro: serviço backend de pareamento e credenciais por dispositivo, com código de uso único, expiração, limite de tentativas, hash de credencial, autenticação e revogação. Crie testes unittest abrangentes. Não altere server.py, launcher, bind, middleware, CORS, TLS ou firewall nesta etapa. No máximo dois arquivos: backend/lan_security.py e tests/test_lan_security.py. Preserve a API local.' }}
+          SERMAX_DEV_TASK: >-
+            Implemente a primeira etapa isolada do acesso LAN seguro: serviço backend de pareamento e credenciais por dispositivo, com código de uso único, expiração, limite de tentativas, hash de credencial, autenticação e revogação. Crie testes unittest abrangentes. Não altere server.py, launcher, bind, middleware, CORS, TLS ou firewall nesta etapa. No máximo dois arquivos: backend/lan_security.py e tests/test_lan_security.py. Preserve a API local.
         run: python sermax_platform_github_agent_runner.py
 
       - name: Validate patch formatting
@@ -107,7 +92,7 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          TARGET_BRANCH: ${{ github.ref_name }}
         run: |
           if [ "$TARGET_BRANCH" != "sermax-platform-agent-scope-20261122" ]; then
             echo "Push bloqueado fora da branch isolada."
