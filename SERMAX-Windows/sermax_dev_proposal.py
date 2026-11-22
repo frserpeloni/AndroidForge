@@ -139,10 +139,10 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
                 output = str(result.get("output", ""))[-6_000:]
                 diagnostics.append(
                     f"suite={result.get('suite')} status={result.get('status')} "
-                    f"returncode={result.get('returncode')} output:\\n{output}"
+                    f"returncode={result.get('returncode')} output:\n{output}"
                 )
             raise RuntimeError(
-                "Testes da proposta falharam. Diagnóstico: " + "\\n\\n".join(diagnostics)
+                "Testes da proposta falharam. Diagnóstico: " + "\n\n".join(diagnostics)
             )
         return written, results
     except Exception:
