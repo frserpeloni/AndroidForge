@@ -24,7 +24,7 @@
 - O backend é executado no GitHub Actions em Python 3.12, 3.14 e Windows. Isso não equivale à execução no computador do usuário.
 - Dependências e compatibilidade com Python 3.14 precisam ser verificadas.
 - O smoke test passou a importar o núcleo real no CI, sem iniciar modelo e com a memória redirecionada para diretório temporário. A execução de uma conversa com OpenJarvis/Ollama real continua pendente.
-- O núcleo mantém sessão e histórico globais. A serialização evita concorrência, mas não separa contexto por conversa. Portanto, a primeira integração deve ser tratada como uso local de usuário único.
+- O núcleo mantém variáveis globais de sessão e memória persistente. A API reconstrói a sessão temporária a partir das mensagens da conversa selecionada, substitui `core.sessao` durante a chamada e restaura a sessão original em `finally`. `CHAT_LOCK` serializa chamadas ao núcleo. O teste `test_chat_reconstructs_only_the_requested_conversation_history` verifica que o contexto de uma conversa não recebe mensagens de outra. A memória persistente `historico` do núcleo continua compartilhada entre conversas e deve ser tratada como memória pessoal global do usuário. A integração permanece local e single-user; não há isolamento entre identidades de usuários.
 - O núcleo existente também grava memória segundo suas regras atuais. A interface não oferece edição ou exclusão dessa memória.
 - A autenticação de usuário e acesso remoto estão fora desta etapa. A API não deve ser exposta à rede.
 - O gerenciador de tarefas persistentes em SQLite foi implementado na branch de prontidão, com API, interface e testes. Não há execução automática/em segundo plano, streaming de tokens, anexos, sincronização Android nem publicação pública.
