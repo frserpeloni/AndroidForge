@@ -12,7 +12,7 @@ from sermax_workspace import TestRunner, WorkspaceAdapter, WorkspaceError
 
 
 class PlatformWorkspaceAdapter(WorkspaceAdapter):
-    """Permite alterações somente no backend Python, launcher e testes Python."""
+    """Permite alterações no backend Python, exceto no servidor central protegido, launcher e testes."""
 
     ALLOWED_ROOT_FILES = {
         "sermax_platform_launcher.py",
@@ -31,8 +31,9 @@ class PlatformWorkspaceAdapter(WorkspaceAdapter):
         )
         if not allowed:
             raise WorkspaceError(
-                "Fora do escopo inicial: somente backend/*.py, tests/*.py, "
-                "sermax_platform_launcher.py, INTEGRACAO-ESTADO.md e README.md."
+                "Fora do escopo: backend/server.py é somente leitura; são permitidos os demais "
+                "backend/*.py, tests/*.py, sermax_platform_launcher.py, "
+                "INTEGRACAO-ESTADO.md e README.md."
             )
         return super()._resolve(relative, allow_missing=allow_missing)
 
@@ -53,7 +54,7 @@ CONTEXT_FILES = (
 
 def collect_code_context(project_root: Path) -> str:
     sections = []
-    remaining = 1_200
+    remaining = 6_000
     for relative in CONTEXT_FILES:
         path = project_root / relative
         if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
@@ -62,7 +63,7 @@ def collect_code_context(project_root: Path) -> str:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(300, remaining)]
+        excerpt = content[: min(1_500, remaining)]
         section = f"\n--- {relative} ---\n{excerpt}"
         sections.append(section)
         remaining -= len(section)
@@ -88,8 +89,11 @@ def main() -> int:
     backend = GroqChatBackend(max_retries=3)
     evidence = (
         "GitHub Actions em checkout isolado. Escopo: backend Python, launcher Python "
-        "e testes Python. Escrita permitida: backend/*.py, tests/*.py, "
-        "sermax_platform_launcher.py, INTEGRACAO-ESTADO.md e README.md. "
+        "e testes Python. Escrita permitida: backend/*.py EXCETO backend/server.py, "
+        "tests/*.py, sermax_platform_launcher.py, INTEGRACAO-ESTADO.md e README.md. "
+        "backend/server.py é o servidor central protegido, somente leitura. "
+        "NUNCA inclua backend/server.py em files. Se a correção exigir esse arquivo, "
+        "registre o bloqueio e escolha outro defeito independente ou encerre sem proposta. "
         "No máximo dois arquivos por proposta. Exija unittest. O TestRunner roda "
         "unittest e compileall em sandbox descartável; falha provoca rollback. "
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
