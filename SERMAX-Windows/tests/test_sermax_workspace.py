@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import sys
@@ -123,7 +124,8 @@ class WorkspaceAdapterTests(unittest.TestCase):
             with patch("sermax_workspace.subprocess.run") as mocked:
                 runner._restore_sandbox_ownership(sandbox)
             args = mocked.call_args.args[0]
-            self.assertEqual(args[:5], ["sudo", "-n", "chown", "-R", "root:root"])
+            self.assertEqual(args[:4], ["sudo", "-n", "chown", "-R"])
+            self.assertEqual(args[4], f"{os.getuid()}:{os.getgid()}")
             self.assertEqual(args[5], str(sandbox))
             self.assertTrue(mocked.call_args.kwargs["check"])
 
