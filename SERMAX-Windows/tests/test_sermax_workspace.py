@@ -115,5 +115,17 @@ class WorkspaceAdapterTests(unittest.TestCase):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX\\workspace"))
         self.assertFalse(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX_DEV"))
 
+    def test_restore_sandbox_ownership_for_temporary_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sandbox = Path(folder) / "workspace"
+            sandbox.mkdir()
+            runner = TestRunner(WorkspaceAdapter(folder), isolate_as_nobody=True)
+            with patch("sermax_workspace.subprocess.run") as mocked:
+                runner._restore_sandbox_ownership(sandbox)
+            args = mocked.call_args.args[0]
+            self.assertEqual(args[:5], ["sudo", "-n", "chown", "-R", "root:root"])
+            self.assertEqual(args[5], str(sandbox))
+            self.assertTrue(mocked.call_args.kwargs["check"])
+
 if __name__ == "__main__":
     unittest.main()
