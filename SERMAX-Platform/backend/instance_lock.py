@@ -31,15 +31,13 @@ def acquire_instance_lock(data_dir: Union[Path, str]) -> BinaryIO:
         if os.name == "nt":
             import msvcrt
 
-            # Truncamos o arquivo para garantir que ele contenha apenas
-            # o byte de bloqueio. ``truncate`` aceita 0 para limpar o
-            # conteúdo.
-            handle.truncate(0)
-            handle.seek(0)
-            # Se o arquivo estava vazio, escrevemos um byte para que a
-            # chamada a ``msvcrt.locking`` funcione em todas as versões.
-            handle.write(bytes([0]))
-            handle.flush()
+            # O arquivo precisa conter um byte antes de bloquear no Windows.
+            # Nunca trunque um arquivo antes de adquirir o lock: outro
+            # processo pode manter a região bloqueada neste momento.
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(bytes([0]))
+                handle.flush()
             handle.seek(0)
             msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
         else:
