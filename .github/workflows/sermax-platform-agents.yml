@@ -6,6 +6,12 @@ on:
       - sermax-platform-agent-scope-20261122
     paths:
       - "SERMAX-Windows/sermax_platform_github_agent_runner.py"
+  pull_request:
+    types: [opened, reopened]
+    branches:
+      - sermax-platform-windows-autostart-20261120
+    paths:
+      - "SERMAX-Windows/sermax_platform_github_agent_runner.py"
   workflow_dispatch:
     inputs:
       task:
@@ -19,25 +25,28 @@ on:
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
-  group: sermax-platform-agents
+  group: sermax-platform-agents-${{ github.event.pull_request.head.ref || github.ref }}
   cancel-in-progress: false
 
 jobs:
   develop:
-    if: github.ref == 'refs/heads/sermax-platform-agent-scope-20261122'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/sermax-platform-agent-scope-20261122') || (github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened"]'), github.event.action) && github.event.pull_request.head.ref == 'sermax-platform-agent-scope-20261122')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
       - name: Validate isolated development branch
         shell: bash
+        env:
+          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
-          if [ "${GITHUB_REF_NAME}" != "sermax-platform-agent-scope-20261122" ]; then
+          if [ "$TARGET_BRANCH" != "sermax-platform-agent-scope-20261122" ]; then
             echo "Branch fora do escopo autorizado."
             exit 1
           fi
-          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+          if [ "$TARGET_BRANCH" = "main" ]; then
             echo "Alterações em main são proibidas."
             exit 1
           fi
@@ -45,7 +54,7 @@ jobs:
       - name: Checkout isolated branch without persisted credentials
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
           persist-credentials: false
 
       - name: Set up Python 3.13 for OpenJarvis
@@ -91,8 +100,9 @@ jobs:
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ github.event.pull_request.head.ref || github.ref_name }}
         run: |
-          if [ "${GITHUB_REF_NAME}" != "sermax-platform-agent-scope-20261122" ]; then
+          if [ "$TARGET_BRANCH" != "sermax-platform-agent-scope-20261122" ]; then
             echo "Push bloqueado fora da branch isolada."
             exit 1
           fi
@@ -106,4 +116,4 @@ jobs:
           fi
           git commit -m "SERMAX Platform agents: implement tested backend task"
           AUTH="$(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin "HEAD:${GITHUB_REF_NAME}"
+          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $AUTH" push origin "HEAD:$TARGET_BRANCH"
