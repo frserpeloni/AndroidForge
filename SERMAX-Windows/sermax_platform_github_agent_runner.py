@@ -110,10 +110,13 @@ def main() -> int:
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
         "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
-        "Acesso LAN/Android continua bloqueado por segurança: não altere bind, host, "
-        "middleware, CORS, validação Host/Origin, firewall, TLS, autenticação, "
-        "pareamento ou políticas de rede. Preserve API em loopback. Essas mudanças "
-        "exigem aprovação arquitetural específica e testes de segurança dedicados. "
+        "Acesso LAN foi autorizado pelo operador conforme o desenho documentado. " 
+        "Esta tarefa inicial está limitada ao módulo backend/lan_security.py e " 
+        "tests/test_lan_security.py: implemente pareamento por código de uso único, " 
+        "expiração, limites de tentativas, armazenamento de hash de credenciais, " 
+        "autenticação por dispositivo e revogação, com testes positivos e negativos. " 
+        "Não altere backend/server.py, launcher, bind, middleware, CORS, Host/Origin, " 
+        "TLS ou firewall nesta etapa. Não abra portas nem exponha a API. "
         "Formato obrigatório da proposta do Programador: JSON puro com exatamente estas chaves: "
         '{"summary":"...","files":[{"path":"backend/arquivo.py","content":"..."}],'
         '"tests":["unittest"]}. A lista tests deve conter literalmente unittest.' 
