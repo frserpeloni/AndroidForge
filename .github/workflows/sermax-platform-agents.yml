@@ -88,6 +88,10 @@ jobs:
         working-directory: SERMAX-Windows
         run: python -m unittest test_sermax_groq_backend -v
 
+      - name: Test isolated workspace runner
+        working-directory: SERMAX-Windows
+        run: python -m unittest discover -s tests -p "test_sermax_workspace.py" -v
+
       - name: Run SERMAX Development Team against SERMAX Platform
         working-directory: SERMAX-Windows
         env:
