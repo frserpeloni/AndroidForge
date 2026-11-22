@@ -166,3 +166,19 @@ Execução [#723](https://github.com/frserpeloni/AndroidForge/actions/runs/45036
 - PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada.
 
 **Próximo bloqueio de arquitetura:** acesso LAN segue somente documentado. A API continua em loopback. Não abrir portas, alterar bind, CORS ou middleware sem aprovação específica do desenho e dos critérios de segurança. O workflow de agentes não foi executado por esta atualização documental; o resultado #723 corresponde ao CI da Plataforma.
+
+
+## Validação CI #726 e #727, 22/11/2026
+
+Execução [#726](https://github.com/frserpeloni/AndroidForge/actions/runs/45037048650), commit `7f28987ef5db6b8dd7dd7b3ec2f5d6b662045702`:
+- Os cinco jobs terminaram com sucesso: backend Python 3.12, backend Python 3.14, frontend-check, frontend-interaction e windows-validation.
+- O runner Windows concluiu a suíte de API, streaming, anexos, integração controlada com o núcleo, tarefas persistentes, memória, diagnóstico dos motores, importação do núcleo, restauração de sessão, interface, segurança do instalador, construtor de pacote, launcher, lock de instância, política de inicialização automática e sintaxe.
+
+Execução [#727](https://github.com/frserpeloni/AndroidForge/actions/runs/45037117096), commit `30a3f7dfb6ff64d8e0654dac9fbc23f590b4ca9c`:
+- Os mesmos cinco jobs terminaram com sucesso.
+- O runner dos agentes recebeu uma instrução adicional que proíbe mudanças de bind, middleware, CORS, autenticação, pareamento, TLS, firewall e políticas de rede enquanto o acesso LAN não tiver aprovação específica.
+- O teste CI comprova que a suíte da Plataforma continua passando após a inclusão dessa proteção. Não comprova execução efetiva da equipe de agentes.
+
+A PR #27 continua aberta em Draft, sem merge. A branch `main` permanece intocada. O servidor central `backend/server.py` conserva o blob SHA `238d764b7a761baee421cc2d36e64be533fb6d5d`, idêntico à branch-base.
+
+**Limites ainda pendentes:** a equipe de agentes não tem execução confirmada nesta etapa; o acesso Android/LAN permanece bloqueado; não há inferência real Ollama/OpenJarvis comprovada no PC de destino; não há instalador novo homologado.
