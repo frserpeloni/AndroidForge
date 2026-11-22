@@ -177,9 +177,10 @@ class TestRunner:
 
     @staticmethod
     def _restore_sandbox_ownership(sandbox: Path) -> None:
-        """Devolve a árvore ao usuário do runner antes da limpeza temporária."""
+        """Devolve a árvore ao usuário atual antes da limpeza temporária."""
+        owner = f"{os.getuid()}:{os.getgid()}"
         subprocess.run(
-            ["sudo", "-n", "chown", "-R", "root:root", str(sandbox)],
+            ["sudo", "-n", "chown", "-R", owner, str(sandbox)],
             check=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
