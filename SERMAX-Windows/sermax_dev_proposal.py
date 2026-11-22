@@ -132,8 +132,18 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
     try:
         written = apply_proposal(workspace, proposal)
         results = [test_runner.run(suite) for suite in proposal.tests]
-        if any(result.get("status") != "passed" for result in results):
-            raise RuntimeError("Testes da proposta falharam.")
+        failed = [result for result in results if result.get("status") != "passed"]
+        if failed:
+            diagnostics = []
+            for result in failed:
+                output = str(result.get("output", ""))[-6_000:]
+                diagnostics.append(
+                    f"suite={result.get('suite')} status={result.get('status')} "
+                    f"returncode={result.get('returncode')} output:\\n{output}"
+                )
+            raise RuntimeError(
+                "Testes da proposta falharam. Diagnóstico: " + "\\n\\n".join(diagnostics)
+            )
         return written, results
     except Exception:
         for relative, (existed, content) in snapshots.items():
