@@ -54,3 +54,17 @@ No GitHub Actions, execução [#21](https://github.com/frserpeloni/AndroidForge/
 - Esta execução comprova os testes automatizados nesses runners. Não comprova ainda uma conversa real com Ollama/OpenJarvis no computador de destino, nem a instalação e operação contínua no Windows do usuário.
 
 A branch isolada permanece sem merge. O servidor central `backend/server.py` não foi alterado nesta etapa.
+
+
+## Validação de isolamento de conversas em 22/11/2026
+
+Execução [#23](https://github.com/frserpeloni/AndroidForge/actions/runs/45032874969), commit `be695223477dbf59212e32392a1d5399a6cc5b8e`:
+
+- Os cinco jobs do workflow passaram: Python 3.12, Python 3.14, Windows, verificação JavaScript e testes de interação da interface.
+- O novo teste `test_chat_reconstructs_only_the_requested_conversation_history` passou no runner Windows e nos dois ambientes Python Linux. Ele prepara duas conversas com históricos diferentes e verifica que o núcleo recebe somente o histórico da conversa solicitada.
+- A validação Windows também executou os testes de streaming e persistência da API.
+- A execução comprova o isolamento do contexto reconstruído nos testes automatizados. Não comprova a operação com Ollama/OpenJarvis real no computador de destino.
+
+A execução [#24](https://github.com/frserpeloni/AndroidForge/actions/runs/45032879598), commit `4aaa02be6b87089c17e6c0c38ef3f65e338e43e9`, repetiu os cinco jobs e todos passaram.
+
+O workflow foi ajustado para disparar em pull requests cujo branch-base é `sermax-platform-windows-autostart-20261120`. A branch de desenvolvimento permanece isolada e o PR #27 continua sem merge.
