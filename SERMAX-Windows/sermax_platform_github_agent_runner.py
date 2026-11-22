@@ -1,4 +1,4 @@
-"""Equipe SERMAX para desenvolvimento controlado da SERMAX Platform, com escopo LAN aprovado."""
+"""Equipe SERMAX para desenvolvimento controlado da SERMAX Platform, com escopo LAN aprovado e workflow isolado simplificado."""
 from __future__ import annotations
 
 import os
