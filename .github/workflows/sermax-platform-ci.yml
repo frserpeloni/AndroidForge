@@ -12,6 +12,8 @@ on:
       - sermax-platform-ocr-20261117
       - sermax-platform-single-instance-20261120
       - sermax-platform-windows-autostart-20261120
+      - sermax-platform-windows-autostart-20261120
+      - sermax-platform-agent-scope-20261122
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
