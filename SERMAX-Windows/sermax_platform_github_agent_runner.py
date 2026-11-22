@@ -24,7 +24,8 @@ class PlatformWorkspaceAdapter(WorkspaceAdapter):
         raw = str(relative).replace("\\", "/")
         parts = raw.split("/")
         allowed = (
-            (len(parts) == 2 and parts[0] == "backend" and parts[1].endswith(".py"))
+            (len(parts) == 2 and parts[0] == "backend" and parts[1].endswith(".py")
+             and parts[1] != "server.py")
             or (len(parts) == 2 and parts[0] == "tests" and parts[1].endswith(".py"))
             or (len(parts) == 1 and parts[0] in self.ALLOWED_ROOT_FILES)
         )
