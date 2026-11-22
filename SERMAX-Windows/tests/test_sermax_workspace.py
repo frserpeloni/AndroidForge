@@ -59,6 +59,7 @@ class WorkspaceAdapterTests(unittest.TestCase):
             result = runner.run("unittest")
             self.assertEqual(result["status"], "passed", result["output"])
             self.assertIn("Ran 1 test", result["output"])
+            self.assertFalse((tests_dir / "__pycache__").exists())
 
 
     def test_test_runner_enforces_output_limit_during_execution(self):
