@@ -10,12 +10,6 @@ on:
       - "SERMAX-Windows/sermax_dev_proposal.py"
       - "SERMAX-Windows/sermax_dev_team.py"
       - "SERMAX-Windows/tests/test_sermax_workspace.py"
-  pull_request:
-    types: [opened, reopened]
-    branches:
-      - sermax-platform-windows-autostart-20261120
-    paths:
-      - "SERMAX-Windows/sermax_platform_github_agent_runner.py"
   workflow_dispatch:
     inputs:
       task:
@@ -39,7 +33,6 @@ concurrency:
 
 jobs:
   develop:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/sermax-platform-agent-scope-20261122') || (github.event_name == 'pull_request' && contains(fromJSON('["opened","reopened"]'), github.event.action) && github.event.pull_request.head.ref == 'sermax-platform-agent-scope-20261122')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
