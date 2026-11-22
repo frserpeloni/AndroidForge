@@ -186,6 +186,8 @@ class TestRunner:
                        "SERMAX_ROOT"}
         }
         env["PYTHONIOENCODING"] = "utf-8"
+        # Evita arquivos .pyc pertencentes ao usuário isolado, que bloqueiam a limpeza do sandbox.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         started = time.monotonic()
 
         with tempfile.TemporaryDirectory(prefix="sermax-test-") as temporary:
