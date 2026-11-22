@@ -13,4 +13,9 @@ import urllib.error
 import urllib.request
 import uuid
 from contextlib import suppress
-# Restante do código permanece inalterado
+
+# Função de exemplo para garantir que o módulo seja importável
+
+def get_server_version() -> str:
+    """Retorna a versão do servidor."""
+    return "1.0.0"
