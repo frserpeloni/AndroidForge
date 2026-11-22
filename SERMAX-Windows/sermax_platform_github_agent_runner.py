@@ -92,13 +92,18 @@ def main() -> int:
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
         "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
+        "Formato obrigatório da proposta do Programador: JSON puro com exatamente estas chaves: "
+        '{"summary":"...","files":[{"path":"backend/arquivo.py","content":"..."}],'
+        '"tests":["unittest"]}. A lista tests deve conter literalmente unittest. "
+        "Inclua os testes unittest correspondentes entre os arquivos propostos. "
+        "Não retorne compileall como substituto de unittest. "
         "Baseie-se no código real abaixo e prefira uma correção pequena.\n"
         + collect_code_context(project_root)
     )
     team = DevelopmentTeam(
         Path(tempfile.gettempdir()) / "sermax-platform-development-team.sqlite3",
         model_call=backend,
-        max_attempts=1,
+        max_attempts=2,
         workspace_adapter=workspace,
         test_runner=test_runner,
     )
