@@ -110,6 +110,10 @@ def main() -> int:
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
         "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
+        "Acesso LAN/Android continua bloqueado por segurança: não altere bind, host, "
+        "middleware, CORS, validação Host/Origin, firewall, TLS, autenticação, "
+        "pareamento ou políticas de rede. Preserve API em loopback. Essas mudanças "
+        "exigem aprovação arquitetural específica e testes de segurança dedicados. "
         "Formato obrigatório da proposta do Programador: JSON puro com exatamente estas chaves: "
         '{"summary":"...","files":[{"path":"backend/arquivo.py","content":"..."}],'
         '"tests":["unittest"]}. A lista tests deve conter literalmente unittest.' 
