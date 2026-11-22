@@ -47,14 +47,12 @@ CONTEXT_FILES = (
     "backend/test_api.py",
     "backend/test_core_session_contract.py",
     "backend/test_core_stream_integration.py",
-    "INTEGRACAO-ESTADO.md",
-    "ARQUITETURA-SERVIDOR-CENTRAL-E-CLIENTES-2026-11-20.md",
 )
 
 
 def collect_code_context(project_root: Path) -> str:
     sections = []
-    remaining = 6_000
+    remaining = 1_200
     for relative in CONTEXT_FILES:
         path = project_root / relative
         if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
@@ -63,8 +61,8 @@ def collect_code_context(project_root: Path) -> str:
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        excerpt = content[: min(900, remaining)]
-        section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
+        excerpt = content[: min(300, remaining)]
+        section = f"\n--- {relative} ---\n{excerpt}"
         sections.append(section)
         remaining -= len(section)
     return "\n".join(sections)
@@ -83,26 +81,24 @@ def main() -> int:
 
     workspace = PlatformWorkspaceAdapter(project_root)
     test_runner = TestRunner(workspace, timeout_seconds=300, isolate_as_nobody=True)
-    backend = GroqChatBackend(max_retries=1)
+    # Três tentativas permitem respeitar o Retry-After da Groq em HTTP 429.
+    backend = GroqChatBackend(max_retries=3)
     evidence = (
-        "AMBIENTE: GitHub Actions, checkout isolado em SERMAX-Platform. "
-        "ESCOPO AUTORIZADO NESTA FASE: backend Python, launcher Python e testes Python. "
-        "Arquivos permitidos: backend/*.py, tests/*.py, sermax_platform_launcher.py, "
-        "INTEGRACAO-ESTADO.md e README.md. O validador bloqueia os demais caminhos. "
-        "A proposta terá no máximo três arquivos e exige unittest. "
-        "O TestRunner executa unittest em SERMAX-Platform/tests e compileall, "
-        "em sandbox descartável. Falha em teste provoca rollback. "
-        "Não altere frontend (HTML, JS, CSS), package.json, installer, workflows, "
-        "SERMAX-Windows, terminal original, memória, credenciais, backups, "
-        "SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX nem qualquer instalação local. "
-        "Não faça merge nem altere main. Identifique fatos, lacunas e riscos com base "
-        "no código fornecido. Não afirme homologação Windows que o CI Linux não prova. "
-        "CONTEXTO DE CÓDIGO REAL:\n" + collect_code_context(project_root)
+        "GitHub Actions em checkout isolado. Escopo: backend Python, launcher Python "
+        "e testes Python. Escrita permitida: backend/*.py, tests/*.py, "
+        "sermax_platform_launcher.py, INTEGRACAO-ESTADO.md e README.md. "
+        "No máximo dois arquivos por proposta. Exija unittest. O TestRunner roda "
+        "unittest e compileall em sandbox descartável; falha provoca rollback. "
+        "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
+        "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
+        "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
+        "Baseie-se no código real abaixo e prefira uma correção pequena.\n"
+        + collect_code_context(project_root)
     )
     team = DevelopmentTeam(
         Path(tempfile.gettempdir()) / "sermax-platform-development-team.sqlite3",
         model_call=backend,
-        max_attempts=3,
+        max_attempts=1,
         workspace_adapter=workspace,
         test_runner=test_runner,
     )
