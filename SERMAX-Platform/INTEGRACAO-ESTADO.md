@@ -41,3 +41,16 @@
 8. Confirmar que o serviço permanece limitado a loopback.
 
 Os testes automatizados da API foram executados com sucesso no GitHub Actions em Python 3.12 e 3.14, no commit `15842233ce8a8a19f3e724445fd9402adfa40180`. A validação em Linux não substitui os testes no Windows nem comprova a integração com o núcleo real. Permanecem pendentes os itens 4 a 8 da lista acima no ambiente de destino, além da validação de dependências do núcleo.
+
+## Validação adicional em 22/11/2026
+
+No GitHub Actions, execução [#21](https://github.com/frserpeloni/AndroidForge/actions/runs/45031088484), commit `e60978f385d5f858f0ea9e1735870483f8febb6b`:
+
+- Os cinco jobs do workflow SERMAX Platform CI terminaram com sucesso.
+- O job `windows-validation` executou em `windows-latest`.
+- Os três testes de `backend/test_instance_lock.py` passaram no Windows, incluindo tentativa de aquisição por processo independente.
+- Os mesmos três testes passaram em Linux nos jobs Python 3.12 e 3.14.
+- Os testes de API, integração de streaming com o núcleo real sob dependências simuladas, importação do núcleo, launcher, interface e instalador passaram nos jobs correspondentes.
+- Esta execução comprova os testes automatizados nesses runners. Não comprova ainda uma conversa real com Ollama/OpenJarvis no computador de destino, nem a instalação e operação contínua no Windows do usuário.
+
+A branch isolada permanece sem merge. O servidor central `backend/server.py` não foi alterado nesta etapa.
