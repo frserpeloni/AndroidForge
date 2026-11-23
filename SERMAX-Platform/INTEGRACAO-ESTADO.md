@@ -214,3 +214,16 @@ No runner Windows do CI #733, os três testes de lock foram executados e passara
 **Limites:** a validação Windows ocorreu em runner hospedado pelo GitHub, não no PC físico do usuário. Não comprova inferência real com Ollama/OpenJarvis no PC de destino, instalação em `C:\\SERMAX`, acesso Android pela LAN ou instalador pronto.
 
 PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada. O acesso LAN continua bloqueado até aprovação específica do desenho de segurança.
+
+
+## Revisão do contrato de aprovação de pareamento, 23/11/2026
+
+- O parâmetro booleano `approved=True` foi removido de `complete_pairing()`. Ele permitia que o próprio chamador declarasse uma aprovação sem demonstrar sua origem.
+- A função agora exige `approval_verifier`, um callback interno injetado pelo servidor. O callback recebe o identificador do dispositivo e o código de pareamento e precisa retornar exatamente `True`.
+- A função rejeita ausência de verificador, booleanos e respostas diferentes de `True`. Exceções do verificador interrompem a emissão e mantêm o código sem consumo.
+- Contrato de integração: o callback deverá consultar um estado de aprovação gerado exclusivamente pela UI administrativa local no PC central. O endpoint remoto nunca deverá aceitar callback, booleano, campo `approved` ou resultado de aprovação enviado pelo cliente.
+- Os testes foram adaptados e incluem recusa sem callback, rejeição de booleano, aprovação negada, exceção do verificador e continuidade do código quando a aprovação falha.
+- Commits desta correção: `fdab4edbb12f0a662ea7159810052d95da89976f` (módulo) e `b711b2f2808fc51403d9d110d52bc767739241a9` (testes).
+- O workflow já contém o passo de testes de pareamento em Linux e Windows. A consulta disponível de execuções/status ainda não retornou execução associada a esse commit. Portanto, testes CI permanecem **não confirmados**.
+- O callback ainda não está conectado a uma UI administrativa real. A fronteira de confiança depende dessa integração futura e de sua revisão. Esta alteração remove a aprovação booleana controlada pelo chamador, mas não habilita pareamento remoto.
+- Nenhuma alteração em `server.py`, bind, middleware, CORS, TLS, firewall, Terminal, memória, `C:\\SERMAX`, backups ou `main`. PR #27 permanece em Draft e sem merge.
