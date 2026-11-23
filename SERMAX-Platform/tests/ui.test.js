@@ -15,10 +15,12 @@ function response(data, status = 200) {
 function setup() {
   const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], prompts: [], confirm: true, chatCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
+  let nextTask = 1;
 
+  win.TextDecoder = TextDecoder;
   win.setInterval = () => 1;
   win.clearInterval = () => {};
   win.prompt = message => state.prompts.shift() ?? null;
@@ -34,12 +36,73 @@ function setup() {
       state.projects.push(project);
       return response(project, 201);
     }
-    if (url === "/api/chat" && method === "POST") {
+    if (url === "/api/tasks" && method === "GET" || url.startsWith("/api/tasks?") && method === "GET") {
+      const filter = new URL(url, win.location.href).searchParams.get("status");
+      return response(state.tasks.filter(task => !filter || task.status === filter));
+    }
+    if (url === "/api/tasks" && method === "POST") {
+      const task = {
+        id: String(nextTask++),
+        ...body,
+        status: "pending",
+        due_at: body.due_at || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        completed_at: null
+      };
+      state.tasks.push(task);
+      return response(task, 201);
+    }
+    const taskStatusMatch = url.match(/^\/api\/tasks\/([^/]+)\/status$/);
+    if (taskStatusMatch && method === "PATCH") {
+      const task = state.tasks.find(item => item.id === decodeURIComponent(taskStatusMatch[1]));
+      if (!task) return response({ detail: "Tarefa não encontrada" }, 404);
+      task.status = body.status;
+      task.completed_at = body.status === "completed" ? new Date().toISOString() : null;
+      return response(task);
+    }
+    if (url === "/api/engines/status" && method === "GET") {
+      state.engineCalls += 1;
+      return response({
+        core_loaded: true,
+        ollama: {reachable: true, models: ["sermax:latest"], detail: "API local respondeu."},
+        ocr: {status: "ready", languages: ["eng", "por"], missing_languages: [], detail: "Tesseract pronto. Idiomas português e inglês encontrados."},
+        openjarvis: {environment_files_present: true, detail: "Arquivos encontrados; execução ainda não testada."},
+        last_route: {backend: "ollama", fallback: ""},
+        read_only: true,
+        inference_started: false
+      });
+    }
+    if (url.startsWith("/api/memory") && method === "GET") {
+      state.memoryCalls.push({url, cache: options.cache || ""});
+      if (!state.coreLoaded) {
+        return response({status:"core_not_loaded",read_only:true,total:0,returned:0,items:[],message:"Núcleo ainda não carregado."});
+      }
+      const params = new URL(url, win.location.href).searchParams;
+      const query = (params.get("q") || "").toLocaleLowerCase();
+      const items = state.memories.filter(item => item.content.toLocaleLowerCase().includes(query)).slice(-(Number(params.get("limit")) || 100)).reverse();
+      return response({status:"available",read_only:true,total:items.length,returned:items.length,items,message:"Somente leitura."});
+    }
+    if (url === "/api/chat/stream" && method === "POST") {
       state.chatCalls.push(body);
       const id = body.conversation_id || String(nextConversation++);
       const conversation = { id, title: body.message, project_id: body.project_id || null, updated_at: new Date().toISOString() };
       state.conversations = [conversation, ...state.conversations.filter(c => c.id !== id)];
-      return response({ conversation_id: id, answer: "Resposta simulada do MAX." });
+      const frames =
+        "event: snapshot\ndata: " + JSON.stringify({text:"Resposta "}) + "\n\n" +
+        "event: complete\ndata: " + JSON.stringify({conversation_id:id,answer:"Resposta simulada do MAX."}) + "\n\n";
+      const bytes = new TextEncoder().encode(frames);
+      let sent = false;
+      return {
+        ok:true,
+        status:200,
+        json:async()=>({conversation_id:id,answer:"Resposta simulada do MAX."}),
+        body:{getReader:()=>({read:async()=>{
+          if (sent) return {done:true};
+          sent = true;
+          return {done:false,value:bytes};
+        }})}
+      };
     }
     const projectMatch = url.match(/^\/api\/projects\/([^/]+)(?:\/(conversations|archive))?$/);
     if (projectMatch) {
@@ -63,6 +126,71 @@ function setup() {
   const tick = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => win.setTimeout(resolve, 0)); };
   return { dom, win, state, tick };
 }
+
+test("cria tarefa e atualiza seu estado pela interface", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="tasks"]').click();
+  await tick();
+
+  win.document.getElementById("taskTitle").value = "Validar integração do núcleo";
+  win.document.getElementById("taskDescription").value = "Executar testes de contrato";
+  win.document.getElementById("taskPriority").value = "high";
+  win.document.getElementById("taskForm").dispatchEvent(
+    new win.Event("submit", { bubbles: true, cancelable: true })
+  );
+  await tick();
+
+  assert.equal(state.tasks.length, 1);
+  assert.equal(state.tasks[0].title, "Validar integração do núcleo");
+  assert.equal(state.tasks[0].priority, "high");
+  assert.match(win.document.getElementById("taskList").textContent, /Validar integração do núcleo/);
+
+  const status = win.document.querySelector(".task-status");
+  status.value = "completed";
+  status.dispatchEvent(new win.Event("change", { bubbles: true }));
+  await tick();
+  assert.equal(state.tasks[0].status, "completed");
+});
+
+test("painel de motores verifica serviços sem iniciar inferência", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="engines"]').click();
+  await tick();
+
+  assert.equal(state.engineCalls, 1);
+  assert.match(win.document.getElementById("engineStatus").textContent, /Ollama local/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /sermax:latest/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /OpenJarvis/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /OCR local/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /eng, por/);
+  assert.match(win.document.getElementById("engineStatus").textContent, /Último backend registrado: ollama/);
+  assert.match(win.document.querySelector(".engine-safety-note").textContent, /não envia prompts/i);
+});
+
+test("painel de memória consulta somente leitura e permite busca", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="memory"]').click();
+  await tick();
+
+  assert.match(win.document.getElementById("memoryList").textContent, /Núcleo ainda não carregado/);
+  assert.equal(state.memoryCalls.length, 1);
+  assert.equal(state.memoryCalls[0].cache, "no-store");
+
+  state.coreLoaded = true;
+  state.memories = [
+    {id: 0, content: "Meu carro é um Fiat Siena 2008."},
+    {id: 1, content: "Prefiro respostas em português."}
+  ];
+  win.document.getElementById("memorySearch").value = "Fiat";
+  win.document.getElementById("refreshMemory").click();
+  await tick();
+
+  assert.equal(state.memoryCalls.length, 2);
+  assert.match(state.memoryCalls[1].url, /q=Fiat/);
+  assert.match(win.document.getElementById("memoryList").textContent, /Fiat Siena 2008/);
+  assert.doesNotMatch(win.document.getElementById("memoryList").textContent, /português/);
+  assert.match(win.document.querySelector(".memory-protection-note").textContent, /somente leitura/i);
+});
 
 test("navegação entre telas mantém a tela selecionada", async () => {
   const { win, tick } = setup();
