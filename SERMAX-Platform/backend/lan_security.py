@@ -1,8 +1,8 @@
 """Pareamento local e credenciais persistentes de dispositivos.
 
-O código de pareamento é temporário e de uso único. Após aprovação local,
-complete_pairing() o consome e entrega uma credencial persistente uma única
-vez. O servidor armazena somente o hash da credencial.
+A emissão de credenciais exige um verificador confiável, injetado pelo servidor.
+Esse verificador deve consultar uma aprovação originada exclusivamente na UI
+administrativa local. Nunca passe dados de aprovação recebidos do cliente.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
+from typing import Callable, Iterator
 
 DEFAULT_DB_PATH = Path("data_dir/lan_security.db")
 HASH_ITERATIONS = 200_000
@@ -24,6 +24,8 @@ MAX_TTL_SECONDS = 86_400
 MAX_ATTEMPTS = 20
 DEFAULT_CREDENTIAL_TTL_SECONDS = 7776000
 MAX_CREDENTIAL_TTL_SECONDS = 31536000
+
+ApprovalVerifier = Callable[[str, str], bool]
 
 
 def _validate_device(device: str) -> None:
@@ -82,7 +84,7 @@ def generate_pairing_code(
     max_attempts: int = 5,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str:
-    """Gera um código temporário. A aprovação local ocorre separadamente."""
+    """Gera código temporário. Não aprova nem autoriza o dispositivo."""
     _validate_device(device)
     _validate_positive_int(ttl_seconds, "ttl_seconds", MAX_TTL_SECONDS)
     _validate_positive_int(max_attempts, "max_attempts", MAX_ATTEMPTS)
@@ -105,18 +107,23 @@ def generate_pairing_code(
 def complete_pairing(
     device: str,
     code: str,
-    approved: bool = False,
+    *,
+    approval_verifier: ApprovalVerifier,
     credential_ttl_seconds: int = DEFAULT_CREDENTIAL_TTL_SECONDS,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str | None:
-    """Consome o código após aprovação local e retorna a credencial uma vez.
+    """Emite credencial após confirmação por verificador confiável do servidor.
 
-    O chamador deve entregar o segredo ao dispositivo por um canal protegido.
-    O segredo não é escrito em logs nem armazenado em texto puro.
+    approval_verifier deve ser uma função interna do servidor, ligada ao estado
+    de aprovação produzido pela UI administrativa local. Nunca aceite callback,
+    booleano ou resultado de aprovação enviado em uma requisição remota.
+
+    O chamador entrega o segredo ao dispositivo por canal protegido. O servidor
+    armazena somente o hash da credencial.
     """
     _validate_device(device)
-    if approved is not True:
-        raise PermissionError("aprovação local explícita é obrigatória")
+    if not callable(approval_verifier):
+        raise PermissionError("verificador de aprovação local do servidor é obrigatório")
     _validate_positive_int(credential_ttl_seconds, "credential_ttl_seconds", MAX_CREDENTIAL_TTL_SECONDS)
     if not isinstance(code, str) or not code or len(code) > 256:
         raise ValueError("code inválido")
@@ -150,8 +157,14 @@ def complete_pairing(
                 conn.commit()
                 return None
 
+            # O callback é injetado pelo servidor, nunca obtido do payload remoto.
+            if approval_verifier(device, code) is not True:
+                conn.rollback()
+                raise PermissionError("pareamento ainda não aprovado na administração local")
+
             credential = secrets.token_urlsafe(32)
             digest, salt = _hash_credential(credential)
+            now = int(time.time())
             conn.execute(
                 """INSERT INTO device_credentials(device, credential_hash, salt, created_at, expires_at, revoked)
                    VALUES (?, ?, ?, ?, ?, 0)
@@ -161,13 +174,14 @@ def complete_pairing(
                      created_at=excluded.created_at,
                      expires_at=excluded.expires_at,
                      revoked=0""",
-                (device, digest, salt, int(time.time()), int(time.time()) + credential_ttl_seconds),
+                (device, digest, salt, now, now + credential_ttl_seconds),
             )
             conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
             conn.commit()
             return credential
         except Exception:
-            conn.rollback()
+            if conn.in_transaction:
+                conn.rollback()
             raise
 
 
