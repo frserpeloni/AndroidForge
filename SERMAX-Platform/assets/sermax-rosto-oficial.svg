@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 229 256" role="img" aria-labelledby="title desc">
+  <title id="title">SERMAX, rosto oficial aprovado</title>
+  <desc id="desc">Figura encapuzada formada por caracteres digitais verdes, com olhos verdes luminosos, sobre fundo preto.</desc>
+  <defs>
+    <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9cff00"/>
+      <stop offset="0.55" stop-color="#22ff00"/>
+      <stop offset="1" stop-color="#008b19"/>
+    </linearGradient>
+    <filter id="soft"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="code" width="13" height="14" patternUnits="userSpaceOnUse">
+      <text x="1" y="11" font-family="monospace" font-size="10" fill="#22ff00">1</text>
+      <text x="7" y="7" font-family="monospace" font-size="7" fill="#8aff00">+</text>
+    </pattern>
+    <clipPath id="hood"><path d="M22 176 Q18 58 114 10 Q210 58 207 176 L188 204 Q166 224 114 229 Q62 224 40 204Z"/></clipPath>
+    <clipPath id="face"><path d="M55 104 Q114 64 174 104 L163 184 Q145 210 114 214 Q82 210 66 184Z"/></clipPath>
+  </defs>
+  <rect width="229" height="256" fill="#020702"/>
+  <g fill="none" stroke="url(#glow)" filter="url(#soft)">
+    <path d="M17 181 Q8 55 114 5 Q220 55 212 181" stroke-width="4"/>
+    <path d="M29 185 Q25 72 114 20 Q203 72 200 185" stroke-width="1.5"/>
+    <path d="M42 196 Q34 89 114 34 Q194 89 187 196" stroke-width="1"/>
+  </g>
+  <g clip-path="url(#hood)">
+    <rect x="15" y="5" width="200" height="230" fill="url(#code)" opacity=".8"/>
+    <path d="M22 177 Q18 58 114 10 Q210 58 207 177 L188 204 Q166 224 114 229 Q62 224 40 204Z" fill="#031006" fill-opacity=".58" stroke="#39ff00" stroke-width="2"/>
+  </g>
+  <g clip-path="url(#face)">
+    <rect x="52" y="62" width="125" height="160" fill="url(#code)" opacity=".7"/>
+    <path d="M53 133 L94 123 L82 145 L60 151Z M176 133 L135 123 L147 145 L169 151Z" fill="#aaff00" filter="url(#soft)"/>
+    <path d="M71 163 Q114 183 157 163" stroke="#20ff00" stroke-width="2" fill="none" opacity=".7"/>
+  </g>
+  <path d="M30 179 Q42 65 114 28 Q186 65 199 179" fill="none" stroke="#5cff00" stroke-width="2" opacity=".9"/>
+  <path d="M64 204 Q114 238 165 204" fill="none" stroke="#20ff00" stroke-width="2" opacity=".7"/>
+  <g fill="#8cff00" font-family="monospace" opacity=".85">
+    <text x="9" y="48" font-size="9">0101</text><text x="177" y="55" font-size="9">1010</text>
+    <text x="4" y="118" font-size="8">110</text><text x="190" y="126" font-size="8">011</text>
+    <text x="18" y="222" font-size="8">0101</text><text x="174" y="229" font-size="8">1010</text>
+  </g>
+</svg>
