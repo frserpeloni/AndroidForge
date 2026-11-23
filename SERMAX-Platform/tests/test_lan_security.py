@@ -1,6 +1,8 @@
 """Testes isolados do ciclo de pareamento e credenciais de dispositivos."""
 
 import concurrent.futures
+import contextlib
+import io
 import sqlite3
 import tempfile
 import unittest
@@ -104,9 +106,11 @@ class LanSecurityTests(unittest.TestCase):
 
     def test_pairing_secret_is_not_printed_or_logged(self):
         code = self.issue()
-        credential = lan_security.complete_pairing("phone", code, approved=True, db_path=self.db)
-        self.assertNotIn(credential, repr(lan_security))
-        self.assertTrue(lan_security.authenticate("phone", credential, self.db))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            credential = lan_security.complete_pairing("phone", code, approved=True, db_path=self.db)
+            self.assertTrue(lan_security.authenticate("phone", credential, self.db))
+        self.assertNotIn(credential, output.getvalue())
 
     def test_repair_replaces_previous_device_credential(self):
         first_code = self.issue()
