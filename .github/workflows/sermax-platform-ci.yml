@@ -118,6 +118,9 @@ jobs:
       - name: Run platform instance lock tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_instance_lock.py
+      - name: Run device pairing security tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v ../tests/test_lan_security.py
       - name: Run Windows autostart policy tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
@@ -185,6 +188,9 @@ jobs:
       - name: Run platform instance lock tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_instance_lock.py
+      - name: Run device pairing security tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v ../tests/test_lan_security.py
       - name: Run Windows autostart policy tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
