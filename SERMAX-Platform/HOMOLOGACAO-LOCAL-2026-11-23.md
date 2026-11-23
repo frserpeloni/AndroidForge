@@ -73,3 +73,8 @@ Portanto, `Verificar agora` é um diagnóstico de disponibilidade. Não envia pr
 **Motores e integração real do núcleo MAX: pendentes.**
 
 A documentação do repositório descreve o comando `tools/check_local_inference.py` para teste real de inferência. O resultado deve ser guardado antes de declarar o MAX integrado.
+
+
+## CI da documentação, 23/11/2026
+
+A documentação foi adicionada no commit `4e668ce158bd4eea0ee3129d039f8ff6f0ca692b`. Três execuções CI foram disparadas para o mesmo commit por workflows/PRs associados. As execuções `45224900712`, `45224912032` e `45224914160` estavam em andamento no momento do registro. Nos jobs Linux, frontend-check, frontend-interaction e backend Python 3.12 já haviam concluído com sucesso; os jobs Python 3.14 e Windows ainda estavam em execução. Esses resultados são automação de repositório, não testes no PC do operador.
