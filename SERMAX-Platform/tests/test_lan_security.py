@@ -52,11 +52,13 @@ class LanSecurityTests(unittest.TestCase):
                 "phone", code, approval_verifier=deny, db_path=self.db
             )
         self.assertEqual(seen, [("phone", code)])
-        self.assertIsNone(lan_security.complete_pairing(
+        credential = lan_security.complete_pairing(
             "phone", code,
             approval_verifier=lambda device, pairing_code: True,
             db_path=self.db,
-        ))
+        )
+        self.assertIsInstance(credential, str)
+        self.assertTrue(lan_security.authenticate("phone", credential, self.db))
 
     def test_verifier_exception_does_not_issue_credential(self):
         code = self.issue()
@@ -67,11 +69,13 @@ class LanSecurityTests(unittest.TestCase):
             lan_security.complete_pairing(
                 "phone", code, approval_verifier=broken_verifier, db_path=self.db
             )
-        self.assertIsNone(lan_security.complete_pairing(
+        credential = lan_security.complete_pairing(
             "phone", code,
             approval_verifier=lambda device, pairing_code: True,
             db_path=self.db,
-        ))
+        )
+        self.assertIsInstance(credential, str)
+        self.assertTrue(lan_security.authenticate("phone", credential, self.db))
 
     def test_wrong_device_consumes_attempt_and_cannot_pair(self):
         code = self.issue(max_attempts=1)
