@@ -99,6 +99,7 @@ def generate_pairing_code(
 def complete_pairing(
     device: str,
     code: str,
+    approved: bool = False,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str | None:
     """Consome o código após aprovação local e retorna a credencial uma vez.
@@ -107,6 +108,8 @@ def complete_pairing(
     O segredo não é escrito em logs nem armazenado em texto puro.
     """
     _validate_device(device)
+    if approved is not True:
+        raise PermissionError("aprovação local explícita é obrigatória")
     if not isinstance(code, str) or not code or len(code) > 256:
         raise ValueError("code inválido")
 
