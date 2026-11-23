@@ -22,6 +22,8 @@ SALT_LENGTH = 16
 MAX_DEVICE_LENGTH = 128
 MAX_TTL_SECONDS = 86_400
 MAX_ATTEMPTS = 20
+DEFAULT_CREDENTIAL_TTL_SECONDS = 7776000
+MAX_CREDENTIAL_TTL_SECONDS = 31536000
 
 
 def _validate_device(device: str) -> None:
@@ -55,9 +57,13 @@ def _connection(db_path: Path | str) -> Iterator[sqlite3.Connection]:
                 credential_hash BLOB NOT NULL,
                 salt BLOB NOT NULL,
                 created_at INTEGER NOT NULL,
+                expires_at INTEGER NOT NULL,
                 revoked INTEGER NOT NULL DEFAULT 0 CHECK (revoked IN (0, 1))
             )
         """)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(device_credentials)")}
+        if "expires_at" not in columns:
+            conn.execute("ALTER TABLE device_credentials ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0")
         yield conn
     finally:
         conn.close()
@@ -100,6 +106,7 @@ def complete_pairing(
     device: str,
     code: str,
     approved: bool = False,
+    credential_ttl_seconds: int = DEFAULT_CREDENTIAL_TTL_SECONDS,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str | None:
     """Consome o código após aprovação local e retorna a credencial uma vez.
@@ -110,6 +117,7 @@ def complete_pairing(
     _validate_device(device)
     if approved is not True:
         raise PermissionError("aprovação local explícita é obrigatória")
+    _validate_positive_int(credential_ttl_seconds, "credential_ttl_seconds", MAX_CREDENTIAL_TTL_SECONDS)
     if not isinstance(code, str) or not code or len(code) > 256:
         raise ValueError("code inválido")
 
@@ -145,14 +153,15 @@ def complete_pairing(
             credential = secrets.token_urlsafe(32)
             digest, salt = _hash_credential(credential)
             conn.execute(
-                """INSERT INTO device_credentials(device, credential_hash, salt, created_at, revoked)
-                   VALUES (?, ?, ?, ?, 0)
+                """INSERT INTO device_credentials(device, credential_hash, salt, created_at, expires_at, revoked)
+                   VALUES (?, ?, ?, ?, ?, 0)
                    ON CONFLICT(device) DO UPDATE SET
                      credential_hash=excluded.credential_hash,
                      salt=excluded.salt,
                      created_at=excluded.created_at,
+                     expires_at=excluded.expires_at,
                      revoked=0""",
-                (device, digest, salt, int(time.time())),
+                (device, digest, salt, int(time.time()), int(time.time()) + credential_ttl_seconds),
             )
             conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
             conn.commit()
@@ -173,13 +182,13 @@ def authenticate(
         return False
     with _connection(db_path) as conn:
         row = conn.execute(
-            "SELECT credential_hash, salt, revoked FROM device_credentials WHERE device = ?",
+            "SELECT credential_hash, salt, revoked, expires_at FROM device_credentials WHERE device = ?",
             (device,),
         ).fetchone()
     if row is None:
         return False
-    expected_hash, salt, revoked = row
-    if revoked:
+    expected_hash, salt, revoked, expires_at = row
+    if revoked or int(time.time()) >= expires_at:
         return False
     actual_hash, _ = _hash_credential(credential, salt)
     return hmac.compare_digest(actual_hash, expected_hash)
