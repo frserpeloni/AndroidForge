@@ -116,6 +116,22 @@ class LanSecurityTests(unittest.TestCase):
         self.assertFalse(lan_security.authenticate("phone", first, self.db))
         self.assertTrue(lan_security.authenticate("phone", second, self.db))
 
+    def test_persistent_credential_expires(self):
+        code = self.issue()
+        credential = lan_security.complete_pairing(
+            "phone", code, approved=True, credential_ttl_seconds=1, db_path=self.db
+        )
+        self.assertTrue(lan_security.authenticate("phone", credential, self.db))
+        with patch.object(lan_security.time, "time", return_value=10**12):
+            self.assertFalse(lan_security.authenticate("phone", credential, self.db))
+
+    def test_credential_ttl_is_validated(self):
+        code = self.issue()
+        with self.assertRaises(ValueError):
+            lan_security.complete_pairing(
+                "phone", code, approved=True, credential_ttl_seconds=0, db_path=self.db
+            )
+
     def test_cleanup_removes_expired_pairings(self):
         code = self.issue(ttl_seconds=1)
         with patch.object(lan_security.time, "time", return_value=10**12):
