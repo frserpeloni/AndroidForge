@@ -1,211 +1,215 @@
-"""Módulo de segurança LAN.
+"""Pareamento local e credenciais persistentes de dispositivos.
 
-Este módulo fornece uma API simples para gerar códigos de pareamento, armazenar
-hashes de credenciais, autenticar dispositivos e revogar credenciais.  O
-armazenamento é feito em um banco SQLite localizado em
-``data_dir/lan_security.db``.  A API é projetada para ser usada apenas
-localmente, sem exposição de portas externas.
-
-A implementação segue os requisitos da tarefa:
-
-* Código de pareamento de uso único, com TTL (tempo de vida) e limite de
-  tentativas.
-* Hash de credencial usando PBKDF2-HMAC-SHA256 com salt aleatório.
-* Autenticação que revoga a credencial após o primeiro uso bem-sucedido.
-* Função de revogação explícita.
-* Limpeza de registros expirados.
+O código de pareamento é temporário e de uso único. Após aprovação local,
+complete_pairing() o consome e entrega uma credencial persistente uma única
+vez. O servidor armazena somente o hash da credencial.
 """
 
 from __future__ import annotations
 
-import os
-import sqlite3
-import string
-import secrets
 import hashlib
 import hmac
+import secrets
+import sqlite3
 import time
-from datetime import datetime, timezone
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Iterator
 
-# ---------------------------------------------------------------------------
-# Configuração
-# ---------------------------------------------------------------------------
-
-# Diretório onde o banco será criado (padrão: data_dir/lan_security.db)
 DEFAULT_DB_PATH = Path("data_dir/lan_security.db")
-
-# Parâmetros de hash
 HASH_ITERATIONS = 200_000
-HASH_ALGORITHM = "sha256"
 SALT_LENGTH = 16
-
-# ---------------------------------------------------------------------------
-# Utilitários internos
-# ---------------------------------------------------------------------------
-
-def _get_connection(db_path: Path | str = DEFAULT_DB_PATH) -> sqlite3.Connection:
-    """Retorna uma conexão SQLite, criando o banco e a tabela se necessário."""
-    db_path = Path(db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS pairings (
-            code TEXT PRIMARY KEY,
-            device TEXT NOT NULL,
-            credential_hash BLOB NOT NULL,
-            salt BLOB NOT NULL,
-            expires_at INTEGER NOT NULL,
-            attempts_left INTEGER NOT NULL,
-            revoked INTEGER NOT NULL DEFAULT 0
-        );
-        """
-    )
-    conn.commit()
-    return conn
+MAX_DEVICE_LENGTH = 128
+MAX_TTL_SECONDS = 86_400
+MAX_ATTEMPTS = 20
 
 
-def _hash_credential(credential: str, salt: bytes | None = None) -> Tuple[bytes, bytes]:
-    """Retorna (hash, salt).  Se ``salt`` for ``None`` gera um salt aleatório."""
+def _validate_device(device: str) -> None:
+    if not isinstance(device, str) or not device.strip() or len(device) > MAX_DEVICE_LENGTH:
+        raise ValueError("device deve ser uma string não vazia de até 128 caracteres")
+
+
+def _validate_positive_int(value: int, name: str, maximum: int) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= maximum:
+        raise ValueError(f"{name} deve ser um inteiro entre 1 e {maximum}")
+
+
+@contextmanager
+def _connection(db_path: Path | str) -> Iterator[sqlite3.Connection]:
+    path = Path(db_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)
+    try:
+        conn.execute("PRAGMA busy_timeout = 10000")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS device_pairings (
+                code TEXT PRIMARY KEY,
+                device TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                attempts_left INTEGER NOT NULL CHECK (attempts_left >= 0)
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS device_credentials (
+                device TEXT PRIMARY KEY,
+                credential_hash BLOB NOT NULL,
+                salt BLOB NOT NULL,
+                created_at INTEGER NOT NULL,
+                revoked INTEGER NOT NULL DEFAULT 0 CHECK (revoked IN (0, 1))
+            )
+        """)
+        yield conn
+    finally:
+        conn.close()
+
+
+def _hash_credential(credential: str, salt: bytes | None = None) -> tuple[bytes, bytes]:
     if salt is None:
         salt = secrets.token_bytes(SALT_LENGTH)
-    dk = hashlib.pbkdf2_hmac(
-        HASH_ALGORITHM, credential.encode("utf-8"), salt, HASH_ITERATIONS
-    )
-    return dk, salt
+    digest = hashlib.pbkdf2_hmac("sha256", credential.encode("utf-8"), salt, HASH_ITERATIONS)
+    return digest, salt
 
-
-def _current_timestamp() -> int:
-    return int(time.time())
-
-# ---------------------------------------------------------------------------
-# API pública
-# ---------------------------------------------------------------------------
 
 def generate_pairing_code(
     device: str,
     ttl_seconds: int = 300,
     max_attempts: int = 5,
-    credential: Optional[str] = None,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str:
-    """Gera um código de pareamento único.
-
-    Parameters
-    ----------
-    device: Identificador do dispositivo que irá usar o código.
-    ttl_seconds: Tempo de vida do código em segundos.
-    max_attempts: Número máximo de tentativas de autenticação.
-    credential: Credencial opcional.  Se ``None`` será gerada uma credencial
-        aleatória e retornada junto com o código.
-    db_path: Caminho do banco SQLite.
-
-    Returns
-    -------
-    code: Código de pareamento (string).
-    """
-    if credential is None:
-        # Gera credencial aleatória de 32 caracteres alfanuméricos
-        credential = "".join(
-            secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
-        )
-    cred_hash, salt = _hash_credential(credential)
-    expires_at = _current_timestamp() + ttl_seconds
-    code = secrets.token_urlsafe(16)
-    with _get_connection(db_path) as conn:
-        conn.execute(
-            "INSERT INTO pairings (code, device, credential_hash, salt, expires_at, attempts_left) VALUES (?, ?, ?, ?, ?, ?);",
-            (code, device, cred_hash, salt, expires_at, max_attempts),
-        )
-        conn.commit()
-    # O código é retornado; a credencial não é armazenada em texto puro.
+    """Gera um código temporário. A aprovação local ocorre separadamente."""
+    _validate_device(device)
+    _validate_positive_int(ttl_seconds, "ttl_seconds", MAX_TTL_SECONDS)
+    _validate_positive_int(max_attempts, "max_attempts", MAX_ATTEMPTS)
+    code = secrets.token_urlsafe(24)
+    expires_at = int(time.time()) + ttl_seconds
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            conn.execute(
+                "INSERT INTO device_pairings(code, device, expires_at, attempts_left) VALUES (?, ?, ?, ?)",
+                (code, device, expires_at, max_attempts),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
     return code
+
+
+def complete_pairing(
+    device: str,
+    code: str,
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> str | None:
+    """Consome o código após aprovação local e retorna a credencial uma vez.
+
+    O chamador deve entregar o segredo ao dispositivo por um canal protegido.
+    O segredo não é escrito em logs nem armazenado em texto puro.
+    """
+    _validate_device(device)
+    if not isinstance(code, str) or not code or len(code) > 256:
+        raise ValueError("code inválido")
+
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                "SELECT device, expires_at, attempts_left FROM device_pairings WHERE code = ?",
+                (code,),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+
+            expected_device, expires_at, attempts_left = row
+            if int(time.time()) >= expires_at or attempts_left <= 0:
+                conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
+                conn.commit()
+                return None
+
+            if not hmac.compare_digest(expected_device.encode(), device.encode()):
+                remaining = attempts_left - 1
+                if remaining <= 0:
+                    conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
+                else:
+                    conn.execute(
+                        "UPDATE device_pairings SET attempts_left = ? WHERE code = ?",
+                        (remaining, code),
+                    )
+                conn.commit()
+                return None
+
+            credential = secrets.token_urlsafe(32)
+            digest, salt = _hash_credential(credential)
+            conn.execute(
+                """INSERT INTO device_credentials(device, credential_hash, salt, created_at, revoked)
+                   VALUES (?, ?, ?, ?, 0)
+                   ON CONFLICT(device) DO UPDATE SET
+                     credential_hash=excluded.credential_hash,
+                     salt=excluded.salt,
+                     created_at=excluded.created_at,
+                     revoked=0""",
+                (device, digest, salt, int(time.time())),
+            )
+            conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
+            conn.commit()
+            return credential
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def authenticate(
     device: str,
-    code: str,
     credential: str,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> bool:
-    """Tenta autenticar um dispositivo usando o código e a credencial.
+    """Valida a credencial persistente sem consumi-la."""
+    _validate_device(device)
+    if not isinstance(credential, str) or not credential or len(credential) > 512:
+        return False
+    with _connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT credential_hash, salt, revoked FROM device_credentials WHERE device = ?",
+            (device,),
+        ).fetchone()
+    if row is None:
+        return False
+    expected_hash, salt, revoked = row
+    if revoked:
+        return False
+    actual_hash, _ = _hash_credential(credential, salt)
+    return hmac.compare_digest(actual_hash, expected_hash)
 
-    Se a autenticação for bem-sucedida, a credencial é revogada (removida do
-    banco).  Se falhar, decrementa o contador de tentativas.
-    """
-    with _get_connection(db_path) as conn:
-        cur = conn.execute(
-            "SELECT credential_hash, salt, expires_at, attempts_left, revoked FROM pairings WHERE code = ? AND device = ?;",
-            (code, device),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return False
-        cred_hash, salt, expires_at, attempts_left, revoked = row
-        if revoked:
-            return False
-        if _current_timestamp() > expires_at:
-            return False
-        if attempts_left <= 0:
-            return False
-        # Verifica a credencial
-        expected_hash, _ = _hash_credential(credential, salt)
-        if hmac.compare_digest(expected_hash, cred_hash):
-            # Revoga a credencial
-            conn.execute("DELETE FROM pairings WHERE code = ?;", (code,))
-            conn.commit()
-            return True
-        else:
-            # Decrementa tentativas
-            conn.execute(
-                "UPDATE pairings SET attempts_left = attempts_left - 1 WHERE code = ?;",
-                (code,),
+
+def revoke(device: str, db_path: Path | str = DEFAULT_DB_PATH) -> bool:
+    """Revoga a credencial persistente do dispositivo, sem afetar outros."""
+    _validate_device(device)
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = conn.execute(
+                "UPDATE device_credentials SET revoked = 1 WHERE device = ? AND revoked = 0",
+                (device,),
             )
             conn.commit()
-            return False
-
-
-def revoke(device: str, code: str, db_path: Path | str = DEFAULT_DB_PATH) -> bool:
-    """Revoga explicitamente um código de pareamento.
-
-    Retorna ``True`` se o código foi revogado, ``False`` caso contrário.
-    """
-    with _get_connection(db_path) as conn:
-        cur = conn.execute(
-            "SELECT revoked FROM pairings WHERE code = ? AND device = ?;",
-            (code, device),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return False
-        revoked = row[0]
-        if revoked:
-            return False
-        conn.execute("DELETE FROM pairings WHERE code = ?;", (code,))
-        conn.commit()
-        return True
+            return cur.rowcount == 1
+        except Exception:
+            conn.rollback()
+            raise
 
 
 def cleanup_expired(db_path: Path | str = DEFAULT_DB_PATH) -> int:
-    """Remove registros expirados.
-
-    Retorna o número de registros removidos.
-    """
-    now = _current_timestamp()
-    with _get_connection(db_path) as conn:
-        cur = conn.execute("DELETE FROM pairings WHERE expires_at <= ?;", (now,))
-        conn.commit()
-        return cur.rowcount
-
-# ---------------------------------------------------------------------------
-# Exemplo de uso (não executado em produção)
-# ---------------------------------------------------------------------------
-if __name__ == "__main__":
-    # Exemplo rápido de geração e autenticação
-    dev = "device-123"
-    code = generate_pairing_code(dev, ttl_seconds=60, max_attempts=3, credential="secret123")
-    print("Código gerado:", code)
-    print("Autenticação bem-sucedida?", authenticate(dev, code, "secret123"))
-    print("Tentativa subsequente (deveria falhar):", authenticate(dev, code, "secret123"))
+    """Remove códigos de pareamento expirados ou esgotados."""
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            cur = conn.execute(
+                "DELETE FROM device_pairings WHERE expires_at <= ? OR attempts_left <= 0",
+                (int(time.time()),),
+            )
+            conn.commit()
+            return cur.rowcount
+        except Exception:
+            conn.rollback()
+            raise
