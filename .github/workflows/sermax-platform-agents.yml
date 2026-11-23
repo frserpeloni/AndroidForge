@@ -10,6 +10,7 @@ on:
       - "SERMAX-Windows/sermax_dev_proposal.py"
       - "SERMAX-Windows/sermax_dev_team.py"
       - "SERMAX-Windows/tests/test_sermax_workspace.py"
+      - "SERMAX-Windows/tests/test_sermax_dev_proposal.py"
 
 permissions:
   contents: write
@@ -82,7 +83,7 @@ jobs:
           GROQ_MODEL: openai/gpt-oss-20b
           GROQ_MAX_TOKENS: "4096"
           SERMAX_DEV_TASK: >-
-            Implemente a primeira etapa isolada do acesso LAN seguro: serviço backend de pareamento e credenciais por dispositivo, com código de uso único, expiração, limite de tentativas, hash de credencial, autenticação e revogação. Crie testes unittest abrangentes. Não altere server.py, launcher, bind, middleware, CORS, TLS ou firewall nesta etapa. No máximo dois arquivos: backend/lan_security.py e tests/test_lan_security.py. Preserve a API local.
+            Implemente a primeira etapa isolada da arquitetura de acesso remoto seguro pela internet: serviço backend de identidade, pareamento e credenciais individuais por dispositivo, com código de uso único, expiração, limite de tentativas, hash de credencial, autenticação e revogação. Clientes Windows, Android e outros navegadores serão remotos; o PC permanece como servidor central. Crie testes unittest abrangentes. Não implemente túnel/relay nem altere server.py, launcher, bind, middleware, CORS, TLS ou firewall nesta etapa. Não exponha a API. No máximo dois arquivos: backend/lan_security.py e tests/test_lan_security.py. Preserve o acesso local atual.
         run: python sermax_platform_github_agent_runner.py
 
       - name: Validate patch formatting
