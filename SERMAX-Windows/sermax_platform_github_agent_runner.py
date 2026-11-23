@@ -110,7 +110,7 @@ def main() -> int:
         "Não altere frontend, instalador, workflows, SERMAX-Windows, Terminal, memória, "
         "backups, SERMAX Control ou Drive Connect. Não acesse C:\\SERMAX. "
         "Não faça merge nem altere main. CI Linux não comprova homologação Windows. "
-        "Acesso LAN foi autorizado pelo operador conforme o desenho documentado. " 
+        "Acesso remoto pela internet, a partir de Windows, Android e outros dispositivos, foi autorizado pelo operador. O PC central permanece como servidor único. " 
         "Esta tarefa inicial está limitada ao módulo backend/lan_security.py e " 
         "tests/test_lan_security.py: implemente pareamento por código de uso único, " 
         "expiração, limites de tentativas, armazenamento de hash de credenciais, " 
