@@ -19,9 +19,11 @@ O serviço permanece vinculado a `127.0.0.1`. Não encaminhe a porta para a inte
 - `app.js`, navegação e comunicação HTTP com a API.
 - `backend/server.py`, API FastAPI, persistência SQLite e adaptador de chamada ao núcleo.
 - `backend/run_local.bat`, inicializador manual de desenvolvimento.
-- `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, valida `/api/health`, abre o navegador e encerra o servidor de forma controlada.
-- `backend/test_api.py`, testes automatizados da API, projetos e persistência após reinício.
+- `sermax_platform_launcher.py`, supervisor local em desenvolvimento, inicia a API, confirma que o próprio servidor Uvicorn iniciou, valida `/api/health`, abre o navegador por padrão e encerra o servidor de forma controlada.
+- O inicializador aceita `--no-browser` para manter a API local em execução sem abrir o navegador, além de `--health-timeout` e `--shutdown-timeout` para configurar os limites de inicialização e encerramento. Esse modo prepara a execução sem interface para uma futura hospedagem central no Windows, mas ainda não registra serviço nem tarefa automática.
+- `backend/test_api.py` e testes especializados para streaming, anexos, OCR, tarefas, memória, diagnóstico dos motores e contrato de sessão.
 - `tests/ui.test.js`, testes de interação da interface com DOM simulado.
+- `tools/check_local_ocr.py` e `tools/check_local_inference.py`, verificações reais opcionais dos motores locais, executadas manualmente e fora do CI.
 - `tests/test_platform_launcher.py`, testes do health check do launcher, rejeição de outro serviço e encerramento antecipado.
 - `package.json`, dependências e comando dos testes de interface.
 
@@ -33,13 +35,16 @@ O núcleo existente mantém suas regras atuais de memória e roteamento OpenJarv
 
 ## Limitações conhecidas
 
-- A primeira versão é local e de usuário único.
-- Não há autenticação nem acesso remoto.
-- Não há streaming de tokens.
-- Projetos persistentes estão disponíveis localmente, com criação, edição, arquivamento, detalhes e associação de conversas. O painel do projeto lista as conversas vinculadas e permite reabri-las. O gerenciador de tarefas persistentes permite criar, consultar, editar, definir prioridade e prazo, filtrar e atualizar o estado. O painel Memória consulta somente registros já carregados em memória pelo núcleo, sem abrir ou alterar arquivos. Execução automática/em segundo plano e anexos seguem pendentes.
+- A versão atual é local e de usuário único. Não há autenticação nem acesso remoto.
+- O serviço permanece vinculado a loopback. Não encaminhe a porta nem exponha a API à rede.
+- O streaming SSE envia snapshots acumulados do núcleo. O fluxo Ollama apresenta atualizações durante a geração; OpenJarvis entrega a resposta em bloco. Ainda não há cancelamento seguro da inferência.
+- Projetos, conversas e tarefas persistem no SQLite. Tarefas aceitam cadastro, edição, prioridade, prazo e mudança de estado, mas não executam ações automaticamente nem rodam em segundo plano.
+- O painel Memória é somente leitura e consulta registros já carregados pelo núcleo. A memória persistente geral continua compartilhada conforme as regras originais do SERMAX.
+- Anexos por conversa aceitam PDF, DOCX, TXT UTF-8, JPEG e PNG, com limites de tamanho e validação de conteúdo. A extração textual e o contexto dos anexos estão integrados à conversa, com orçamento limitado e tratamento do conteúdo como dado não confiável.
+- OCR local opcional atende imagens e páginas PDF digitalizadas quando Tesseract, idiomas e dependências estão instalados. O CI não comprova a qualidade do OCR nem a execução real dos motores locais.
 - Se dependências do núcleo estiverem ausentes, a API retorna erro explícito e não inventa resposta.
-- Compatibilidade real com o ambiente Python do computador precisa ser testada.
-- A interface ainda não passou por teste automatizado de interação em navegador.
+- A compatibilidade com o ambiente Python do computador e a integração real com Ollama/OpenJarvis ainda exigem homologação local.
+- Os testes de interface usam DOM simulado. Ainda falta teste visual em navegador real.
 - Não é hospedagem pública nem instalador validado.
 
 ## Inicializador da Plataforma
@@ -100,9 +105,9 @@ A implementação está em branch e diretório separados. Não altera a branch `
 
 A primeira etapa de anexos está implementada em `backend/attachment_service.py`. Os arquivos ficam em `DATA_DIR/attachments`, fora da pasta pública da interface. O SQLite registra ID, conversa, nome de apresentação, extensão, MIME detectado, tamanho, SHA-256, nome físico UUID e texto extraído.
 
-Formatos aceitos: PDF, DOCX, TXT UTF-8, JPEG e PNG. A validação considera assinatura e parser, não confia no MIME informado pelo navegador. Limites: 10 MiB por arquivo, 5 arquivos por conversa e 25 MiB por conversa. PDF criptografado é rejeitado e limitado a 100 páginas. DOCX verifica a estrutura ZIP, caminhos internos, macros e relacionamentos externos. Imagens têm limite de 20 milhões de pixels e não recebem OCR.
+Formatos aceitos: PDF, DOCX, TXT UTF-8, JPEG e PNG. A validação considera assinatura e parser, não confia no MIME informado pelo navegador. Limites: 10 MiB por arquivo, 5 arquivos por conversa e 25 MiB por conversa. PDF criptografado é rejeitado e limitado a 100 páginas. DOCX verifica a estrutura ZIP, caminhos internos, macros e relacionamentos externos. Imagens têm limite de 20 milhões de pixels. JPEG, PNG e páginas PDF sem texto nativo passam por OCR local opcional, com limites próprios e estado de extração registrado.
 
-A interface permite selecionar arquivos, remover da fila, enviar, listar, baixar e excluir. Downloads são enviados como `application/octet-stream` com disposição de anexo. Os endpoints verificam a associação do ID à conversa. A extração de texto fica disponível para PDF, DOCX e TXT.
+A interface permite selecionar arquivos, remover da fila, enviar, listar, baixar e excluir. Downloads são enviados como `application/octet-stream` com disposição de anexo. Os endpoints verificam a associação do ID à conversa. A extração de texto fica disponível para PDF, DOCX e TXT. OCR local atende JPEG, PNG e até cinco páginas digitalizadas por PDF.
 
 Rotas:
 - `POST /api/conversations/{conversation_id}/attachments`
@@ -120,7 +125,73 @@ A integração de contexto consulta até cinco anexos vinculados à conversa atu
 
 O contexto não é gravado na tabela de mensagens nem na memória pessoal. A Plataforma reconstrói a sessão para a conversa, executa a solicitação e restaura a sessão global original. O arquivo `SERMAX-Windows/sermax_core.py` não foi alterado.
 
-Anexos de imagem são informados ao modelo somente por metadados. OCR e análise visual não estão disponíveis nesta etapa. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
+Anexos de imagem com OCR concluído entram no contexto como texto reconhecido, identificado como OCR e sujeito a erros. Quando o motor ou os idiomas não estão disponíveis, o MAX recebe essa limitação por metadados. O sistema não faz análise visual. A extração textual permanece limitada pelo orçamento de prompt existente no núcleo; o sistema não afirma ter lido o documento completo quando transmite somente trechos.
 
 
 A proteção de instruções usa duas mensagens separadas: a instrução de segurança permanece no papel `system`; o JSON com os trechos extraídos entra no papel `user`. Assim, o texto dos arquivos não recebe o mesmo nível de autoridade da instrução de proteção.
+
+
+## OCR local de anexos
+
+O OCR é executado no computador que hospeda a Plataforma. Não há envio das imagens ou páginas a serviços externos. JPEG e PNG passam pelo Tesseract local. Em PDFs, o pypdf extrai primeiro o texto nativo; páginas sem texto são renderizadas pelo PDFium via pypdfium2 e encaminhadas ao Tesseract.
+
+Limites: 8 segundos por imagem/página; até cinco páginas digitalizadas por PDF; renderização a 150 DPI, limitada a 3.000 pixels no maior lado; imagens de OCR reduzidas a no máximo 9 milhões de pixels. O limite original de 20 milhões de pixels para validação do arquivo permanece.
+
+Dependências Python: pytesseract e pypdfium2. O executável Tesseract e os dados de idioma são componentes locais separados. O idioma padrão é por+eng. No Windows, instale o Tesseract e os arquivos de idioma português (por) e inglês (eng). O caminho do executável pode ser informado por SERMAX_TESSERACT_CMD; sem essa configuração, a Plataforma procura tesseract no PATH.
+
+A ausência do executável, do pacote Python, dos dados de idioma ou do renderizador não bloqueia o upload. O SQLite registra extraction_method e extraction_status, e a interface mostra o estado. PDFs com texto nativo continuam legíveis sem OCR. Em documentos mistos, o texto nativo e o OCR são combinados, identificando as páginas reconhecidas.
+
+O OCR não é prova de fidelidade. O MAX recebe a indicação de que o trecho veio de OCR e que pode conter erros. O conteúdo continua sendo dado não confiável, sem autoridade para alterar instruções do sistema. O contexto segue limitado a 2.600 caracteres agregados e 650 por arquivo.
+
+A execução automatizada testa a integração com o renderizador PDF e simula a resposta do Tesseract. Ela não comprova a instalação do executável nem a qualidade do reconhecimento. A homologação com Tesseract real, pacote por+eng e imagens de referência continua pendente.
+
+Licenças para a futura distribuição: Tesseract está sob Apache-2.0. pypdfium2 declara Apache-2.0/BSD-3-Clause e PDFium usa licença BSD-style, com licenças de dependências que devem acompanhar distribuições binárias. Antes de empacotar a Plataforma, revisar e incluir os avisos correspondentes.
+
+Referências técnicas:
+- Tesseract, instalação e idiomas: https://tesseract-ocr.github.io/tessdoc/Installation
+- pypdfium2, instalação e licenças: https://pypdfium2.readthedocs.io/en/stable/readme.html
+
+
+O painel Motores também informa se o Tesseract local está disponível e se os dados de idioma português (por) e inglês (eng) estão instalados. A consulta executa somente Tesseract --list-langs, com timeout de 2 segundos. Ela não inicia OCR nem processa anexos.
+
+
+## Homologação local isolada
+
+Depois de obter esta branch e instalar as dependências de backend no ambiente Python ativo, execute no PowerShell, a partir da raiz do repositório:
+
+```powershell
+python SERMAX-Platform/tools/run_homologation.py
+```
+
+O launcher usa o código do núcleo presente no repositório, mas define SERMAX_ROOT e SERMAX_PLATFORM_DATA para uma pasta temporária. A memória SERMAX, a memória neural e o banco SQLite da Plataforma ficam nessa pasta e são apagados quando o servidor encerra. Nenhum arquivo de memória é copiado de C:\SERMAX. O worker OpenJarvis é copiado para a pasta temporária; o executável Python do ambiente OpenJarvis é preservado pela variável SERMAX_JARVIS_PYTHON, se configurada. O caminho do Tesseract também é preservado pela variável SERMAX_TESSERACT_CMD. O launcher desativa gravação de bytecode no processo e nos subprocessos.
+
+O modo de homologação bloqueia as funções de execução de comandos e planos. Consultas locais de leitura continuam disponíveis. Abra http://127.0.0.1:8765, verifique os cartões Motores, envie uma imagem e um PDF digitalizado de teste e encerre com Ctrl+C. Não use comandos operacionais neste modo.
+
+O launcher não instala dependências nem modelos. Se os módulos Python estiverem ausentes, instale SERMAX-Platform/backend/requirements.txt no ambiente Python ativo. Para OpenJarvis, configure SERMAX_JARVIS_PYTHON com o caminho do python.exe do ambiente já instalado. Para Tesseract fora do PATH, configure SERMAX_TESSERACT_CMD.
+
+
+A validação e extração dos anexos agora ocorre fora do event loop assíncrono da API, em worker thread. Os trabalhos de OCR são serializados por um bloqueio local para evitar renderizações e reconhecimentos simultâneos concorrentes, reduzindo picos de CPU e memória. O teste de API confirma que a extração ocorre em thread diferente da thread do event loop.
+
+
+### Teste real do OCR local
+
+Antes de iniciar a Plataforma, execute:
+
+```powershell
+python SERMAX-Platform/tools/check_local_ocr.py
+```
+
+O teste gera em memória uma imagem sintética com o texto `SERMAX OCR TESTE 2026 12345`, executa o Tesseract real na imagem e em um PDF digitalizado montado em memória e verifica se os marcadores foram reconhecidos. Não lê arquivos pessoais, não grava arquivos e não envia dados à rede. Resultado `passed` confirma o funcionamento básico do motor e do renderizador naquele ambiente, mas não mede precisão em documentos reais. O teste exige Tesseract com `por` e `eng`, `pytesseract` e `pypdfium2` instalados.
+
+
+### Teste real dos motores locais
+
+Para verificar uma resposta real pelo roteamento do núcleo, execute:
+
+```powershell
+python SERMAX-Platform/tools/check_local_inference.py
+```
+
+O script envia uma solicitação fixa ao SERMAX. O núcleo tenta OpenJarvis local e usa Ollama local como fallback, conforme a configuração existente. A variável `SERMAX_JARVIS_PYTHON` deve apontar para o `python.exe` do ambiente OpenJarvis já instalado para que esse backend seja testado; sem ela, o adaptador procura `.venv-jarvis` dentro da pasta temporária e tende a seguir pelo fallback Ollama. O modelo definido no núcleo é `sermax`; confirme que esse modelo existe no Ollama com `ollama list`.
+
+O script direciona `SERMAX_ROOT` para uma pasta temporária, não carrega os arquivos de memória pessoais e bloqueia as funções de execução de comandos e planos. A pergunta fixa é `Responda exatamente com SERMAX_LOCAL_OK e nada mais.`. O relatório indica backend, agente, fallback e resposta. A pasta temporária é removida ao encerrar. O teste executa inferência real nos motores locais e pode levar alguns minutos; não é executado pelo CI.

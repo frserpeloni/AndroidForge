@@ -193,8 +193,10 @@ class ChatStreamApiTests(unittest.TestCase):
     def test_attachment_context_is_bounded_and_image_limitation_is_explicit(self):
         from server import build_attachment_context, MAX_ATTACHMENT_CONTEXT_CHARS
         rows = [
-            {"original_name": "texto.txt", "extracted_text": "Dado técnico relevante. " * 500},
-            {"original_name": "foto.png", "extracted_text": None},
+            {"original_name": "texto.txt", "extracted_text": "Dado técnico relevante. " * 500,
+             "extraction_method": "native", "extraction_status": "completed"},
+            {"original_name": "foto.png", "extracted_text": None,
+             "extraction_method": "none", "extraction_status": "engine_unavailable"},
         ]
         context = build_attachment_context(rows, "Dado técnico")
         self.assertIsNotNone(context)
@@ -204,8 +206,24 @@ class ChatStreamApiTests(unittest.TestCase):
         combined = instruction["content"] + payload["content"]
         self.assertIn("texto.txt", combined)
         self.assertIn("foto.png", combined)
-        self.assertIn("OCR e análise visual não estão disponíveis", combined)
+        self.assertIn("OCR local indisponível neste computador", combined)
         self.assertLessEqual(len(combined), MAX_ATTACHMENT_CONTEXT_CHARS + 1800)
+
+
+    def test_ocr_attachment_context_identifies_source_and_accuracy_limit(self):
+        from server import build_attachment_context
+        rows = [{
+            "original_name": "foto.png",
+            "extracted_text": "Texto reconhecido por OCR.",
+            "extraction_method": "ocr",
+            "extraction_status": "completed",
+        }]
+        context = build_attachment_context(rows, "texto reconhecido")
+        self.assertIsNotNone(context)
+        payload = context[1]["content"]
+        self.assertIn("Texto reconhecido por OCR local", payload)
+        self.assertIn("pode conter erros", payload)
+        self.assertIn("foto.png", payload)
 
     def test_empty_stream_message_is_rejected(self):
         response = self.client.post(
