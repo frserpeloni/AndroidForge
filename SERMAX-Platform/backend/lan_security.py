@@ -265,8 +265,8 @@ def finalize_pairing(
                 """SELECT r.code, r.device, r.expires_at, p.expires_at, p.attempts_left,
                           a.device, a.expires_at
                    FROM pairing_reservations AS r
-                   JOIN device_pairings AS p ON p.code = r.code
-                   JOIN local_pairing_approvals AS a ON a.reservation_id = r.reservation_id
+                   LEFT JOIN device_pairings AS p ON p.code = r.code
+                   LEFT JOIN local_pairing_approvals AS a ON a.reservation_id = r.reservation_id
                    WHERE r.reservation_id = ?""",
                 (reservation_id,),
             ).fetchone()
@@ -274,16 +274,41 @@ def finalize_pairing(
                 conn.rollback()
                 return None
             code, reserved_device, reservation_expiry, code_expiry, attempts, approved_device, approval_expiry = row
+
+            # Uma tentativa com outro identificador de dispositivo não deve
+            # consumir a reserva legítima nem permitir negação de serviço.
+            if reserved_device != device:
+                conn.rollback()
+                return None
+
+            # Expiração é verificada mesmo quando ainda não existe aprovação.
+            # LEFT JOIN permite limpar reservas vencidas sem exigir aprovação.
             if (
-                reserved_device != device
-                or approved_device != device
+                code_expiry is None
+                or attempts is None
                 or now >= reservation_expiry
                 or now >= code_expiry
-                or now >= approval_expiry
                 or attempts <= 0
             ):
                 conn.execute(
+                    "DELETE FROM local_pairing_approvals WHERE reservation_id = ?",
+                    (reservation_id,),
+                )
+                conn.execute(
                     "DELETE FROM pairing_reservations WHERE reservation_id = ?",
+                    (reservation_id,),
+                )
+                conn.commit()
+                return None
+
+            # Ausência ou incompatibilidade da aprovação não consome a reserva.
+            # A aprovação local válida ainda pode ser registrada em seguida.
+            if approved_device != device or approval_expiry is None:
+                conn.rollback()
+                return None
+            if now >= approval_expiry:
+                conn.execute(
+                    "DELETE FROM local_pairing_approvals WHERE reservation_id = ?",
                     (reservation_id,),
                 )
                 conn.commit()
