@@ -246,3 +246,39 @@ PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada. 
 - Próximas etapas: desenhar e testar o ciclo de aprovação local; integrar autenticação por dispositivo à API em etapa isolada; revisar sessões, CSRF, Host/Origin, rate limits e auditoria; só depois implementar transporte remoto HTTPS por conexão de saída/relay seguro.
 - Não alterar bind, middleware, CORS, TLS, firewall ou expor portas nesta etapa. Não liberar acesso remoto antes dos testes de segurança e homologação Android.
 - PR #27 permanece aberta em Draft e sem merge. A branch `main), `C:\\SERMAX`, Terminal, memória e backups permanecem preservados.
+
+## Pareamento de dispositivos: revisão do contrato de aprovação, 24/11/2026
+
+**Estado: revisão de projeto. Não integrado à API, não habilita rede e não altera o servidor central.**
+
+A inspeção de `backend/lan_security.py` confirmou que `complete_pairing()` executa `approval_verifier(device, code)` dentro de uma transação `BEGIN IMMEDIATE`. Esse callback não deve consultar a mesma base SQLite: uma segunda conexão pode aguardar o bloqueio mantido pela primeira até ocorrer timeout. Também não é seguro mover a consulta para fora da transação sem um mecanismo de reserva, pois duas requisições concorrentes poderiam validar a mesma aprovação ou consumir o mesmo código.
+
+### Contrato exigido para a próxima implementação
+
+1. **Reserva atômica:** abrir transação curta, validar código, dispositivo, expiração e tentativas; gerar um identificador aleatório de reserva e registrar a reserva com prazo curto. A operação deve impedir que outro consumidor reserve o mesmo código.
+2. **Verificação fora do SQLite:** encerrar a transação antes de consultar a aprovação. O verificador deve consultar exclusivamente um estado de aprovação originado pela interface administrativa local. Dados enviados pelo cliente remoto nunca são prova de aprovação.
+3. **Vínculo da aprovação:** a aprovação precisa estar vinculada ao dispositivo, ao código e ao identificador exato da reserva. Uma aprovação genérica para o dispositivo não atende ao contrato.
+4. **Consumo atômico:** abrir nova transação curta e confirmar que a reserva ainda existe, pertence ao mesmo dispositivo, não expirou e mantém o mesmo identificador. Só então emitir a credencial, consumir o código e remover a reserva na mesma transação.
+5. **Falha fechada:** recusa, timeout, exceção, reserva expirada, código consumido ou identificador divergente não emitem credencial. A limpeza de reservas vencidas não pode apagar uma reserva ativa.
+6. **Concorrência:** duas solicitações simultâneas para o mesmo código devem resultar em no máximo uma reserva válida e uma credencial. A aprovação não pode ser reaproveitada para outra reserva.
+7. **Recuperação:** queda do processo entre reserva e confirmação deve deixar uma reserva temporária que expire automaticamente. Nenhuma credencial é emitida antes da confirmação final.
+8. **Auditoria:** registrar eventos e identificadores não secretos. Nunca registrar código de pareamento, credencial, token de aprovação ou segredo de assinatura.
+
+### Critérios de teste antes da integração
+
+- Duas threads tentam reservar o mesmo código simultaneamente.
+- A aprovação local é recusada, indisponível ou lança exceção.
+- A reserva expira enquanto a aprovação está pendente.
+- O código é consumido, revogado ou substituído antes da confirmação final.
+- Uma aprovação emitida para outro dispositivo, código ou reserva é rejeitada.
+- O processo falha depois da reserva e antes da confirmação.
+- A transação de aprovação não chama SQLite nem depende de uma conexão SQLite aberta.
+- Migração de bancos existentes, inclusive credenciais antigas com `expires_at=0`, mantém comportamento de falha fechada.
+- A credencial só aparece uma vez, após commit confirmado, e o armazenamento continua contendo somente hash e salt.
+
+### Decisão pendente
+
+Antes de codificar, definir o mecanismo concreto de aprovação local e seu ciclo de vida. A opção preferida é um ticket de aprovação de uso único, vinculado à reserva e validável sem reentrar na base SQLite; o consumo do ticket precisa ser atômico com a emissão da credencial ou, em caso de falha, exigir nova aprovação. Não adotar callback booleano como prova suficiente.
+
+Até essa decisão e os testes correspondentes, `complete_pairing()` permanece um componente isolado de pesquisa, sem integração com `backend/server.py`. A API continua em loopback. Nenhuma porta, regra de firewall, CORS, TLS ou middleware foi alterada.
+
