@@ -227,3 +227,22 @@ PR #27 permanece aberta em Draft, sem merge. A branch `main` não foi alterada. 
 - O workflow já contém o passo de testes de pareamento em Linux e Windows. A consulta disponível de execuções/status ainda não retornou execução associada a esse commit. Portanto, testes CI permanecem **não confirmados**.
 - O callback ainda não está conectado a uma UI administrativa real. A fronteira de confiança depende dessa integração futura e de sua revisão. Esta alteração remove a aprovação booleana controlada pelo chamador, mas não habilita pareamento remoto.
 - Nenhuma alteração em `server.py`, bind, middleware, CORS, TLS, firewall, Terminal, memória, `C:\\SERMAX`, backups ou `main`. PR #27 permanece em Draft e sem merge.
+
+
+## Correção do fechamento SQLite e CI #782, 24/11/2026
+
+- O teste `test_hash_is_stored_not_plaintext` mantinha uma conexão SQLite aberta após o bloco `with sqlite3.connect(...)`. Esse gerenciador encerra a transação, mas não garante o fechamento da conexão.
+- O teste foi corrigido para usar `contextlib.closing(sqlite3.connect(...))`, garantindo `conn.close()` antes da limpeza do diretório temporário.
+- Commit: `dd7be36e862d4eaadbddb533093d8e5a733c97f1`.
+- Execução [CI #782](https://github.com/frserpeloni/AndroidForge/actions/runs/45431292204): os cinco jobs passaram, incluindo `windows-validation`, backend Python 3.12, backend Python 3.14, frontend-check e frontend-interaction.
+- O erro `PermissionError: [WinError 32]` não voltou a ocorrer nessa execução.
+
+### Limites e próximos bloqueios
+
+- O CI confirma a suíte automatizada no runner Windows do GitHub, não no PC físico do operador.
+- `backend/server.py` permanece fora das alterações desta PR. A API continua restrita a `127.0.0.1:8765`; o acesso pelo Android ainda não está implementado.
+- O serviço de pareamento ainda não está integrado à API nem a uma UI administrativa local real.
+- `complete_pairing()` executa `approval_verifier` dentro de uma transação `BEGIN IMMEDIATE`. Um verificador que consultar a mesma base SQLite pode provocar bloqueio. Antes da integração, definir um fluxo de aprovação sem reentrada na mesma conexão e sem janela TOCTOU.
+- Próximas etapas: desenhar e testar o ciclo de aprovação local; integrar autenticação por dispositivo à API em etapa isolada; revisar sessões, CSRF, Host/Origin, rate limits e auditoria; só depois implementar transporte remoto HTTPS por conexão de saída/relay seguro.
+- Não alterar bind, middleware, CORS, TLS, firewall ou expor portas nesta etapa. Não liberar acesso remoto antes dos testes de segurança e homologação Android.
+- PR #27 permanece aberta em Draft e sem merge. A branch `main), `C:\\SERMAX`, Terminal, memória e backups permanecem preservados.
