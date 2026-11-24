@@ -282,3 +282,19 @@ Antes de codificar, definir o mecanismo concreto de aprovação local e seu cicl
 
 Até essa decisão e os testes correspondentes, `complete_pairing()` permanece um componente isolado de pesquisa, sem integração com `backend/server.py`. A API continua em loopback. Nenhuma porta, regra de firewall, CORS, TLS ou middleware foi alterada.
 
+## Implementação isolada do pareamento em duas fases, 24/11/2026
+
+A branch de desenvolvimento substituiu o callback de aprovação executado dentro de `BEGIN IMMEDIATE` por um fluxo explícito em três operações:
+
+- `reserve_pairing()`: valida o código, aplica limite de tentativas e cria uma reserva exclusiva com prazo curto.
+- `approve_pairing_locally()`: registra aprovação vinculada ao identificador da reserva e ao dispositivo. A camada de servidor deve chamar esta função exclusivamente após ação explícita na administração local do PC.
+- `finalize_pairing()`: em uma única transação, valida reserva, código e aprovação, emite a credencial, consome a aprovação e remove a reserva e o código.
+
+A credencial continua armazenada como PBKDF2-HMAC-SHA256 com salt aleatório. A aprovação não é recebida do cliente remoto e não existe callback externo dentro da transação de emissão. Reservas expiradas e suas aprovações associadas são removidas pela limpeza.
+
+Testes adicionados cobrem reserva concorrente, finalização concorrente, aprovação vinculada a dispositivo e reserva, rejeição sem aprovação, expiração, replay, revogação, troca de credencial, hash persistido e migração de credenciais antigas com `expires_at=0` em modo fail-closed.
+
+**Limites atuais:** as funções estão isoladas no módulo e ainda não foram conectadas a uma UI administrativa local nem à API. A separação de responsabilidade é um contrato de módulo, não uma barreira de autorização de processo: a futura integração deve garantir que nenhum endpoint remoto invoque `approve_pairing_locally()`. A API permanece em loopback; não há acesso Android, túnel, TLS remoto ou exposição de portas nesta entrega.
+
+A validação automatizada do novo fluxo está pendente do CI do commit mais recente. Não considerar homologado até todos os jobs terminarem com sucesso e a revisão dos resultados ser concluída.
+
