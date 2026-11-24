@@ -96,7 +96,7 @@ class LanSecurityTests(unittest.TestCase):
     def test_hash_is_stored_not_plaintext(self):
         code = self.issue()
         credential = lan_security.complete_pairing("phone", code, approval_verifier=lambda device, pairing_code: True, db_path=self.db)
-        with sqlite3.connect(self.db) as conn:
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
             stored_hash, salt = conn.execute(
                 "SELECT credential_hash, salt FROM device_credentials WHERE device='phone'"
             ).fetchone()
