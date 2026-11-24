@@ -1,10 +1,9 @@
-"""Pareamento local e credenciais persistentes de dispositivos.
+"""Pareamento em duas fases e credenciais persistentes de dispositivos.
 
-A emissão de credenciais exige um verificador confiável, injetado pelo servidor.
-Esse verificador deve consultar uma aprovação originada exclusivamente na UI
-administrativa local. Nunca passe dados de aprovação recebidos do cliente.
+A aprovação local é registrada separadamente da reserva. A emissão da credencial
+e o consumo da aprovação ocorrem na mesma transação SQLite. A camada HTTP deve
+expor approve_pairing_locally exclusivamente à administração local do PC.
 """
-
 from __future__ import annotations
 
 import hashlib
@@ -14,7 +13,7 @@ import sqlite3
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Iterator
 
 DEFAULT_DB_PATH = Path("data_dir/lan_security.db")
 HASH_ITERATIONS = 200_000
@@ -22,10 +21,10 @@ SALT_LENGTH = 16
 MAX_DEVICE_LENGTH = 128
 MAX_TTL_SECONDS = 86_400
 MAX_ATTEMPTS = 20
-DEFAULT_CREDENTIAL_TTL_SECONDS = 7776000
-MAX_CREDENTIAL_TTL_SECONDS = 31536000
-
-ApprovalVerifier = Callable[[str, str], bool]
+DEFAULT_CREDENTIAL_TTL_SECONDS = 7_776_000
+MAX_CREDENTIAL_TTL_SECONDS = 31_536_000
+DEFAULT_RESERVATION_TTL_SECONDS = 180
+MAX_RESERVATION_TTL_SECONDS = 900
 
 
 def _validate_device(device: str) -> None:
@@ -66,6 +65,23 @@ def _connection(db_path: Path | str) -> Iterator[sqlite3.Connection]:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(device_credentials)")}
         if "expires_at" not in columns:
             conn.execute("ALTER TABLE device_credentials ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0")
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pairing_reservations (
+                reservation_id TEXT PRIMARY KEY,
+                code TEXT NOT NULL UNIQUE,
+                device TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                FOREIGN KEY(code) REFERENCES device_pairings(code) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS local_pairing_approvals (
+                reservation_id TEXT PRIMARY KEY,
+                device TEXT NOT NULL,
+                expires_at INTEGER NOT NULL,
+                FOREIGN KEY(reservation_id) REFERENCES pairing_reservations(reservation_id) ON DELETE CASCADE
+            )
+        """)
         yield conn
     finally:
         conn.close()
@@ -104,30 +120,26 @@ def generate_pairing_code(
     return code
 
 
-def complete_pairing(
+def reserve_pairing(
     device: str,
     code: str,
     *,
-    approval_verifier: ApprovalVerifier,
-    credential_ttl_seconds: int = DEFAULT_CREDENTIAL_TTL_SECONDS,
+    reservation_ttl_seconds: int = DEFAULT_RESERVATION_TTL_SECONDS,
     db_path: Path | str = DEFAULT_DB_PATH,
 ) -> str | None:
-    """Emite credencial após confirmação por verificador confiável do servidor.
+    """Reserva atomicamente um código válido para um único pedido de dispositivo.
 
-    approval_verifier deve ser uma função interna do servidor, ligada ao estado
-    de aprovação produzido pela UI administrativa local. Nunca aceite callback,
-    booleano ou resultado de aprovação enviado em uma requisição remota.
-
-    O chamador entrega o segredo ao dispositivo por canal protegido. O servidor
-    armazena somente o hash da credencial.
+    O identificador retornado não é uma credencial. A camada HTTP pode retorná-lo
+    ao cliente para acompanhar o pedido, mas nunca deve aceitar aprovação remota.
     """
     _validate_device(device)
-    if not callable(approval_verifier):
-        raise PermissionError("verificador de aprovação local do servidor é obrigatório")
-    _validate_positive_int(credential_ttl_seconds, "credential_ttl_seconds", MAX_CREDENTIAL_TTL_SECONDS)
+    _validate_positive_int(
+        reservation_ttl_seconds, "reservation_ttl_seconds", MAX_RESERVATION_TTL_SECONDS
+    )
     if not isinstance(code, str) or not code or len(code) > 256:
         raise ValueError("code inválido")
 
+    now = int(time.time())
     with _connection(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -138,13 +150,11 @@ def complete_pairing(
             if row is None:
                 conn.rollback()
                 return None
-
-            expected_device, expires_at, attempts_left = row
-            if int(time.time()) >= expires_at or attempts_left <= 0:
+            expected_device, code_expires, attempts_left = row
+            if now >= code_expires or attempts_left <= 0:
                 conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
                 conn.commit()
                 return None
-
             if not hmac.compare_digest(expected_device.encode(), device.encode()):
                 remaining = attempts_left - 1
                 if remaining <= 0:
@@ -157,16 +167,121 @@ def complete_pairing(
                 conn.commit()
                 return None
 
-            # O callback é injetado pelo servidor, nunca obtido do payload remoto.
-            if approval_verifier(device, code) is not True:
+            active = conn.execute(
+                "SELECT 1 FROM pairing_reservations WHERE code = ? AND expires_at > ?",
+                (code, now),
+            ).fetchone()
+            if active:
                 conn.rollback()
-                raise PermissionError("pareamento ainda não aprovado na administração local")
+                return None
+            conn.execute("DELETE FROM pairing_reservations WHERE code = ?", (code,))
+            reservation_id = secrets.token_urlsafe(32)
+            conn.execute(
+                """INSERT INTO pairing_reservations
+                   (reservation_id, code, device, expires_at) VALUES (?, ?, ?, ?)""",
+                (reservation_id, code, device, min(code_expires, now + reservation_ttl_seconds)),
+            )
+            conn.commit()
+            return reservation_id
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+
+
+def approve_pairing_locally(
+    reservation_id: str,
+    device: str,
+    *,
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> bool:
+    """Registra aprovação administrativa local para uma reserva específica.
+
+    Esta função é uma operação privilegiada. O servidor deve chamá-la somente
+    após ação explícita na UI local do PC, nunca a partir de endpoint remoto.
+    """
+    _validate_device(device)
+    if not isinstance(reservation_id, str) or not reservation_id or len(reservation_id) > 128:
+        raise ValueError("reservation_id inválido")
+    now = int(time.time())
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                """SELECT device, expires_at FROM pairing_reservations
+                   WHERE reservation_id = ?""",
+                (reservation_id,),
+            ).fetchone()
+            if row is None or row[0] != device or now >= row[1]:
+                conn.rollback()
+                return False
+            conn.execute(
+                """INSERT INTO local_pairing_approvals(reservation_id, device, expires_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(reservation_id) DO UPDATE SET
+                     device=excluded.device, expires_at=excluded.expires_at""",
+                (reservation_id, device, row[1]),
+            )
+            conn.commit()
+            return True
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
+
+
+def finalize_pairing(
+    reservation_id: str,
+    device: str,
+    *,
+    credential_ttl_seconds: int = DEFAULT_CREDENTIAL_TTL_SECONDS,
+    db_path: Path | str = DEFAULT_DB_PATH,
+) -> str | None:
+    """Consome reserva e aprovação local atomicamente e emite uma credencial."""
+    _validate_device(device)
+    _validate_positive_int(
+        credential_ttl_seconds, "credential_ttl_seconds", MAX_CREDENTIAL_TTL_SECONDS
+    )
+    if not isinstance(reservation_id, str) or not reservation_id or len(reservation_id) > 128:
+        raise ValueError("reservation_id inválido")
+
+    now = int(time.time())
+    with _connection(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = conn.execute(
+                """SELECT r.code, r.device, r.expires_at, p.expires_at, p.attempts_left,
+                          a.device, a.expires_at
+                   FROM pairing_reservations AS r
+                   JOIN device_pairings AS p ON p.code = r.code
+                   JOIN local_pairing_approvals AS a ON a.reservation_id = r.reservation_id
+                   WHERE r.reservation_id = ?""",
+                (reservation_id,),
+            ).fetchone()
+            if row is None:
+                conn.rollback()
+                return None
+            code, reserved_device, reservation_expiry, code_expiry, attempts, approved_device, approval_expiry = row
+            if (
+                reserved_device != device
+                or approved_device != device
+                or now >= reservation_expiry
+                or now >= code_expiry
+                or now >= approval_expiry
+                or attempts <= 0
+            ):
+                conn.execute(
+                    "DELETE FROM pairing_reservations WHERE reservation_id = ?",
+                    (reservation_id,),
+                )
+                conn.commit()
+                return None
 
             credential = secrets.token_urlsafe(32)
             digest, salt = _hash_credential(credential)
-            now = int(time.time())
             conn.execute(
-                """INSERT INTO device_credentials(device, credential_hash, salt, created_at, expires_at, revoked)
+                """INSERT INTO device_credentials
+                   (device, credential_hash, salt, created_at, expires_at, revoked)
                    VALUES (?, ?, ?, ?, ?, 0)
                    ON CONFLICT(device) DO UPDATE SET
                      credential_hash=excluded.credential_hash,
@@ -176,6 +291,8 @@ def complete_pairing(
                      revoked=0""",
                 (device, digest, salt, now, now + credential_ttl_seconds),
             )
+            conn.execute("DELETE FROM local_pairing_approvals WHERE reservation_id = ?", (reservation_id,))
+            conn.execute("DELETE FROM pairing_reservations WHERE reservation_id = ?", (reservation_id,))
             conn.execute("DELETE FROM device_pairings WHERE code = ?", (code,))
             conn.commit()
             return credential
@@ -226,16 +343,21 @@ def revoke(device: str, db_path: Path | str = DEFAULT_DB_PATH) -> bool:
 
 
 def cleanup_expired(db_path: Path | str = DEFAULT_DB_PATH) -> int:
-    """Remove códigos de pareamento expirados ou esgotados."""
+    """Remove códigos, reservas e aprovações expirados."""
+    now = int(time.time())
     with _connection(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
             cur = conn.execute(
+                "DELETE FROM pairing_reservations WHERE expires_at <= ?", (now,)
+            )
+            conn.execute(
                 "DELETE FROM device_pairings WHERE expires_at <= ? OR attempts_left <= 0",
-                (int(time.time()),),
+                (now,),
             )
             conn.commit()
             return cur.rowcount
         except Exception:
-            conn.rollback()
+            if conn.in_transaction:
+                conn.rollback()
             raise
