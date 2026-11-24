@@ -101,7 +101,7 @@ class LanSecurityTests(unittest.TestCase):
         first = self.reserve("phone", code, reservation_ttl_seconds=1)
         with patch.object(lan_security.time, "time", return_value=10**12):
             self.assertIsNone(self.finalize(first))
-            second = self.reserve("phone", code)
+        second = self.reserve("phone", code)
         self.assertIsInstance(second, str)
         self.assertNotEqual(first, second)
 
@@ -198,6 +198,11 @@ class LanSecurityTests(unittest.TestCase):
         with patch.object(lan_security.time, "time", return_value=10**12):
             self.assertEqual(lan_security.cleanup_expired(self.db), 1)
             self.assertFalse(self.approve(reservation))
+            with contextlib.closing(sqlite3.connect(self.db)) as conn:
+                orphan_approvals = conn.execute(
+                    "SELECT COUNT(*) FROM local_pairing_approvals"
+                ).fetchone()[0]
+            self.assertEqual(orphan_approvals, 0)
             self.assertIsNone(self.reserve("phone", code))
 
     def test_legacy_credentials_with_zero_expiry_fail_closed(self):
