@@ -174,7 +174,19 @@ def reserve_pairing(
             if active:
                 conn.rollback()
                 return None
-            conn.execute("DELETE FROM pairing_reservations WHERE code = ?", (code,))
+            expired_ids = [row[0] for row in conn.execute(
+                "SELECT reservation_id FROM pairing_reservations WHERE code = ? AND expires_at <= ?",
+                (code, now),
+            )]
+            for expired_id in expired_ids:
+                conn.execute(
+                    "DELETE FROM local_pairing_approvals WHERE reservation_id = ?",
+                    (expired_id,),
+                )
+                conn.execute(
+                    "DELETE FROM pairing_reservations WHERE reservation_id = ?",
+                    (expired_id,),
+                )
             reservation_id = secrets.token_urlsafe(32)
             conn.execute(
                 """INSERT INTO pairing_reservations
@@ -348,15 +360,25 @@ def cleanup_expired(db_path: Path | str = DEFAULT_DB_PATH) -> int:
     with _connection(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         try:
-            cur = conn.execute(
-                "DELETE FROM pairing_reservations WHERE expires_at <= ?", (now,)
-            )
+            expired_ids = [row[0] for row in conn.execute(
+                "SELECT reservation_id FROM pairing_reservations WHERE expires_at <= ?",
+                (now,),
+            )]
+            for expired_id in expired_ids:
+                conn.execute(
+                    "DELETE FROM local_pairing_approvals WHERE reservation_id = ?",
+                    (expired_id,),
+                )
+                conn.execute(
+                    "DELETE FROM pairing_reservations WHERE reservation_id = ?",
+                    (expired_id,),
+                )
             conn.execute(
                 "DELETE FROM device_pairings WHERE expires_at <= ? OR attempts_left <= 0",
                 (now,),
             )
             conn.commit()
-            return cur.rowcount
+            return len(expired_ids)
         except Exception:
             if conn.in_transaction:
                 conn.rollback()
