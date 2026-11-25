@@ -33,6 +33,23 @@ class LanSecurityTests(unittest.TestCase):
             reservation, device, db_path=self.db, **kwargs
         )
 
+    def test_sqlite_foreign_keys_are_enforced(self):
+        with lan_security._connection(self.db) as conn:
+            enabled = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+            self.assertEqual(enabled, 1)
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """INSERT INTO pairing_reservations
+                       (reservation_id, code, device, expires_at)
+                       VALUES ("orphan-reservation", "missing-code", "phone", 9999999999)"""
+                )
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    """INSERT INTO local_pairing_approvals
+                       (reservation_id, device, expires_at)
+                       VALUES ("missing-reservation", "phone", 9999999999)"""
+                )
+
     def test_pairing_requires_local_approval_and_is_single_use(self):
         code = self.issue()
         reservation = self.reserve("phone", code)
