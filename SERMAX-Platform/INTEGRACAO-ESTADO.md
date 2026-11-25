@@ -298,3 +298,14 @@ Testes adicionados cobrem reserva concorrente, finalização concorrente, aprova
 
 A validação automatizada do novo fluxo está pendente do CI do commit mais recente. Não considerar homologado até todos os jobs terminarem com sucesso e a revisão dos resultados ser concluída.
 
+
+
+## Correção de integridade referencial do pareamento, 25/11/2026
+
+- A auditoria identificou que as tabelas pairing_reservations e local_pairing_approvals declaravam chaves estrangeiras, mas a conexão SQLite do módulo não habilitava PRAGMA foreign_keys=ON.
+- O módulo agora ativa a verificação de chaves estrangeiras em cada conexão, antes de executar operações.
+- Teste adicional confirma que a configuração está ativa e que reservas sem código correspondente e aprovações sem reserva são rejeitadas pelo SQLite.
+- Commits: cb0af1a31b1af5a0da9cd754927883f55323f6c8 (módulo) e e2222619183c1d8cec12e88eb4be3ff359d73cab (teste).
+- CI após os commits ainda precisa ser consultado. A alteração permanece isolada na branch da PR #27.
+- Isso corrige integridade referencial no armazenamento do pareamento. Não integra o módulo à API, não cria UI local de aprovação, não habilita autenticação HTTP e não libera acesso externo.
+- A API continua restrita a 127.0.0.1:8765. Nenhum túnel foi iniciado e nenhum endereço público foi emitido.
