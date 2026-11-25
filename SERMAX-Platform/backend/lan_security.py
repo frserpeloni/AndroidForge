@@ -44,6 +44,7 @@ def _connection(db_path: Path | str) -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(path), timeout=10, isolation_level=None)
     try:
         conn.execute("PRAGMA busy_timeout = 10000")
+        conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("""
             CREATE TABLE IF NOT EXISTS device_pairings (
                 code TEXT PRIMARY KEY,
