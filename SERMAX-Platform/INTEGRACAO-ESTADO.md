@@ -309,3 +309,43 @@ A validação automatizada do novo fluxo está pendente do CI do commit mais rec
 - CI após os commits ainda precisa ser consultado. A alteração permanece isolada na branch da PR #27.
 - Isso corrige integridade referencial no armazenamento do pareamento. Não integra o módulo à API, não cria UI local de aprovação, não habilita autenticação HTTP e não libera acesso externo.
 - A API continua restrita a 127.0.0.1:8765. Nenhum túnel foi iniciado e nenhum endereço público foi emitido.
+
+
+## CI #804 e decisão preliminar de transporte público, 27/11/2026
+
+### CI #804
+
+- Commit validado: `a0ffdeb62fb4d9d1a5eca6cd526f265eeb3ea3cc`.
+- Execução: https://github.com/frserpeloni/AndroidForge/actions/runs/45662814393
+- Resultado: cinco jobs concluídos com sucesso: `windows-validation`, backend Python 3.12, backend Python 3.14, `frontend-check` e `frontend-interaction`.
+- O job Windows executou os testes de segurança de pareamento.
+- Isso comprova a suíte automatizada nos runners do GitHub. Não comprova autenticação integrada à API, acesso público, funcionamento no PC físico ou teste Android.
+
+### Decisão preliminar de transporte
+
+Foi documentada em `ADR-REMOTE-001-TRANSPORTE-HTTPS.md` a escolha preliminar do Tailscale Funnel como candidato para publicar a SERMAX por HTTPS, sem alteração do roteador e sem exigir Tailscale nos dispositivos clientes.
+
+A documentação oficial consultada informa que o Funnel fornece URL pública HTTPS `*.ts.net`, acessível por navegadores fora do tailnet, com relay e túnel criptografado. Também informa que o serviço fica acessível a qualquer pessoa que conheça a URL, que há limites de largura de banda e que a funcionalidade está em beta. Portanto, URL não será tratada como autenticação.
+
+### Estado operacional confirmado pelo operador
+
+- Tailscale 1.104.7 instalado no PC central.
+- Serviço Windows Tailscale em estado `Running`.
+- Login do computador `DESKTOP-O5P60K0` concluído na conta Tailscale do operador.
+- IP privado exibido pelo CLI: `100.80.74.116`.
+- O usuário esclareceu que não quer instalar Tailscale no Android ou em outros clientes. Esses dispositivos devem acessar pelo navegador via URL pública HTTPS.
+- Nenhum comando Funnel foi executado. Nenhuma URL pública existe neste momento.
+- A API continua em `127.0.0.1:8765`, sem autenticação HTTP integrada.
+- O módulo de pareamento permanece isolado, sem UI administrativa local.
+
+### Próxima sequência técnica
+
+1. Projetar e implementar autenticação HTTP por dispositivo, sem abrir a rede.
+2. Implementar UI administrativa local para aprovar pareamento, inacessível por requisições remotas.
+3. Integrar revogação, expiração, rate limiting, proteção Host/Origin/CSRF, limites de payload e auditoria.
+4. Criar testes positivos e negativos para todas as rotas protegidas.
+5. Validar a API autenticada no Windows CI.
+6. Só então configurar Funnel para encaminhar HTTPS público à API local em loopback e testar com navegador externo/Android.
+7. Emitir a URL somente após o teste externo confirmar a resposta esperada e a autenticação negar clientes não autorizados.
+
+A decisão de transporte não autoriza exposição imediata. Não executar Funnel nem alterar bind, middleware, CORS ou firewall antes dos gates. PR #27 permanece aberta em Draft e sem merge. `main`, `C:\\SERMAX`, Terminal, memória e backups permanecem preservados.
