@@ -51,6 +51,35 @@ class DevelopmentProposalTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ProposalError):
                 parse_proposal(raw)
 
+
+    def test_rejects_relative_imports_in_flat_runtime_and_test_modules(self):
+        for path in (
+            "sermax_windows_private_area.py",
+            "tests/test_sermax_windows_private_area.py",
+        ):
+            raw = json.dumps({
+                "summary": "Import relativo incompatível com o runner",
+                "files": [{
+                    "path": path,
+                    "content": "from .sermax_windows_handle_io import query_handle_metadata\\n",
+                }],
+                "tests": ["unittest"],
+            })
+            with self.subTest(path=path), self.assertRaisesRegex(
+                ProposalError, "Imports relativos"
+            ):
+                parse_proposal(raw)
+
+        absolute = json.dumps({
+            "summary": "Import absoluto compatível",
+            "files": [{
+                "path": "sermax_windows_private_area.py",
+                "content": "from sermax_windows_handle_io import query_handle_metadata\\n",
+            }],
+            "tests": ["unittest"],
+        })
+        self.assertEqual(len(parse_proposal(absolute).files), 1)
+
     def test_rejects_duplicate_and_protected_paths(self):
         duplicate = json.dumps({
             "summary": "x",
