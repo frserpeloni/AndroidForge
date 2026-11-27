@@ -61,7 +61,7 @@ class DevelopmentProposalTests(unittest.TestCase):
                 "summary": "Import relativo incompatível com o runner",
                 "files": [{
                     "path": path,
-                    "content": "from .sermax_windows_handle_io import query_handle_metadata\\n",
+                    "content": "from .sermax_windows_handle_io import query_handle_metadata\n",
                 }],
                 "tests": ["unittest"],
             })
@@ -74,7 +74,7 @@ class DevelopmentProposalTests(unittest.TestCase):
             "summary": "Import absoluto compatível",
             "files": [{
                 "path": "sermax_windows_private_area.py",
-                "content": "from sermax_windows_handle_io import query_handle_metadata\\n",
+                "content": "from sermax_windows_handle_io import query_handle_metadata\n",
             }],
             "tests": ["unittest"],
         })
