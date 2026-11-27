@@ -128,6 +128,7 @@ def open_verified_child_component(
     entry: DirectoryEntry,
     *,
     desired_access: int | None = None,
+    share_access: int = 0x00000001,
 ):
     """Abre um filho e vincula o handle ao FileId enumerado de 128 bits.
 
@@ -163,6 +164,7 @@ def open_verified_child_component(
         entry.name,
         directory=entry.is_directory,
         desired_access=access,
+        share_access=share_access,
     )
     try:
         child_metadata = query_handle_metadata(child_handle)
@@ -174,8 +176,11 @@ def open_verified_child_component(
             raise HandleIoError("FileId do handle não corresponde à entrada enumerada.")
         if child_metadata["attributes"] != entry.attributes:
             raise HandleIoError("Atributos do filho mudaram desde a enumeração.")
-        if child_metadata["end_of_file"] != entry.end_of_file:
-            raise HandleIoError("Tamanho do filho mudou desde a enumeração.")
+        if (
+            not entry.is_directory
+            and child_metadata["end_of_file"] != entry.end_of_file
+        ):
+            raise HandleIoError("Tamanho do arquivo filho mudou desde a enumeração.")
         if bool(child_metadata["is_directory"]) != entry.is_directory:
             raise HandleIoError("Tipo do filho diverge da entrada enumerada.")
         return child_handle

@@ -5,6 +5,7 @@ import unittest
 from unittest import mock
 
 import sermax_windows_private_area as private_area
+import sermax_windows_effective_access as effective_access
 
 
 class PrivateAreaCreationTests(unittest.TestCase):
@@ -12,6 +13,23 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.platform = mock.patch.object(private_area.os, "name", "nt")
         self.platform.start()
         self.addCleanup(self.platform.stop)
+        self.security_buffer = ctypes.create_string_buffer(b"test-security-descriptor")
+        self.token_closer = mock.Mock()
+        self.security_setup = mock.patch.object(
+            private_area,
+            "_prepare_private_security_descriptor",
+            return_value=(
+                777, self.token_closer, self.security_buffer,
+                "S-1-5-21-100",
+            ),
+        )
+        self.security_setup.start()
+        self.addCleanup(self.security_setup.stop)
+        self.created_policy = mock.patch.object(
+            private_area, "_validate_created_private_directory"
+        )
+        self.created_policy_mock = self.created_policy.start()
+        self.addCleanup(self.created_policy.stop)
         self.pointer_size = mock.patch.object(
             private_area.ctypes, "sizeof", return_value=8
         )
@@ -89,6 +107,7 @@ class PrivateAreaCreationTests(unittest.TestCase):
                 "share": share,
                 "disposition": disposition,
                 "options": options,
+                "security_descriptor": attributes._obj.SecurityDescriptor,
             })
             out_handle._obj.value = child_handle
             return 0
@@ -115,11 +134,16 @@ class PrivateAreaCreationTests(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0]["root"], parent_handle)
         self.assertEqual(calls[0]["name"], "_update")
+        self.assertIsNotNone(calls[0]["security_descriptor"])
+        self.created_policy_mock.assert_called_once()
+        self.token_closer.assert_called_once_with(777)
         self.assertEqual(
             calls[0]["access"],
             private_area.FILE_LIST_DIRECTORY
+            | private_area.FILE_ADD_FILE
             | private_area.FILE_ADD_SUBDIRECTORY
             | private_area.FILE_READ_ATTRIBUTES
+            | private_area.READ_CONTROL
             | private_area.SYNCHRONIZE,
         )
         self.assertEqual(calls[0]["disposition"], private_area.FILE_CREATE)
@@ -302,14 +326,13 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
         })
         modules.start()
         self.addCleanup(modules.stop)
-        import sermax_windows_effective_access as effective
         self.descriptor_patch = mock.patch.object(
-            effective, "read_security_descriptor_binary", return_value=b"x" * 20
+            effective_access, "read_security_descriptor_binary", return_value=b"x" * 20
         )
         self.descriptor_patch.start()
         self.addCleanup(self.descriptor_patch.stop)
         self.authz_patch = mock.patch.object(
-            effective, "evaluate_access_for_token",
+            effective_access, "evaluate_access_for_token",
             return_value={
                 "api": "AuthzAccessCheck", "api_success": True,
                 "desired_access": 0x001F01FF, "granted": True,
@@ -433,6 +456,34 @@ class ExistingPrivateAreaValidationTests(PrivateAreaCreationTests):
         ):
             with self.assertRaisesRegex(
                 private_area.PrivateAreaError, "ausente ou ambíguo"
+            ):
+                private_area.validate_existing_private_area(
+                    100, expected_owner_sid="S-1-5-21-100"
+                )
+        opener.assert_not_called()
+
+
+    def test_rejects_noncanonical_update_name_without_opening_child(self):
+        from types import SimpleNamespace
+
+        entry = SimpleNamespace(
+            name="_UPDATE", is_directory=True, file_id="b" * 32
+        )
+        with (
+            mock.patch.object(
+                private_area, "query_handle_metadata",
+                return_value=self._metadata(),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.enumerate_stable_directory_handle",
+                return_value=(entry,),
+            ),
+            mock.patch(
+                "sermax_windows_directory_handle.open_verified_child_component"
+            ) as opener,
+        ):
+            with self.assertRaisesRegex(
+                private_area.PrivateAreaError, "grafia não canônica"
             ):
                 private_area.validate_existing_private_area(
                     100, expected_owner_sid="S-1-5-21-100"

@@ -28,8 +28,13 @@ def validate_private_area_acl(
     expected_file_id_128: str,
     directory_identity: dict,
     directory_entries: list,
+    require_empty: bool = True,
 ) -> dict:
-    """Valida identidade, diretório vazio e DACL privada, sem mutação.
+    """Valida identidade, conteúdo opcionalmente vazio e DACL privada.
+
+    require_empty=True preserva o contrato original para diretórios recém-
+    criados. Diretórios estruturais persistentes usam False, após validação
+    separada e estrita dos nomes, tipos e identidades de seus filhos.
 
     inspection deve vir de inspect_directory_acl(), directory_identity de
     query_handle_metadata() e directory_entries de enumeração estável do mesmo
@@ -49,6 +54,8 @@ def validate_private_area_acl(
         raise PrivateAreaAclPolicyError("FileId esperado deve conter 128 bits.")
     if not isinstance(directory_entries, list):
         raise PrivateAreaAclPolicyError("A enumeração do diretório é inválida.")
+    if type(require_empty) is not bool:
+        raise PrivateAreaAclPolicyError("require_empty deve ser booleano.")
 
     identity = directory_identity
     if not isinstance(identity, dict):
@@ -58,7 +65,7 @@ def validate_private_area_acl(
     actual_file_id = identity.get("file_id_128")
     if not isinstance(actual_file_id, str) or actual_file_id.lower() != expected_file_id_128.lower():
         raise PrivateAreaAclPolicyError("FileId do diretório diverge do esperado.")
-    if directory_entries:
+    if require_empty and directory_entries:
         raise PrivateAreaAclPolicyError("O diretório precisa estar vazio.")
 
     if inspection.get("owner_sid") != expected_owner_sid:
@@ -107,7 +114,8 @@ def validate_private_area_acl(
         "owner_sid": expected_owner_sid,
         "volume_serial_number": expected_volume_serial,
         "file_id_128": expected_file_id_128.lower(),
-        "directory_empty": True,
+        "directory_empty": not directory_entries,
+        "entry_count": len(directory_entries),
         "dacl_protected": True,
         "trustee_sids": sorted(observed_sids),
         "effective_access_evaluated": False,

@@ -1,0 +1,134 @@
+name: SERMAX Update Staging Validation
+
+on:
+  push:
+    branches:
+      - sermax-installer-staging-20261118
+    paths:
+      - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_update_transaction.py"
+      - "SERMAX-Windows/sermax_windows_file_writer.py"
+      - "SERMAX-Windows/sermax_windows_backup.py"
+      - "SERMAX-Windows/sermax_windows_journal.py"
+      - "SERMAX-Windows/sermax_windows_directory_handle.py"
+      - "SERMAX-Windows/sermax_windows_handle_io.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_directory_handle.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_journal.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_backup.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
+      - "SERMAX-Windows/sermax_update_package.py"
+      - "SERMAX-Windows/sermax_update_manifest.py"
+      - "SERMAX-Windows/sermax_update_inventory.py"
+      - "SERMAX-Windows/sermax_windows_security.py"
+      - "SERMAX-Windows/sermax_windows_update_area.py"
+      - "SERMAX-Windows/sermax_windows_private_area.py"
+      - "SERMAX-Windows/sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/sermax_windows_effective_access.py"
+      - "SERMAX-Windows/sermax_windows_private_area_acl_policy.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_security.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_layout.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
+      - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - "SERMAX-Windows/tests/test_sermax_update_transaction.py"
+      - ".github/workflows/sermax-update-staging-ci.yml"
+  pull_request:
+    branches:
+      - sermax-windows-integration-20261029
+    paths:
+      - "SERMAX-Windows/sermax_update_staging.py"
+      - "SERMAX-Windows/sermax_update_transaction.py"
+      - "SERMAX-Windows/sermax_windows_file_writer.py"
+      - "SERMAX-Windows/sermax_windows_backup.py"
+      - "SERMAX-Windows/sermax_windows_journal.py"
+      - "SERMAX-Windows/sermax_windows_directory_handle.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_directory_handle.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_journal.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_backup.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_file_writer.py"
+      - "SERMAX-Windows/sermax_update_package.py"
+      - "SERMAX-Windows/sermax_update_manifest.py"
+      - "SERMAX-Windows/sermax_update_inventory.py"
+      - "SERMAX-Windows/sermax_windows_security.py"
+      - "SERMAX-Windows/sermax_windows_update_area.py"
+      - "SERMAX-Windows/sermax_windows_private_area.py"
+      - "SERMAX-Windows/sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/sermax_windows_effective_access.py"
+      - "SERMAX-Windows/sermax_windows_private_area_acl_policy.py"
+      - "SERMAX-Windows/tests/test_sermax_update_staging.py"
+      - "SERMAX-Windows/tests/test_sermax_update_transaction.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_security.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_update_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_layout.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_acl_inspection.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy.py"
+      - "SERMAX-Windows/tests/test_sermax_windows_private_area_acl_policy_windows.py"
+      - ".github/workflows/sermax-update-staging-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  staging-tests:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Windows security test dependency
+        run: python -m pip install "pywin32>=305"
+
+      - name: Compile updater modules
+        run: python -m compileall -q sermax_windows_handle_io.py sermax_windows_directory_handle.py sermax_windows_journal.py sermax_windows_backup.py sermax_windows_file_writer.py sermax_update_staging.py sermax_update_transaction.py sermax_update_package.py sermax_update_manifest.py sermax_update_inventory.py sermax_windows_security.py sermax_windows_update_area.py sermax_windows_acl_inspection.py sermax_windows_effective_access.py sermax_windows_private_area_acl_policy.py sermax_windows_private_area.py
+
+      - name: Run verified directory handle tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_directory_handle.py" -v
+
+      - name: Run transaction journal tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_journal.py" -v
+
+      - name: Run verified handle backup tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_backup.py" -v
+
+      - name: Run handle-relative file writer tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_file_writer.py" -v
+
+      - name: Run staging tests
+        run: python -m unittest discover -s tests -p "test_sermax_update_staging.py" -v
+
+      - name: Run integrated transaction preparation tests
+        run: python -m unittest discover -s tests -p "test_sermax_update_transaction.py" -v
+
+      - name: Run handle security tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_security.py" -v
+
+      - name: Run private update area tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_update_area.py" -v
+
+      - name: Run existing private area tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_private_area.py" -v
+
+      - name: Run persistent private layout tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_private_area_layout.py" -v
+
+      - name: Run existing ACL inspection tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_acl_inspection.py" -v
+
+      - name: Run private ACL policy tests
+        run: python -m unittest discover -s tests -p "test_sermax_windows_private_area_acl_policy.py" -v
+
+      - name: Run native Windows ACL policy test
+        run: python -m unittest discover -s tests -p "test_sermax_windows_private_area_acl_policy_windows.py" -v
