@@ -1,6 +1,7 @@
 """Validação e aplicação controlada de propostas do papel Programador."""
 from __future__ import annotations
 
+import ast
 import json
 import os
 import tempfile
@@ -54,6 +55,30 @@ def _validate_development_path(path: str) -> None:
         )
 
 
+def _validate_flat_module_imports(path: str, content: str) -> None:
+    """Impede imports relativos em módulos carregados pelo runner como módulos planos."""
+    normalized = path.replace("\\", "/")
+    parts = normalized.split("/")
+    flat_module = (
+        len(parts) == 1
+        or (len(parts) == 2 and parts[0].casefold() == "tests")
+    )
+    if not flat_module or not normalized.casefold().endswith(".py"):
+        return
+    try:
+        tree = ast.parse(content, filename=path)
+    except SyntaxError as exc:
+        raise ProposalError(f"Python inválido em {path}: {exc.msg}") from exc
+    if any(
+        isinstance(node, ast.ImportFrom) and node.level > 0
+        for node in ast.walk(tree)
+    ):
+        raise ProposalError(
+            "Imports relativos não são aceitos nos módulos planos SERMAX-Windows "
+            "e nos testes carregados por unittest discover. Preserve imports absolutos."
+        )
+
+
 def parse_proposal(raw: str) -> ValidatedProposal:
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_PROPOSAL_BYTES:
         raise ProposalError("Resposta do Programador ausente ou acima do limite.")
@@ -88,6 +113,8 @@ def parse_proposal(raw: str) -> ValidatedProposal:
         _validate_development_path(path)
         if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES:
             raise ProposalError("Conteúdo de arquivo inválido ou acima do limite.")
+        if path.casefold().endswith(".py"):
+            _validate_flat_module_imports(path, content)
         normalized = path.replace("\\", "/").casefold()
         if normalized in seen:
             raise ProposalError("A proposta contém caminhos duplicados.")
