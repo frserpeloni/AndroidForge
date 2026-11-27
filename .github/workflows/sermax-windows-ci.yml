@@ -1,0 +1,125 @@
+name: SERMAX Windows CI
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "SERMAX-Windows/**"
+      - ".github/workflows/sermax-windows-ci.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: sermax-windows-validation-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate-and-build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: SERMAX-Windows
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify required SERMAX sources and original terminal
+        shell: pwsh
+        run: |
+          $required = @(
+            "sermax_core.py",
+            "sermax_launcher.py",
+            "SERMAX.spec",
+            "SERMAX_terminal/sermax_terminal.py",
+            "SERMAX_terminal/sermax_voz.py",
+            "SERMAX_terminal/sermax_integracao_comandos.py",
+            "sermax_historico_comandos.py",
+            "sermax_planejador.py",
+            "sermax_executor.py",
+            "sermax_tarefas.py",
+            "ferramenta_windows.py"
+          )
+          $missing = @($required | Where-Object { -not (Test-Path $_) })
+          if ($missing.Count -gt 0) { throw ("Missing SERMAX files: " + ($missing -join ", ")) }
+          $terminal = Get-Content "SERMAX_terminal/sermax_terminal.py" -Raw
+          $markers = @('ROSTO = r"""','GREEN = "\033[92m"','def render(conversa):','def desenhar(conversa):','if cmd == "/vozdiag":','if cmd == "/reiniciar":','if cmd == "/repetir"')
+          $missingMarkers = @($markers | Where-Object { -not $terminal.Contains($_) })
+          if ($terminal -match "terminal de contingência" -or $missingMarkers.Count -gt 0) {
+            throw ("Original terminal markers missing: " + ($missingMarkers -join ", "))
+          }
+
+      - name: Set up Python 3.14 for SERMAX and Pestinha
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Checkout pinned Pestinha source
+        uses: actions/checkout@v4
+        with:
+          repository: mille-okws/pestinha
+          ref: 1b16bd21bb5ba9dd4c460c153f865824f53d05c8
+          path: SERMAX-Windows/.deps/pestinha
+
+      - name: Prepare Python 3.14 environment for SERMAX and Pestinha
+        shell: pwsh
+        run: |
+          python -m venv .venv-integrations
+          $py = ".venv-integrations/Scripts/python.exe"
+          # Ed25519 verifier dependency is pinned for reproducible signature tests.
+          & $py -m pip install --upgrade pip pyinstaller "numpy>=2.4.6" "psutil>=7.2.2" "pywin32>=305" "cryptography==50.0.2"
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 dependencies failed." }
+          "PYTHONPATH=$PWD/.deps/pestinha" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Set up Python 3.13 for OpenJarvis
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install OpenJarvis in isolated Python 3.13 environment
+        shell: pwsh
+        run: |
+          python -m venv .venv-jarvis
+          $py = ".venv-jarvis/Scripts/python.exe"
+          & $py -m pip install --upgrade pip
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.13 pip setup failed." }
+          & $py -m pip install "git+https://github.com/open-jarvis/OpenJarvis.git@c6c782b924c9040d7c35f76ff693d4057bc0032f"
+          if ($LASTEXITCODE -ne 0) { throw "OpenJarvis installation failed." }
+          "SERMAX_JARVIS_PYTHON=$PWD/.venv-jarvis/Scripts/python.exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "SERMAX_ROOT=$PWD" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Compile sources and run SERMAX integration tests
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m compileall -q .
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 source compilation failed." }
+          & $py -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw "SERMAX/Pestinha/OpenJarvis integration tests failed." }
+
+      - name: Build SERMAX.exe with Python 3.14
+        shell: pwsh
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py -m PyInstaller --noconfirm --clean "SERMAX.spec"
+          if ($LASTEXITCODE -ne 0) { throw "Python 3.14 PyInstaller build failed." }
+          if (-not (Test-Path "dist/SERMAX.exe")) { throw "SERMAX.exe was not generated." }
+          if ((Get-Item "dist/SERMAX.exe").Length -lt 1000000) { throw "SERMAX.exe is unexpectedly small." }
+
+      - name: Smoke-test the frozen executable startup and original terminal
+        shell: pwsh
+        working-directory: SERMAX-Windows
+        run: |
+          $py = ".venv-integrations/Scripts/python.exe"
+          & $py tests/smoke_frozen_executable.py dist/SERMAX.exe
+          if ($LASTEXITCODE -ne 0) { throw "Frozen SERMAX.exe startup smoke test failed." }
+
+      - name: Publish SERMAX executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SERMAX-Windows-executable
+          path: SERMAX-Windows/dist/SERMAX.exe
+          if-no-files-found: error
+          retention-days: 14

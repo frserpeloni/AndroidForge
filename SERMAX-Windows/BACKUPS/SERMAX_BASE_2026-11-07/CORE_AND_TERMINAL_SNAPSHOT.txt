@@ -1,0 +1,1499 @@
+===== FILE: SERMAX-Windows/sermax_core.py =====
+===== GIT_BLOB_SHA: 8147d515bcc2e65cc9d4b19d9ec121fa636c1663 =====
+import json
+import urllib.request
+import urllib.error
+import os
+import re
+import ast
+import operator
+import math
+import shutil
+import sys
+from datetime import datetime
+
+import ferramenta_windows
+import sermax_planejador
+import sermax_executor
+import sermax_tarefas
+import sermax_jarvis_adapter
+
+IDENTIDADE = """
+Você é SERMAX, o assistente pessoal de Fabiano.
+Informações de identidade:
+- Seu nome é SERMAX.
+- Seu apelido é MAX.
+- O nome do usuário é Fabiano.
+- Qwen é o modelo de linguagem utilizado pelo SERMAX.
+Converse naturalmente em português do Brasil. Use contexto e memória sem inventar detalhes.
+"""
+
+MODELO = "sermax"
+OLLAMA_URL = "http://127.0.0.1:11434/api/chat"
+# Motor principal selecionável. O padrão preserva o comportamento atual do SERMAX.
+MOTOR_RESPOSTA = os.environ.get("SERMAX_MOTOR", "ollama").strip().lower()
+if MOTOR_RESPOSTA not in {"ollama", "jarvis"}:
+    MOTOR_RESPOSTA = "ollama"
+if os.environ.get("SERMAX_ROOT"):
+    BASE_DIR = os.path.abspath(os.environ["SERMAX_ROOT"])
+elif getattr(sys, "frozen", False):
+    BASE_DIR = os.path.dirname(os.path.abspath(sys.executable))
+else:
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ARQUIVO_MEMORIA = os.path.join(BASE_DIR, "memoria_sermax.json")
+MAX_MEMORIAS = 500
+
+# Rede neural opcional Pestinha. Estado separado da memória pessoal SERMAX.
+_widget_controller = None
+_widget_adapter = None
+_widget_init_error = None
+
+
+def _obter_widget_controller():
+    global _widget_controller, _widget_adapter, _widget_init_error
+    if _widget_controller is not None:
+        return _widget_controller
+    try:
+        from sermax_widget_state import WidgetStateController
+        from sermax_pestinha_adapter import PestinhaAdapter
+        neural_path = os.path.join(BASE_DIR, "memoria_neural_pestinha.json")
+        _widget_adapter = PestinhaAdapter(neural_path)
+        _widget_controller = WidgetStateController(neural_adapter=_widget_adapter)
+        if not _widget_adapter.available:
+            _widget_init_error = "Pestinha/NumPy indisponível ou memória neural inválida"
+    except Exception as exc:
+        _widget_init_error = f"{type(exc).__name__}: {exc}"
+        try:
+            from sermax_widget_state import WidgetStateController
+            _widget_controller = WidgetStateController()
+        except Exception:
+            _widget_controller = None
+    return _widget_controller
+
+
+def atualizar_estado_widget(evento):
+    controller = _obter_widget_controller()
+    if controller is None:
+        return "error"
+    try:
+        return controller.set_event(evento).name
+    except Exception:
+        return "error"
+
+
+def diagnostico_widget():
+    controller = _obter_widget_controller()
+    neural_ativa = bool(_widget_adapter and _widget_adapter.available)
+    estado = controller.state.name if controller is not None else "error"
+    return {
+        "estado": estado,
+        "neural_ativa": neural_ativa,
+        "neural_status": "ATIVA" if neural_ativa else "OFFLINE",
+        "detalhe": _widget_init_error or ("" if neural_ativa else "Dependência neural não carregada"),
+    }
+
+
+def encerrar_widget():
+    controller = _obter_widget_controller()
+    if controller is None:
+        return False
+    try:
+        return bool(controller.salvar_estado_neural())
+    except Exception:
+        return False
+
+KEEP_ALIVE = "10m"
+OPCOES_MODELO = {"num_ctx": 2048, "num_predict": 256}
+ultimo_diagnostico_ollama = {}
+
+STOPWORDS = {"a","o","as","os","um","uma","de","do","da","dos","das","e","é","em","no","na","nos","nas","que","qual","quais","eu","me","meu","minha","meus","minhas","você","seu","sua","seus","suas","para","por","com","como","foi","ser","sou","sobre","isso","esse","essa","este","esta","ao","aos","às","já"}
+PALAVRAS_DE_PERGUNTA = {"qual","quais","quem","como","onde","quando","porque","porquê","quanto","quantos","quantas","posso","devo","será","tem","há"}
+FRASES_DESCARTAVEIS = {"ok","okay","sim","não","nao","pronto","certo","beleza","entendi","continua","continue","obrigado","obrigada","valeu","bom dia","boa tarde","boa noite","oi","olá","ola"}
+MARCADORES_PESSOAIS = {"meu","minha","meus","minhas","eu","tenho","sou","moro","nasci","gosto","prefiro","quero","uso","trabalho","chamo","preciso","costumo","estou"}
+
+def normalizar(texto):
+    return re.sub(r"\s+", " ", str(texto).strip().lower())
+
+def eh_memoria_candidata(texto):
+    t=normalizar(texto)
+    if not t or t.startswith("/") or t in FRASES_DESCARTAVEIS or "?" in t: return False
+    p=re.findall(r"[a-záàâãéêíóôõúç]+",t)
+    return bool(p and p[0] not in PALAVRAS_DE_PERGUNTA and any(x in MARCADORES_PESSOAIS for x in p))
+
+def _limpar_lista_memoria(memoria_antiga):
+    memoria=[]; vistos=set()
+    if not isinstance(memoria_antiga,list): return memoria
+    for item in memoria_antiga:
+        if not isinstance(item,dict) or item.get("role")!="user": continue
+        c=str(item.get("content","")).strip(); k=normalizar(c)
+        if eh_memoria_candidata(c) and k and k not in vistos:
+            vistos.add(k); memoria.append({"role":"user","content":c})
+    return memoria[-MAX_MEMORIAS:]
+
+def carregar_memoria():
+    if not os.path.exists(ARQUIVO_MEMORIA): return []
+    try:
+        with open(ARQUIVO_MEMORIA,"r",encoding="utf-8") as f: dados=json.load(f)
+        if not isinstance(dados,list): raise ValueError("O arquivo de memória não contém uma lista JSON.")
+        return _limpar_lista_memoria(dados)
+    except (OSError,UnicodeError,json.JSONDecodeError,ValueError):
+        try:
+            if os.path.isfile(ARQUIVO_MEMORIA):
+                stamp=datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                shutil.copy2(ARQUIVO_MEMORIA,ARQUIVO_MEMORIA+".corrompido_"+stamp+".bak")
+        except OSError:
+            raise RuntimeError("A memória está inválida e não foi possível fazer cópia de segurança. Arquivo original preservado.")
+        return []
+
+historico=carregar_memoria()
+sessao=[]
+
+def salvar_memoria():
+    pasta=os.path.dirname(os.path.abspath(ARQUIVO_MEMORIA)); os.makedirs(pasta,exist_ok=True)
+    temp=ARQUIVO_MEMORIA+f".tmp_{os.getpid()}_{datetime.now().strftime('%H%M%S%f')}"
+    dados=_limpar_lista_memoria(historico[-MAX_MEMORIAS:])
+    try:
+        with open(temp,"x",encoding="utf-8",newline="\n") as f:
+            json.dump(dados,f,ensure_ascii=False,indent=2); f.flush(); os.fsync(f.fileno())
+        os.replace(temp,ARQUIVO_MEMORIA)
+    except Exception:
+        try:
+            if os.path.exists(temp): os.remove(temp)
+        except OSError: pass
+        raise
+
+def registrar_memoria(mensagem):
+    if not eh_memoria_candidata(mensagem): return False
+    mensagem=str(mensagem).strip(); chave=normalizar(mensagem)
+    if any(normalizar(x.get("content",""))==chave for x in historico): return False
+    historico.append({"role":"user","content":mensagem})
+    if len(historico)>MAX_MEMORIAS: del historico[:-MAX_MEMORIAS]
+    salvar_memoria(); return True
+
+def palavras_importantes(texto):
+    return {p for p in re.findall(r"[a-záàâãéêíóôõúç]+",normalizar(texto)) if len(p)>=3 and p not in STOPWORDS}
+
+def buscar_memorias(pergunta,limite=4):
+    termos=palavras_importantes(pergunta)
+    if not termos: return []
+    melhores={}; total=len(historico)
+    for i,item in enumerate(historico):
+        inter=termos.intersection(palavras_importantes(str(item.get("content",""))))
+        if not inter: continue
+        assinatura=tuple(sorted(inter)); cobertura=len(inter)/max(len(termos),1)
+        score=len(inter)*100+ cobertura*10+i/max(total,1)
+        atual=melhores.get(assinatura)
+        if atual is None or (score,i)>(atual[0],atual[1]): melhores[assinatura]=(score,i,item)
+    vals=sorted(melhores.values(),key=lambda x:(x[0],x[1]),reverse=True)
+    out=[x[2] for x in vals[:limite]]; out.reverse(); return out
+
+def montar_contexto(pergunta):
+    contexto=[{"role":"system","content":IDENTIDADE}]
+    mem=buscar_memorias(pergunta,4)
+    if mem:
+        txt="INFORMAÇÕES RECUPERADAS DA MEMÓRIA DO USUÁRIO. Considere a mais recente em caso de conflito; não acrescente detalhes não registrados:\n"
+        txt += "".join("- "+x["content"]+"\n" for x in mem)
+        contexto.append({"role":"system","content":txt})
+    contexto.extend(sessao[-10:]); return contexto
+
+_OPERADORES_BINARIOS={ast.Add:operator.add,ast.Sub:operator.sub,ast.Mult:operator.mul,ast.Div:operator.truediv,ast.FloorDiv:operator.floordiv,ast.Mod:operator.mod,ast.Pow:operator.pow}
+_OPERADORES_UNARIOS={ast.UAdd:operator.pos,ast.USub:operator.neg}
+def _avaliar_conta(no):
+    if isinstance(no,ast.Expression): return _avaliar_conta(no.body)
+    if isinstance(no,ast.Constant) and isinstance(no.value,(int,float)) and not isinstance(no.value,bool): valor=no.value
+    elif isinstance(no,ast.BinOp) and type(no.op) in _OPERADORES_BINARIOS:
+        esq,dir=_avaliar_conta(no.left),_avaliar_conta(no.right)
+        if isinstance(no.op,ast.Pow) and (abs(dir)>10 or abs(esq)>1000000): raise ValueError("Potência fora do limite seguro.")
+        valor=_OPERADORES_BINARIOS[type(no.op)](esq,dir)
+    elif isinstance(no,ast.UnaryOp) and type(no.op) in _OPERADORES_UNARIOS: valor=_OPERADORES_UNARIOS[type(no.op)](_avaliar_conta(no.operand))
+    else: raise ValueError("Expressão não permitida.")
+    if not math.isfinite(float(valor)) or abs(valor)>1e15: raise ValueError("Resultado fora do limite seguro.")
+    return valor
+
+def _formatar_resultado(valor):
+    if isinstance(valor,float) and valor.is_integer(): valor=int(valor)
+    if isinstance(valor,int): return f"{valor:,}".replace(",",".")
+    return f"{valor:,.8f}".rstrip("0").rstrip(".").replace(",","X").replace(".",",").replace("X",".")
+
+def responder_calculo_local(mensagem):
+    texto=str(mensagem).strip().lower().replace("×","*").replace("÷","/")
+    texto=re.sub(r"(?<![\w.])(\d+(?:[.,]\d+)?)\s*%\s+de\s+([+-]?\d+(?:[.,]\d+)?)",r"(\1/100*\2)",texto)
+    texto=re.sub(r"(?<=\d),(?=\d)",".",texto)
+    texto=re.sub(r"(?<=[0-9)])\s*[xX]\s*(?=[0-9(])","*",texto)
+    texto=re.sub(r"^(?:por favor[, ]*)?(?:calcule|calcular|quanto é|quanto e|resolva|resultado de|faz a conta|faça a conta|faca a conta)\s*","",texto)
+    texto=re.sub(r"\s+","",texto)
+    if not texto or len(texto)>100 or not re.fullmatch(r"[0-9.+*/()%\-]+",texto) or not re.search(r"[+*/%\-]",texto): return None
+    try: return f"Resultado: {_formatar_resultado(_avaliar_conta(ast.parse(texto,mode='eval')))}"
+    except ZeroDivisionError: return "Não consigo dividir por zero."
+    except (SyntaxError,ValueError,TypeError,OverflowError): return None
+
+def responder_comando_local(mensagem):
+    comando=normalizar(mensagem).strip()
+    if comando in {"/executar","/executar ajuda"}:
+        return "Executor local restrito. Exemplos: /executar sistema; /executar memoria Siena; /executar calcular 125 x 87. Só executa consultas de leitura e cálculos."
+    if comando.startswith("/executar "):
+        return sermax_executor.executar(mensagem.strip()[len("/executar "):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
+    if comando in {"/executar-plano","/tarefas"}: return "Informe tarefas separadas por ponto e vírgula. Exemplo: /executar-plano sistema; calcular 125 x 87"
+    if comando.startswith("/executar-plano ") or comando.startswith("/tarefas "):
+        prefixo="/executar-plano " if comando.startswith("/executar-plano ") else "/tarefas "
+        return sermax_tarefas.executar_plano(mensagem.strip()[len(prefixo):],core=sys.modules[__name__],ferramenta=ferramenta_windows)
+    global MOTOR_RESPOSTA
+    if comando in {"/motor", "/motor status"}:
+        return f"Motor de resposta atual: {MOTOR_RESPOSTA.upper()}. Use /motor ollama ou /motor jarvis para alternar nesta sessão."
+    if comando in {"/motor ollama", "/motor jarvis"}:
+        MOTOR_RESPOSTA = comando.split()[-1]
+        return f"Motor de resposta alterado para {MOTOR_RESPOSTA.upper()} nesta sessão."
+    if comando in {"/jarvis", "jarvis"}:
+        return "Informe uma pergunta após /jarvis. Exemplo: /jarvis explique o que é aprendizado de máquina"
+    if comando.startswith("/jarvis "):
+        pergunta=mensagem.strip()[len("/jarvis "):]
+        try:
+            return sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(pergunta)
+        except Exception as e:
+            return f"OpenJarvis indisponível: {type(e).__name__}: {e}"
+    if comando in {"/plano","/planejar","planejar"}: return "Informe o objetivo após /plano. Exemplo: /plano organizar minhas tarefas da semana"
+    if comando.startswith("/plano ") or comando.startswith("/planejar "):
+        return sermax_planejador.planejar(mensagem.split(" ",1)[1].strip(),modelo=MODELO,url=OLLAMA_URL)
+    if comando in {"/memoria","memoria","memória"}:
+        if not historico: return "Ainda não há informações guardadas na memória persistente."
+        return "Últimas informações guardadas na memória:\n"+"\n".join(f"{i}. {x['content']}" for i,x in enumerate(historico[-10:],1) if str(x.get("content","")).strip())
+    if comando.startswith("/memoria ") or comando.startswith("/memória "):
+        termo=comando.split(" ",1)[1].strip(); termos=palavras_importantes(termo); achados=[]
+        for item in reversed(historico):
+            conteudo=str(item.get("content","")).strip()
+            if (termos and termos.intersection(palavras_importantes(conteudo))) or (not termos and termo in normalizar(conteudo)): achados.append(conteudo)
+            if len(achados)>=10: break
+        return "Não encontrei informações guardadas sobre: "+termo if not achados else "Memórias encontradas:\n"+"\n".join(f"{i}. {x}" for i,x in enumerate(achados,1))
+    if comando in {"/sistema","sistema","diagnóstico do sistema","diagnostico do sistema"}:
+        info=ferramenta_windows.informacoes_sistema(); disco=info.get("disco",{})
+        d="indisponível" if "erro" in disco else f"{disco.get('livre_gb','?')} GB livres de {disco.get('total_gb','?')} GB"
+        return ("Diagnóstico local do computador:\n"+f"Windows: {info.get('windows','não identificado')}\nArquitetura: {info.get('arquitetura','não identificada')}\nProcessador: {info.get('processador','não identificado')}\nRAM instalada: {info.get('memoria_ram','não disponível')}\nDisco C: {d}")
+    if comando in {"/ajuda","ajuda"}:
+        return "Comandos: /ajuda, /memoria, /memoria termo, /sistema, /plano objetivo, /motor status, /motor ollama, /motor jarvis, /jarvis pergunta, /executar ação e /executar-plano tarefas. O executor aceita apenas consultas de leitura e cálculos."
+    return None
+
+def _perguntar_impl(mensagem,receber_parte=None):
+    global ultimo_diagnostico_ollama
+    mensagem=str(mensagem).strip()
+    if not mensagem: return ""
+    resposta=responder_comando_local(mensagem)
+    if resposta is None: resposta=responder_calculo_local(mensagem)
+    if resposta is not None:
+        sessao.extend([{"role":"user","content":mensagem},{"role":"assistant","content":resposta}])
+        if receber_parte: receber_parte(resposta)
+        return resposta
+    sessao.append({"role":"user","content":mensagem}); registrar_memoria(mensagem)
+    ferramenta=ferramenta_windows.responder_consulta(mensagem)
+    if ferramenta is not None:
+        sessao.append({"role":"assistant","content":ferramenta})
+        if receber_parte: receber_parte(ferramenta)
+        return ferramenta
+    if MOTOR_RESPOSTA == "jarvis":
+        # O SERMAX fornece identidade, memória recuperada e contexto da sessão.
+        # OpenJarvis permanece sem ferramentas e sem memória própria.
+        mensagens = montar_contexto(mensagem)
+        prompt = "\n\n".join(
+            f"{item['role'].upper()}: {item['content']}" for item in mensagens
+        )
+        prompt = prompt[-3900:]
+        resposta = sermax_jarvis_adapter.JarvisAdapter(model=MODELO).responder(prompt)
+        sessao.append({"role":"assistant","content":resposta})
+        if receber_parte: receber_parte(resposta)
+        return resposta
+    ultimo_diagnostico_ollama={}
+    dados={"model":MODELO,"messages":montar_contexto(mensagem),"stream":True,"keep_alive":KEEP_ALIVE,"options":OPCOES_MODELO}
+    pedido=urllib.request.Request(OLLAMA_URL,data=json.dumps(dados,ensure_ascii=False).encode("utf-8"),headers={"Content-Type":"application/json"},method="POST")
+    resposta=""
+    try:
+        with urllib.request.urlopen(pedido,timeout=300) as retorno:
+            for linha in retorno:
+                if not linha: continue
+                try: obj=json.loads(linha.decode("utf-8"))
+                except json.JSONDecodeError: continue
+                trecho=obj.get("message",{}).get("content","")
+                if trecho:
+                    resposta+=trecho
+                    if receber_parte: receber_parte(resposta)
+                if obj.get("done"):
+                    campos=("load_duration","prompt_eval_duration","eval_duration","total_duration","prompt_eval_count","eval_count")
+                    ultimo_diagnostico_ollama={k:obj[k] for k in campos if k in obj}; break
+    except urllib.error.URLError as e:
+        raise RuntimeError("Não foi possível conectar ao Ollama. Verifique se o Ollama está aberto.") from e
+    sessao.append({"role":"assistant","content":resposta})
+    return resposta.strip()
+
+
+def perguntar(mensagem, receber_parte=None):
+    """Envolve cada solicitação com eventos neurais isolados e fallback seguro."""
+    atualizar_estado_widget("processing")
+    try:
+        resposta = _perguntar_impl(mensagem, receber_parte=receber_parte)
+        atualizar_estado_widget("completed")
+        return resposta
+    except Exception:
+        atualizar_estado_widget("error")
+        raise
+    finally:
+        # A persistência neural nunca escreve em memoria_sermax.json.
+        encerrar_widget()
+
+
+===== FILE: SERMAX-Windows/sermax_launcher.py =====
+===== GIT_BLOB_SHA: 2b3267e50894f517e57fc8bea8c3eb10dbbb8c2d =====
+import os
+import sys
+import runpy
+
+
+def resolver_caminhos(frozen, executable, arquivo_fonte, meipass=None):
+    """Resolve a pasta persistente da instalação e a pasta da interface empacotada."""
+    root = os.path.dirname(os.path.abspath(executable if frozen else arquivo_fonte))
+    bundle_root = meipass if frozen and meipass else root
+    terminal_dir = os.path.join(bundle_root, "SERMAX_terminal")
+    terminal_script = os.path.join(terminal_dir, "sermax_terminal.py")
+    return root, bundle_root, terminal_dir, terminal_script
+
+
+def main():
+    frozen = bool(getattr(sys, "frozen", False))
+    root, bundle_root, terminal_dir, terminal_script = resolver_caminhos(
+        frozen,
+        sys.executable,
+        __file__,
+        getattr(sys, "_MEIPASS", None),
+    )
+    os.environ["SERMAX_ROOT"] = root
+    if not os.path.isfile(terminal_script):
+        print("SERMAX: não encontrei a interface terminal em:")
+        print(terminal_script)
+        input("Pressione Enter para fechar.")
+        return
+    os.chdir(root)
+    for path in (root, bundle_root, terminal_dir):
+        if path not in sys.path:
+            sys.path.insert(0, path)
+    runpy.run_path(terminal_script, run_name="__main__")
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== FILE: SERMAX-Windows/SERMAX.spec =====
+===== GIT_BLOB_SHA: dec650203fe4179d842d2690add68e0c47a2b76b =====
+# -*- mode: python ; coding: utf-8 -*-
+# Spec portátil: scripts chamados via runpy precisam ser incluídos como dados.
+import os
+from PyInstaller.utils.hooks import collect_all
+
+extra_datas, extra_binaries, extra_hiddenimports = [], [], []
+try:
+    package_datas, package_binaries, package_hidden = collect_all('pestinha')
+    extra_datas += package_datas
+    extra_binaries += package_binaries
+    extra_hiddenimports += package_hidden
+except (ImportError, ModuleNotFoundError):
+    pass
+
+ROOT = os.path.abspath(os.path.dirname(SPEC))
+TERMINAL = os.path.join(ROOT, "SERMAX_terminal")
+
+a = Analysis(
+    [os.path.join(ROOT, "sermax_launcher.py")],
+    pathex=[ROOT, TERMINAL],
+    binaries=extra_binaries,
+    datas=[
+        (os.path.join(TERMINAL, "sermax_terminal.py"), "SERMAX_terminal"),
+        (os.path.join(TERMINAL, "sermax_voz.py"), "SERMAX_terminal"),
+        (os.path.join(TERMINAL, "sermax_integracao_comandos.py"), "SERMAX_terminal"),
+        (os.path.join(ROOT, "sermax_jarvis_worker.py"), "."),
+    ] + extra_datas,
+    hiddenimports=[
+        "sermax_core", "sermax_historico_comandos", "sermax_planejador",
+        "sermax_executor", "sermax_tarefas", "ferramenta_windows",
+        "sermax_jarvis_adapter", "sermax_pestinha_adapter", "sermax_widget_state",
+        "sermax_voz", "sermax_integracao_comandos",
+    ] + extra_hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[],
+    noarchive=False,
+    optimize=0,
+)
+pyz = PYZ(a.pure)
+
+exe = EXE(
+    pyz,
+    a.scripts,
+    a.binaries,
+    a.datas,
+    [],
+    name="SERMAX",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    runtime_tmpdir=None,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+
+===== FILE: SERMAX-Windows/SERMAX_terminal/sermax_terminal.py =====
+===== GIT_BLOB_SHA: f7479c3e56c0e144b6009ed7883301368a3d4f1d =====
+import os
+import sys
+
+# Localiza o C:\SERMAX, que está uma pasta acima do Terminal
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import sermax_core
+import sermax_historico_comandos as _sermax_hist
+import subprocess
+import time
+import sermax_integracao_comandos  # SERMAX_V310_INTEGRACAO
+from sermax_voz import transcrever_arquivo, localizar_whisper_e_modelo, diagnostico_voz
+
+COLS = 120
+ROWS = 42
+
+FACE_COLS = 70
+PANEL_COLS = 44
+TOP_ROWS = 29
+CHAT_ROWS = 9
+
+GREEN = "\033[92m"
+RESET = "\033[0m"
+CLEAR = "\033[2J\033[H"
+HIDE_CURSOR = "\033[?25l"
+SHOW_CURSOR = "\033[?25h"
+
+ROSTO = r"""
+                  .                .... . ..:.:.:...+.:.:           :.          .:
+  :       .       :              :.::.: :.:...        ::+.+         +:          :+
+  :       :       :            +.:::. : .           :.:.+:+:+.      :   ..      :+       :
+  :       :       :         .:.: . ..             .   ..::++*++.    :   ..      :+       :
+  +       +      :*:      .+:+.+ +:                 :.+:+.:.+:*+*:  :   ..      :*       +
+  :       +.      :     ::.. : .        .               ..*++:::::+.    ..      .+       +.
+  +      .*:      +   :.+....:        :           ::+:+.:.:.::*+++*+:   ..      :+      .*.
+ .*:      +       : ..+:. .:                            ..+.: ::++*+*+  ..      :*      .*.
+ .+.      +       ..+.+...                        ..:.:.:...:.:...::+:+         .+       +.
+ .*.      +       ::*.+.+.                    . : : .:::+:+::.+:+:++*+*+.      . +      .*.
+ .*.      :     .:*:+..                                 . ::+++:+:+:+:++*:     . :       :
+ .+.      :    .:.+.+   .               . :.::+::.::::*:+.. ..:.:.+:::+:++:      :       +
+  +       +    :*:+.  .             ..+.:.+..           .:*::.:.::+:+:++**+.     +       +
+  +       :  .*::.: .            ..::.:.                    ++*:. :.+:+:++++     +       +
+  +       :  :+::            ..+.::.                          ..*::.:.+:::+::    +       +
+  +         +:*..   .     .:.+..                      .         ..*++.:.++*+*+   +       +
+  .        :+.:   .     ..::                    .   .   .         .:+.. ..::++   :       +.
+          +:*.:     . +.:.                      .   .               +:+:..::++.  +      .*.
+  +.    .:+.: .   ..+..               :         .   .                 ::+:.:++:. :      .*.
+ .+.   .:.:     ..+..                           .   . . . : :           ::...::: :       +.
+ .+.   :+.+ . :.+                               . :.::+::         .       ++:::+.        +
+  .   +.: . :.+         ..  ..              : ..:.:               .        .+:.:+:       :
+  .  .+.:.+.:           .:  .**#**+.        :.: :       .:++*:    :          ::::*       +
+    ::+.+..             .:    :##%%%%*:     :.+     :*#%%%%*:   . .           :++*.      :
+    +.:.:               ..      .::++++:    ..+    .+++++::     . .             .::+     :
+   .*:+.              :  .                  :.* .           :   : :              *.+    .*:
+   .*.:                 .. :        .       ..*:+ . . : : : :   :                .:*:    :
+   .+..                  . :                :.+::.: : . . : .   :                 .+:    +
+    +.:                  +.+ . .    .       ::*++.+:+:+.+.*.. +                   :*:    +
+     .*.                  :: :      .       ::*++.+:+.:.+.: . +                  ..+     :
+      +..                  : :              ::*++.+::.:.+ . : .                  ..+     :
+       :*.        .         :* :          . ++*++:::+.:.: :.*.                  :*.      +
+    .   ..+ .               .+:+    .           . +.:.: . +.                  .:::       :
+. ..+..   +::                .:*.:            :.+:+::.: :.+                   ++:        :
++:+.:      .+.+                .:*:.          . ....+ ::*.              .   :+: :+.:
+: .          .*.+                +:::         :.:.:.:.+.              .   ..+:   ..::*:+.:
+: .            .+.:                ++ .         . :.+..                 ..++   . : :.:.+:+::
+::* .            .*.:               :+*       :.+.+::   .     .         *+    ...::+.:.:.:.+
+    + :             *..              .+:+     ::+::     .     .       +:       ..:..   . : +
+      +       :      .*.        .      .+::.. .:+.    .     .       +..      . .:+     : . :
+             .*        .+:       :.       ..:.:      ..         . +:.       ...:.    .   +.:
+             .:   .      .::      :                 :           +::         ....       . +.:
+             .*            :..     :.              ..   .     *::     :     ::       :.: :
+              .     .        :      ..            .       . . .       :                . .
+  .           + :   :          +     :.          ..       + :       . :.  ..           . .
+"""
+
+
+def reduzir_rosto(texto, linhas_alvo=25, colunas_alvo=66):
+    linhas = texto.splitlines()
+
+    while linhas and not linhas[0].strip():
+        linhas.pop(0)
+
+    while linhas and not linhas[-1].strip():
+        linhas.pop()
+
+    if not linhas:
+        return []
+
+    altura = len(linhas)
+    largura = max(len(linha) for linha in linhas)
+
+    resultado = []
+
+    for y in range(linhas_alvo):
+        oy = min(altura - 1, int(y * altura / linhas_alvo))
+        linha = linhas[oy].ljust(largura)
+
+        resultado.append(
+            "".join(
+                linha[
+                    min(
+                        largura - 1,
+                        int(x * largura / colunas_alvo)
+                    )
+                ]
+                for x in range(colunas_alvo)
+            ).rstrip()
+        )
+
+    return resultado
+
+
+ROSTO_REDUZIDO = reduzir_rosto(ROSTO)
+
+
+def cortar(texto, largura):
+    texto = str(texto)
+
+    if len(texto) <= largura:
+        return texto
+
+    return texto[:max(0, largura - 1)] + "…"
+
+
+def quebrar(texto, largura):
+    resultado = []
+
+    for bloco in str(texto).replace("\r", "").split("\n"):
+
+        if not bloco:
+            resultado.append("")
+            continue
+
+        palavras = bloco.split()
+        atual = ""
+
+        for palavra in palavras:
+
+            if len(palavra) > largura:
+
+                if atual:
+                    resultado.append(atual)
+                    atual = ""
+
+                for i in range(0, len(palavra), largura):
+                    resultado.append(
+                        palavra[i:i + largura]
+                    )
+
+            elif not atual:
+                atual = palavra
+
+            elif len(atual) + 1 + len(palavra) <= largura:
+                atual += " " + palavra
+
+            else:
+                resultado.append(atual)
+                atual = palavra
+
+        if atual:
+            resultado.append(atual)
+
+    return resultado
+
+
+def preparar_terminal():
+
+    if os.name == "nt":
+
+        os.system(
+            f"mode con: cols={COLS} lines={ROWS} >nul 2>&1"
+        )
+
+        try:
+            import ctypes
+
+            k32 = ctypes.windll.kernel32
+            h = k32.GetStdHandle(-11)
+
+            mode = ctypes.c_uint32()
+
+            if k32.GetConsoleMode(
+                h,
+                ctypes.byref(mode)
+            ):
+                k32.SetConsoleMode(
+                    h,
+                    mode.value | 0x0004
+                )
+
+        except Exception:
+            pass
+
+    os.system("title SERMAX - Terminal de IA")
+
+
+def painel():
+
+    w = PANEL_COLS
+    diagnostico = sermax_core.diagnostico_widget()
+
+    itens = [
+        " SERMAX",
+        " --------------------------------------",
+        " INTELIGENCIA ARTIFICIAL",
+        "",
+        " [ ONLINE ]",
+        "",
+        " REDE NEURAL",
+        f" {diagnostico['neural_status']}",
+        " ESTADO",
+        f" {diagnostico['estado'].upper()}",
+        "",
+        " MODELO",
+        " QWEN 2.5 1.5B",
+        "",
+        " SISTEMA",
+        " OLLAMA",
+        "",
+        " USUARIO",
+        " FABIANO",
+        "",
+        " COMANDOS",
+        " /limpar",
+        " /modelo",
+        " /ajuda",
+        " /voz <arquivo.wav>",
+        " /sair",
+    ]
+
+    linhas = [
+        "+" + "-" * (w - 2) + "+"
+    ]
+
+    for item in itens:
+        linhas.append(
+            "|" +
+            cortar(item, w - 2).ljust(w - 2) +
+            "|"
+        )
+
+    while len(linhas) < TOP_ROWS - 1:
+
+        linhas.append(
+            "|" +
+            " " * (w - 2) +
+            "|"
+        )
+
+    return linhas[:TOP_ROWS - 1]
+
+
+def render(conversa):
+
+    tela = []
+
+    tela.append(
+        " SERMAX - Terminal de IA".ljust(COLS)
+    )
+
+    tela.append("-" * COLS)
+
+    rosto = ROSTO_REDUZIDO[:TOP_ROWS - 2]
+
+    p = painel()
+
+    for i in range(TOP_ROWS - 2):
+
+        esquerda = cortar(
+            rosto[i] if i < len(rosto) else "",
+            FACE_COLS
+        ).ljust(FACE_COLS)
+
+        direita = (
+            p[i]
+            if i < len(p)
+            else "|" +
+            " " * (PANEL_COLS - 2) +
+            "|"
+        )
+
+        tela.append(
+            (
+                " " +
+                esquerda +
+                " " +
+                direita
+            ).ljust(COLS)
+        )
+
+    tela.append(
+        "+" +
+        "-" * (COLS - 2) +
+        "+"
+    )
+
+    tela.append(
+        "|" +
+        " CONVERSA".ljust(COLS - 2) +
+        "|"
+    )
+
+    tela.append(
+        "|" +
+        "-" * (COLS - 2) +
+        "|"
+    )
+
+    largura = COLS - 5
+    capacidade = CHAT_ROWS - 1
+
+    chat_reverso = []
+
+    for item in reversed(conversa):
+
+        prefixo = (
+            "Você: "
+            if item["role"] == "user"
+            else "SERMAX: "
+        )
+
+        partes = quebrar(
+            item["content"],
+            largura - len(prefixo)
+        ) or [""]
+
+        linhas_item = [
+            prefixo + partes[0]
+        ]
+
+        linhas_item.extend(
+            " " * len(prefixo) + x
+            for x in partes[1:]
+        )
+
+        for linha in reversed(linhas_item):
+
+            chat_reverso.append(linha)
+
+            if len(chat_reverso) >= capacidade:
+                break
+
+        if len(chat_reverso) >= capacidade:
+            break
+
+    chat = list(reversed(chat_reverso))
+
+    chat = (
+        [""] * (capacidade - len(chat))
+        + chat
+    )
+
+    for item in chat:
+
+        tela.append(
+            "|" +
+            " " +
+            cortar(
+                item,
+                COLS - 4
+            ).ljust(COLS - 4) +
+            " |"
+        )
+
+    tela.append(
+        "+" +
+        "-" * (COLS - 2) +
+        "+"
+    )
+
+    assert len(tela) == ROWS - 1
+
+    assert all(
+        len(line) == COLS
+        for line in tela
+    )
+
+    return "\n".join(tela)
+
+
+def desenhar(conversa):
+
+    tela = render(conversa)
+
+    sys.stdout.write(
+        CLEAR +
+        HIDE_CURSOR +
+        GREEN +
+        tela +
+        RESET +
+        "\n" +
+        SHOW_CURSOR
+    )
+
+    sys.stdout.flush()
+
+
+def consultar(pergunta, conversa):
+
+    conversa_temp = conversa + [
+        {
+            "role": "user",
+            "content": pergunta
+        },
+        {
+            "role": "assistant",
+            "content": ""
+        }
+    ]
+
+    def atualizar(resposta_atual):
+
+        conversa_temp[-1]["content"] = resposta_atual
+
+        desenhar(conversa_temp)
+
+    try:
+
+        resposta = sermax_core.perguntar(
+            pergunta,
+            receber_parte=atualizar
+        )
+
+        conversa.extend([
+            {
+                "role": "user",
+                "content": pergunta
+            },
+            {
+                "role": "assistant",
+                "content": resposta
+            }
+        ])
+
+        return resposta
+
+    except Exception as erro:
+
+        resposta = "Erro no SERMAX: " + str(erro)
+
+        conversa.extend([
+            {
+                "role": "user",
+                "content": pergunta
+            },
+            {
+                "role": "assistant",
+                "content": resposta
+            }
+        ])
+
+        return resposta
+
+def main():
+    preparar_terminal()
+    conversa = []
+
+    try:
+        desenhar(conversa)
+
+        while True:
+            pergunta = input(
+                GREEN + " Você: " + RESET
+            ).strip()
+
+            if not pergunta:
+                desenhar(conversa)
+                continue
+
+            cmd = pergunta.lower()
+            # Comandos de controle são tratados antes do registro; nunca entram no histórico.
+            if cmd == "/historico":
+                conversa.extend([{"role": "user", "content": pergunta},
+                                 {"role": "assistant", "content": _sermax_hist.listar()}])
+                desenhar(conversa)
+                continue
+
+            if cmd == "/repetir" or cmd.startswith("/repetir "):
+                partes = pergunta.split(maxsplit=1)
+                repetida = _sermax_hist.obter(partes[1] if len(partes) > 1 else 1)
+                if not repetida or repetida.strip().lower().split(maxsplit=1)[0] in {"/sair", "/reiniciar", "/historico", "/repetir"}:
+                    mensagem = "Não há solicitação repetível nessa posição."
+                    conversa.extend([{"role": "user", "content": pergunta}, {"role": "assistant", "content": mensagem}])
+                    desenhar(conversa)
+                    continue
+                conversa.extend([{"role": "user", "content": pergunta}, {"role": "assistant", "content": "Repetindo solicitação: " + repetida}])
+                if repetida.lower().startswith("/plano "):
+                    try:
+                        import sermax_planejador as _sp
+                        conversa.append({"role": "assistant", "content": str(_sp.planejar(repetida[6:].strip()))})
+                    except Exception as erro:
+                        conversa.append({"role": "assistant", "content": "Falha ao repetir planejamento: " + str(erro)})
+                elif repetida.startswith("/"):
+                    conversa.append({"role": "assistant", "content": "O histórico recuperou um comando especial. Por segurança, digite-o diretamente para executá-lo."})
+                else:
+                    consultar(repetida, conversa)
+                desenhar(conversa)
+                continue
+
+            if cmd == "/reiniciar":
+                try:
+                    script = os.path.abspath(__file__)
+                    if getattr(sys, "frozen", False):
+                        raiz = os.path.dirname(os.path.abspath(sys.executable))
+                    else:
+                        raiz = os.path.dirname(os.path.dirname(script))
+                    if os.name != "nt":
+                        raise RuntimeError("O reinício de janela precisa ser validado no Windows.")
+                    if getattr(sys, "frozen", False):
+                        comando = [sys.executable]
+                    else:
+                        comando = [sys.executable, script]
+                    child = subprocess.Popen(
+                        comando, cwd=raiz,
+                        creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+                        close_fds=True
+                    )
+                    time.sleep(0.8)
+                    if child.poll() is not None:
+                        raise RuntimeError("A nova instância encerrou imediatamente (código %s)." % child.returncode)
+                except Exception as erro:
+                    conversa.extend([{"role": "user", "content": pergunta},
+                                     {"role": "assistant", "content": "Não foi possível reiniciar; esta janela continuará aberta. Erro: " + str(erro)}])
+                    desenhar(conversa)
+                    continue
+                print("Nova instância iniciada. Encerrando esta sessão...")
+                break
+
+            # Ponto único de registro para entradas que não são comandos de controle.
+            if cmd not in {"/sair", "sair", "exit", "quit"}:
+                _sermax_hist.registrar(pergunta)
+
+            if cmd == "/vozdiag":
+                estado = diagnostico_voz()
+                mensagem = (
+                    "Diagnostico de voz local\n"
+                    f"Whisper: {estado['whisper'] or 'NAO ENCONTRADO'}\n"
+                    f"Modelo: {estado['modelo'] or 'NAO ENCONTRADO'}\n"
+                    f"Pronto: {'SIM' if estado['pronto'] else 'NAO'}"
+                )
+                conversa.extend([
+                    {"role": "user", "content": pergunta},
+                    {"role": "assistant", "content": mensagem}
+                ])
+                desenhar(conversa)
+                continue
+
+            if cmd == "/voz" or cmd.startswith("/voz "):
+                argumento = pergunta[4:].strip()
+                if not argumento:
+                    exe, modelo = localizar_whisper_e_modelo()
+                    if exe and modelo:
+                        mensagem = (
+                            "Reconhecimento local disponível para arquivo WAV.\n"
+                            "Uso: /voz \"caminho completo do arquivo.wav\"\n"
+                            "Microfone ao vivo ainda não está ativado."
+                        )
+                    else:
+                        mensagem = (
+                            "Whisper ou modelo não localizado. Verifique a instalação existente; "
+                            "nenhum download será iniciado automaticamente."
+                        )
+                    conversa.extend([
+                        {"role": "user", "content": pergunta},
+                        {"role": "assistant", "content": mensagem}
+                    ])
+                    desenhar(conversa)
+                    continue
+
+                caminho_audio = argumento.strip().strip('\"')
+                if not os.path.isfile(caminho_audio):
+                    mensagem = "Arquivo de áudio não encontrado: " + caminho_audio
+                    conversa.extend([
+                        {"role": "user", "content": pergunta},
+                        {"role": "assistant", "content": mensagem}
+                    ])
+                    desenhar(conversa)
+                    continue
+
+                try:
+                    texto_voz = transcrever_arquivo(caminho_audio)
+                    if not texto_voz or not texto_voz.strip():
+                        raise RuntimeError("O Whisper não retornou uma transcrição. Verifique o WAV e o log de voz.")
+                    # Encaminha o texto reconhecido ao núcleo, como uma entrada normal.
+                    consultar(texto_voz.strip(), conversa)
+                except Exception as erro:
+                    conversa.extend([
+                        {"role": "user", "content": pergunta},
+                        {"role": "assistant", "content": "Falha no reconhecimento de voz: " + str(erro)}
+                    ])
+                desenhar(conversa)
+                continue
+
+            # SERMAX_V310_INTEGRACAO: comandos modulares seguros
+            if sermax_integracao_comandos.processar(pergunta, conversa, sermax_core):
+                desenhar(conversa)
+                continue
+
+            if cmd == "/sair":
+                break
+
+            if cmd == "/limpar":
+                conversa.clear()
+                desenhar(conversa)
+                continue
+
+            if cmd == "/modelo":
+                conversa.extend([
+                    {
+                        "role": "user",
+                        "content": pergunta
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Modelo atual: qwen2.5:1.5b"
+                    }
+                ])
+
+                desenhar(conversa)
+                continue
+
+            if cmd == "/ajuda":
+                conversa.extend([
+                    {
+                        "role": "user",
+                        "content": pergunta
+                    },
+                    {
+                        "role": "assistant",
+                        "content": (
+                            "Comandos: /limpar, /modelo, /ajuda, /memoria, /voz <arquivo.wav> e /sair. "
+                            "Recursos locais: calculadora e consultas do Windows. "
+                            "Perguntas gerais usam o cérebro local SERMAX."
+                        )
+                    }
+                ])
+
+                desenhar(conversa)
+                continue
+
+            consultar(
+                pergunta,
+                conversa
+            )
+
+            desenhar(conversa)
+
+    except KeyboardInterrupt:
+        pass
+
+    finally:
+        try:
+            sermax_core.encerrar_widget()
+        except Exception:
+            pass
+        sys.stdout.write(
+            SHOW_CURSOR +
+            RESET +
+            "\n"
+        )
+        sys.stdout.flush()
+
+
+if __name__ == "__main__":
+    main()
+
+===== FILE: SERMAX-Windows/SERMAX_terminal/sermax_voz.py =====
+===== GIT_BLOB_SHA: 68ee5860ddf4f039005f76448940f7e982920d19 =====
+"""Camada local de reconhecimento de voz para SERMAX v2.7.2.
+Validação WAV sem importar o módulo wave, que pode faltar no executável congelado.
+Não baixa arquivos nem chama serviços externos.
+"""
+from pathlib import Path
+import os
+import subprocess
+
+TERMINAL_DIR = Path(__file__).resolve().parent
+SERMAX_DIR = Path(os.environ.get("SERMAX_ROOT", str(TERMINAL_DIR.parent))).resolve()
+USER_DOWNLOADS = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Downloads"
+
+def _arquivos_por_nome(raiz, nome):
+    """Procura arquivos já instalados sem acessar a internet."""
+    if not raiz.is_dir():
+        return
+    try:
+        for pasta, diretorios, arquivos in os.walk(raiz):
+            diretorios[:] = [d for d in diretorios if d.lower() not in {
+                "__pycache__", ".git", "build", "dist", "backups", "backup"
+            }]
+            if nome in arquivos:
+                yield Path(pasta) / nome
+    except (OSError, PermissionError):
+        return
+
+def localizar_whisper_e_modelo():
+    """Localiza Whisper e modelo em pastas conhecidas, sem baixar nem alterar arquivos."""
+    exe_alvos = [
+        SERMAX_DIR / "voz" / "whisper" / "Release" / "whisper-cli.exe",
+        SERMAX_DIR / "voz" / "whisper-cli.exe",
+    ]
+    mod_alvos = [SERMAX_DIR / "voz" / "modelos" / "ggml-tiny.bin"]
+    exe = next((p for p in exe_alvos if p.is_file()), None)
+    modelo = next((p for p in mod_alvos if p.is_file()), None)
+    raizes = [SERMAX_DIR, USER_DOWNLOADS]
+    if not exe:
+        for raiz in raizes:
+            exe = next(_arquivos_por_nome(raiz, "whisper-cli.exe"), None)
+            if exe: break
+    if not modelo:
+        for raiz in raizes:
+            modelo = next(_arquivos_por_nome(raiz, "ggml-tiny.bin"), None)
+            if modelo: break
+    return (str(exe) if exe else None, str(modelo) if modelo else None)
+
+def diagnostico_voz():
+    exe, modelo = localizar_whisper_e_modelo()
+    return {"whisper": exe, "modelo": modelo, "pronto": bool(exe and modelo)}
+
+def _validar_wav(caminho):
+    """Valida RIFF/WAVE lendo cabeçalhos, sem depender do módulo wave."""
+    with open(caminho, "rb") as f:
+        cab = f.read(12)
+        if len(cab) < 12 or cab[0:4] != b"RIFF" or cab[8:12] != b"WAVE":
+            raise ValueError("Arquivo inválido: precisa ser WAV RIFF, não basta renomear M4A para WAV.")
+        formato = None
+        canais = taxa = bits = None
+        tem_dados = False
+        while True:
+            chunk = f.read(8)
+            if len(chunk) < 8: break
+            nome, tamanho = chunk[:4], int.from_bytes(chunk[4:8], "little")
+            conteudo = f.read(min(tamanho, 64) if nome == b"fmt " else min(tamanho, 0))
+            if nome == b"fmt ":
+                if len(conteudo) < 16: raise ValueError("Cabeçalho WAV incompleto.")
+                formato = int.from_bytes(conteudo[0:2], "little")
+                canais = int.from_bytes(conteudo[2:4], "little")
+                taxa = int.from_bytes(conteudo[4:8], "little")
+                bits = int.from_bytes(conteudo[14:16], "little")
+                f.seek(max(0, tamanho - len(conteudo)), 1)
+            else:
+                if nome == b"data" and tamanho > 0: tem_dados = True
+                f.seek(tamanho, 1)
+            if tamanho & 1: f.seek(1, 1)
+            if formato is not None and tem_dados: break
+    if not tem_dados or not canais or not taxa:
+        raise ValueError("WAV vazio ou sem dados de áudio.")
+    if formato != 1:
+        raise ValueError("WAV deve usar PCM não comprimido. Converta para PCM 16-bit, mono, 16 kHz.")
+    if canais not in (1, 2) or taxa < 8000 or bits not in (8, 16, 24, 32):
+        raise ValueError("Parâmetros WAV incompatíveis. Recomendado: PCM 16-bit, mono, 16 kHz.")
+
+def transcrever_arquivo(caminho_audio):
+    audio = Path(caminho_audio).expanduser()
+    if not audio.is_absolute(): audio = Path.cwd() / audio
+    if not audio.is_file(): raise FileNotFoundError(f"Áudio não encontrado: {audio}")
+    if audio.suffix.lower() != ".wav":
+        raise ValueError("O arquivo precisa estar convertido para WAV; renomear M4A não converte o áudio.")
+    _validar_wav(audio)
+    exe, modelo = localizar_whisper_e_modelo()
+    if not exe or not modelo:
+        raise FileNotFoundError("Whisper/modelo não localizados. Coloque os arquivos em C:\\SERMAX\\voz conforme LEIA-ME.")
+    saida = audio.with_name(audio.stem + "_sermax_transcricao")
+    cmd = [exe, "-m", modelo, "-f", str(audio), "-l", "pt", "-otxt", "-of", str(saida), "-nt"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=180, cwd=str(Path(exe).parent), shell=False)
+    except subprocess.TimeoutExpired as exc:
+        raise TimeoutError("O Whisper ultrapassou 180 segundos.") from exc
+    txt = Path(str(saida) + ".txt")
+    texto = txt.read_text(encoding="utf-8-sig", errors="replace").strip() if txt.is_file() else proc.stdout.strip()
+    if proc.returncode != 0:
+        detalhe = (proc.stderr or proc.stdout or "sem detalhes")[-1200:]
+        raise RuntimeError(f"Whisper encerrou com código {proc.returncode}: {detalhe}")
+    if not texto: raise RuntimeError("Whisper terminou sem produzir transcrição.")
+    return texto
+
+
+===== FILE: SERMAX-Windows/SERMAX_terminal/sermax_integracao_comandos.py =====
+===== GIT_BLOB_SHA: 4eda3f14e3633c27907674d5cd6533c939924efc =====
+"""Comandos modulares seguros do SERMAX v3.1.2."""
+def _log(hist,cmd,answer):
+    hist.extend([{"role":"user","content":cmd},{"role":"assistant","content":str(answer)}])
+def processar(cmd,hist,core):
+    if not isinstance(cmd,str): return False
+    low=cmd.strip().lower()
+    if low=="/integracao":
+        import os
+        from sermax_voz import localizar_whisper_e_modelo
+        root=os.path.abspath(os.environ.get("SERMAX_ROOT", os.path.dirname(os.path.dirname(os.path.abspath(core.__file__)))))
+        whisper, modelo_voz = localizar_whisper_e_modelo()
+        lines=["SERMAX v3.1.4 — diagnóstico da instalação principal",
+          "Núcleo: "+("OK" if hasattr(core,"perguntar") else "AUSENTE"),
+          "Planejador: "+("OK" if hasattr(core,"sermax_planejador") else "AUSENTE"),
+          "Executor: "+("OK" if hasattr(core,"sermax_executor") else "AUSENTE"),
+          "Tarefas: "+("OK" if hasattr(core,"sermax_tarefas") else "AUSENTE"),
+          "Memória: "+("ENCONTRADA" if os.path.isfile(getattr(core,"ARQUIVO_MEMORIA","")) else "AUSENTE"),
+          "Whisper: "+("ENCONTRADO: "+whisper if whisper and os.path.isfile(whisper) else "AUSENTE"),
+          "Modelo de voz: "+("ENCONTRADO: "+modelo_voz if modelo_voz and os.path.isfile(modelo_voz) else "AUSENTE"),
+          "Instalação ativa: C:\\SERMAX."]
+        _log(hist,cmd,"\n".join(lines)); return True
+    if low=="/plano" or low.startswith("/plano "):
+        obj=cmd[len("/plano"):].strip()
+        try:
+            answer=core.sermax_planejador.planejar(obj,modelo=getattr(core,"MODELO","sermax"),url=getattr(core,"OLLAMA_URL","http://127.0.0.1:11434/api/chat")) if obj else "Uso: /plano <objetivo>"
+        except Exception as e: answer=f"Erro do planejador ({type(e).__name__}: {e}). Nenhuma ação executada."
+        _log(hist,cmd,answer); return True
+    if low=="/tarefas" or low.startswith("/tarefas "):
+        plan=cmd[len("/tarefas"):].strip()
+        if not plan: answer="Uso: /tarefas sistema; calcular 125 x 87; memoria Siena"
+        else:
+            try: answer=core.sermax_tarefas.executar_plano(plan,core=core,ferramenta=getattr(core,"ferramenta_windows",None))
+            except Exception as e: answer=f"Erro nas tarefas seguras ({type(e).__name__}: {e})."
+        _log(hist,cmd,answer); return True
+    return False
+
+
+===== FILE: SERMAX-Windows/sermax_historico_comandos.py =====
+===== GIT_BLOB_SHA: 19681d25cc0903aa9cf5fc14bd0ae71d2f66a2ba =====
+# -*- coding: utf-8 -*-
+"""Histórico local do SERMAX; arquivo ao lado do núcleo da instalação."""
+import datetime
+import json
+import os
+from pathlib import Path
+
+ROOT = Path(os.environ.get("SERMAX_ROOT") or Path(__file__).resolve().parent).resolve()
+PATH = ROOT / "historico_comandos.json"
+MAX = 100
+CONTROLES = ("/historico", "/repetir", "/reiniciar", "/sair", "/ajuda")
+
+
+def _controle(comando):
+    c = str(comando or "").strip().lower()
+    return any(c == prefixo or c.startswith(prefixo + " ") for prefixo in CONTROLES)
+
+
+def carregar():
+    try:
+        with PATH.open("r", encoding="utf-8") as f:
+            d = json.load(f)
+        if isinstance(d, dict) and isinstance(d.get("comandos"), list):
+            d["comandos"] = [x for x in d["comandos"] if isinstance(x, dict)]
+            return d
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        pass
+    return {"comandos": []}
+
+
+def _arquivo_existente_valido():
+    """Impede que uma gravação substitua silenciosamente um histórico inválido."""
+    if not PATH.exists():
+        return True
+    try:
+        with PATH.open("r", encoding="utf-8") as f:
+            d = json.load(f)
+        return isinstance(d, dict) and isinstance(d.get("comandos"), list)
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+
+
+def registrar(comando):
+    comando = str(comando or "").strip()
+    if not comando or _controle(comando):
+        return False
+    # Carregar() mantém leitura tolerante, mas gravar sobre um arquivo inválido
+    # apagaria a evidência original. Recusar a escrita preserva os bytes existentes.
+    if not _arquivo_existente_valido():
+        return False
+    d = carregar()
+    itens = d["comandos"]
+    # Cada entrada é registrada uma vez; não duplica imediatamente a mesma pergunta.
+    if itens and str(itens[0].get("comando", "")) == comando:
+        return False
+    itens.insert(0, {"comando": comando, "data": datetime.datetime.now().isoformat(timespec="seconds")})
+    d["comandos"] = itens[:MAX]
+    tmp = PATH.with_suffix(PATH.suffix + ".tmp")
+    try:
+        ROOT.mkdir(parents=True, exist_ok=True)
+        with tmp.open("w", encoding="utf-8", newline="\n") as f:
+            json.dump(d, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, PATH)
+        return True
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def listar(limite=10):
+    itens = carregar()["comandos"]
+    if not itens:
+        return "Ainda não há comandos salvos."
+    linhas = ["Histórico persistente (mais recentes primeiro):"]
+    for i, x in enumerate(itens[:max(1, min(int(limite), 30))], 1):
+        linhas.append(f"{i}. {x.get('comando', '')} [{x.get('data', '')}]")
+    linhas.append("Use /repetir ou /repetir N.")
+    return "\n".join(linhas)
+
+
+def obter(indice=1):
+    try:
+        itens = carregar()["comandos"]
+        n = int(indice)
+        if 1 <= n <= len(itens):
+            comando = str(itens[n - 1].get("comando", "")).strip()
+            return comando or None
+    except (TypeError, ValueError, KeyError):
+        pass
+    return None
+
+
+===== FILE: SERMAX-Windows/sermax_planejador.py =====
+===== GIT_BLOB_SHA: 6c4bba84d0df5aca51035f653239d7317b650e02 =====
+"""Planejador local SERMAX v3.1.7: organização segura de listas."""
+import json, re, urllib.request, urllib.error
+
+MODELO_PADRAO = "sermax"
+URL_PADRAO = "http://127.0.0.1:11434/api/chat"
+FERRAMENTAS_PERMITIDAS = {"responder", "consultar_memoria", "calcular", "consultar_sistema"}
+
+_INSTRUCOES = """Você é o planejador local do SERMAX. Proponha um plano curto, sem executar ações.
+Não invente tarefas pessoais, compromissos, horários ou prazos. Não altere a lista fornecida.
+Use no máximo quatro etapas. Não proponha comandos de terminal, scripts, alterações de arquivos,
+instalações ou ações destrutivas. Retorne somente JSON:
+{"objetivo":"...","etapas":[{"titulo":"...","ferramenta":"responder","verificacao":"..."}]}.
+Ferramenta deve ser responder, consultar_memoria, calcular ou consultar_sistema."""
+
+def _safe(s, n=240):
+    if not isinstance(s, str): return ""
+    return re.sub(r"\s+", " ", re.sub(r"[\x00-\x1f\x7f]", " ", s)).strip()[:n]
+
+def _parse_lista(texto):
+    # Accept "organizar: A, B, C", newline-separated items, or semicolons.
+    partes = re.split(r"[;\n]+", texto)
+    itens=[]
+    for parte in partes:
+        parte=parte.strip(" \t-•")
+        if not parte: continue
+        # Commas separate tasks only when there is no sentence-like phrase.
+        if "," in parte:
+            itens.extend(x.strip(" \t-•") for x in parte.split(",") if x.strip(" \t-•"))
+        else:
+            itens.append(parte)
+    saida=[]
+    vistos=set()
+    for item in itens:
+        item=_safe(item,180)
+        chave=item.casefold()
+        if item and chave not in vistos:
+            vistos.add(chave); saida.append(item)
+    return saida[:20]
+
+def _plano_organizacao(objetivo):
+    low=objetivo.lower().strip()
+    verbos=("organizar","organize","planejar","planeje","ordenar")
+    if not any(v in low for v in verbos) or not any(k in low for k in ("tarefa","tarefas","dia","rotina","lista","organizar:","organize:")):
+        return None
+    # Strip common task-intro prefixes but keep user content intact.
+    m=re.search(r"\b(?:organizar|organize|planejar|planeje|ordenar)(?:\s+(?:as|minhas|minha|meu|meus))?(?:\s+(?:tarefas|lista|rotina|dia))?\s*:?\s*(.*)$", objetivo, re.I)
+    remainder=m.group(1).strip(" :.-") if m else ""
+    # "organizar minhas tarefas para hoje" has no actual task list.
+    if not remainder or remainder.lower() in {"para hoje","hoje","do dia","para o dia de hoje"}:
+        return ("Para organizar suas tarefas, preciso da lista real.\n"
+                "Envie uma tarefa por linha ou separe-as por ponto e vírgula. "
+                "Se souber, inclua prazo e urgência.\n"
+                "Não vou inventar compromissos nem executar ações.")
+    # Remove leading connective phrases before parsing.
+    remainder=re.sub(r"^(?:para hoje|hoje|do dia de hoje)\s*[:,.-]?\s*", "", remainder, flags=re.I)
+    itens=_parse_lista(remainder)
+    # Avoid treating generic words as task items.
+    itens=[x for x in itens if x.lower() not in {"para hoje","hoje","tarefas para hoje","minhas tarefas para hoje"}]
+    if not itens:
+        return ("Ainda não identifiquei tarefas na mensagem.\n"
+                "Envie uma tarefa por linha ou separe-as por ponto e vírgula.\n"
+                "Nenhuma ação foi executada.")
+    linhas=["LISTA ORGANIZADA — proposta, não executada:"]
+    for i,item in enumerate(itens,1):
+        lowitem=item.lower()
+        if any(k in lowitem for k in ("vencido","atrasado","vence hoje","urgente","prazo hoje","até hoje")):
+            marca="URGENTE (com base no texto informado)"
+        elif any(k in lowitem for k in ("quando puder","sem prazo","não urgente","na semana")):
+            marca="PODE AGUARDAR (com base no texto informado)"
+        else:
+            marca="PRAZO/urgência a confirmar"
+        linhas.append(f"{i}. {item} — {marca}")
+    linhas.extend(["","Não inventei prazos. A ordem acima mantém a sequência que você informou.",
+                   "Se informar vencimentos ou urgências, posso reordenar a lista.",
+                   "Nenhuma ferramenta foi executada."])
+    return "\n".join(linhas)
+
+def validar_resposta_plano(content, objetivo):
+    """Valida a saída não confiável do modelo e retorna etapas permitidas."""
+    if not isinstance(content, str) or len(content) > 16000:
+        raise ValueError("resposta do modelo ausente ou acima de 16 KB")
+    texto = content.strip()
+    if texto.startswith("```"):
+        texto = re.sub(r"^```(?:json)?\s*|\s*```$", "", texto, flags=re.I)
+    inicio, fim = texto.find("{"), texto.rfind("}")
+    if inicio < 0 or fim <= inicio:
+        raise ValueError("JSON ausente")
+    dados = json.loads(texto[inicio:fim + 1])
+    if not isinstance(dados, dict) or not isinstance(dados.get("etapas"), list):
+        raise ValueError("estrutura inválida")
+    if not 1 <= len(dados["etapas"]) <= 4:
+        raise ValueError("o plano deve conter de uma a quatro etapas")
+    etapas = []
+    for etapa in dados["etapas"]:
+        if not isinstance(etapa, dict):
+            raise ValueError("etapa inválida")
+        ferramenta = etapa.get("ferramenta")
+        if ferramenta not in FERRAMENTAS_PERMITIDAS:
+            raise ValueError("ferramenta não permitida")
+        titulo = _safe(etapa.get("titulo"), 160)
+        verificacao = _safe(etapa.get("verificacao"), 200)
+        if not titulo or not verificacao:
+            raise ValueError("etapa sem título ou verificação")
+        etapas.append((titulo, ferramenta, verificacao))
+    return etapas
+
+
+def planejar(objetivo, modelo=MODELO_PADRAO, url=URL_PADRAO, timeout=300):
+    objetivo=_safe(objetivo,1200)
+    if not objetivo: return "Informe o objetivo após /plano."
+    direto=_plano_organizacao(objetivo)
+    if direto is not None: return direto
+    payload={"model":modelo,"stream":False,"format":"json","keep_alive":"10m",
+      "options":{"num_ctx":1024,"num_predict":120,"temperature":0},
+      "messages":[{"role":"system","content":_INSTRUCOES},
+      {"role":"user","content":"Proponha um plano para este objetivo, sem executar: "+objetivo}]}
+    req=urllib.request.Request(url,data=json.dumps(payload,ensure_ascii=False).encode("utf-8"),
+      headers={"Content-Type":"application/json"},method="POST")
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as r:
+            result=json.loads(r.read().decode("utf-8"))
+        content=result.get("message",{}).get("content","")
+        etapas=validar_resposta_plano(content, objetivo)
+        linhas=["Plano proposto (ainda não executado):","Objetivo: "+objetivo]
+        for i,(t,f,v) in enumerate(etapas,1): linhas.extend([f"{i}. {t} [ferramenta: {f}]",f"   Verificação: {v}"])
+        linhas.append("Nenhuma ferramenta ou comando foi executado.")
+        return "\n".join(linhas)
+    except urllib.error.HTTPError as e:
+        return f"Erro HTTP {e.code} na API do Ollama. Nenhuma ação executada."
+    except (urllib.error.URLError,TimeoutError) as e:
+        return f"Falha de conexão/tempo limite com Ollama: {getattr(e,'reason',str(e))}. Nenhuma ação executada."
+    except Exception as e:
+        return f"Planejador: {type(e).__name__}: {e}. Nenhuma ação executada."
+

@@ -1,0 +1,895 @@
+===== FILE: SERMAX-Windows/sermax.py =====
+===== GIT_BLOB_SHA: 261a7886bf75656c9866adfc4eb3ae3350cfeb17 =====
+import os
+import time
+import sermax_core
+
+ARQUIVO_DIAGNOSTICO = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "diagnostico_velocidade_sermax.txt",
+)
+
+
+def registrar_diagnostico(pergunta, inicio, primeira_saida, fim):
+    """Registra tempos, sem salvar pergunta nem resposta do usuário."""
+    primeira = "sem saída" if primeira_saida is None else f"{primeira_saida:.2f} s"
+    total = f"{fim - inicio:.2f} s"
+    metricas = getattr(sermax_core, "ultimo_diagnostico_ollama", {}) or {}
+    def segundos(chave):
+        valor = metricas.get(chave)
+        return "n/d" if valor is None else f"{valor / 1_000_000_000:.2f} s"
+    linha = (
+        f"Primeira saída: {primeira} | Tempo total: {total}"
+        f" | Carga modelo: {segundos('load_duration')}"
+        f" | Avaliação prompt: {segundos('prompt_eval_duration')}"
+        f" | Geração: {segundos('eval_duration')}"
+        f" | Tokens prompt: {metricas.get('prompt_eval_count', 'n/d')}"
+        f" | Tokens gerados: {metricas.get('eval_count', 'n/d')}\n"
+    )
+    try:
+        with open(ARQUIVO_DIAGNOSTICO, "a", encoding="utf-8") as arquivo:
+            arquivo.write(linha)
+    except OSError:
+        pass
+    print(f"\n[Diagnóstico] Primeira saída: {primeira} | Total: {total}")
+    if metricas:
+        print(
+            "[Ollama] Carga: " + segundos("load_duration")
+            + " | Prompt: " + segundos("prompt_eval_duration")
+            + " | Geração: " + segundos("eval_duration")
+        )
+
+
+def main():
+    print("SERMAX v1.6 iniciado.")
+    print("Digite sair para encerrar.")
+
+    while True:
+        try:
+            mensagem = input("Você: ").strip()
+        except (KeyboardInterrupt, EOFError):
+            print("\nSERMAX encerrado.")
+            break
+        except OSError as erro:
+            if getattr(erro, "winerror", None) == 6 or getattr(erro, "errno", None) == 9:
+                print(
+                    "\nSERMAX: O console perdeu o acesso à entrada. "
+                    "Feche esta janela e inicie novamente pelo PowerShell."
+                )
+                break
+            print(f"\nSERMAX: Falha ao ler a entrada: {erro}")
+            break
+
+        if mensagem.lower() in {"sair", "/sair", "/bye", "bye", "exit", "quit"}:
+            print("SERMAX: Até logo, Fabiano.")
+            break
+
+        if not mensagem:
+            continue
+
+        inicio = time.perf_counter()
+        primeira_saida = None
+        tamanho_exibido = 0
+        print("SERMAX: ", end="", flush=True)
+
+        def mostrar_parte(resposta_acumulada):
+            nonlocal primeira_saida, tamanho_exibido
+            if not resposta_acumulada:
+                return
+            parte_nova = resposta_acumulada[tamanho_exibido:]
+            if not parte_nova:
+                return
+            if primeira_saida is None:
+                primeira_saida = time.perf_counter() - inicio
+            print(parte_nova, end="", flush=True)
+            tamanho_exibido = len(resposta_acumulada)
+
+        try:
+            resposta = sermax_core.perguntar(mensagem, receber_parte=mostrar_parte)
+            fim = time.perf_counter()
+            if resposta and tamanho_exibido == 0:
+                print(resposta, end="", flush=True)
+                primeira_saida = fim - inicio
+            print()
+            registrar_diagnostico(mensagem, inicio, primeira_saida, fim)
+        except Exception as erro:
+            fim = time.perf_counter()
+            print("\nSERMAX: Erro:", erro)
+            registrar_diagnostico(mensagem, inicio, primeira_saida, fim)
+
+
+if __name__ == "__main__":
+    main()
+
+
+===== FILE: SERMAX-Windows/sermax_github_agent_runner.py =====
+===== GIT_BLOB_SHA: 47e0e8f00347114fb31241186e4075b6571fcfcf =====
+"""Executa uma tarefa pontual da equipe SERMAX no GitHub Actions."""
+from __future__ import annotations
+
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+from sermax_dev_team import DevelopmentTeam
+from sermax_groq_backend import GroqChatBackend
+from sermax_workspace import TestRunner, WorkspaceAdapter
+
+CONTEXT_FILES = (
+    "sermax_core.py",
+    "sermax_jarvis_adapter.py",
+    "sermax_pestinha_adapter.py",
+    "sermax_dev_team.py",
+    "sermax_workspace.py",
+    "sermax_dev_proposal.py",
+)
+
+
+def collect_code_context(project_root: Path) -> str:
+    """Anexa trechos reais e limitados dos arquivos relevantes ao contexto dos papéis."""
+    sections = []
+    remaining = 3_000
+    for relative in CONTEXT_FILES:
+        path = project_root / relative
+        if not path.is_file() or path.stat().st_size > 1_000_000 or remaining <= 0:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        excerpt = content[: min(650, remaining)]
+        section = f"\n--- ARQUIVO: {relative} ---\n{excerpt}"
+        sections.append(section)
+        remaining -= len(section)
+    return "\n".join(sections)
+
+
+def main() -> int:
+    objective = os.environ.get("SERMAX_DEV_TASK", "").strip()
+    if not objective:
+        print("SERMAX_DEV_TASK vazio.", file=sys.stderr)
+        return 2
+
+    project_root = Path(__file__).resolve().parent
+    workspace = WorkspaceAdapter(project_root)
+    test_runner = TestRunner(workspace, timeout_seconds=300, isolate_as_nobody=True)
+    backend = GroqChatBackend()
+    code_context = collect_code_context(project_root)
+    evidence = (
+        "Ambiente: GitHub Actions. Workspace isolado: SERMAX-Windows. "
+        "Não altere memórias, infraestrutura dos agentes, workflows, credenciais, "
+        "configurações de permissões ou arquivos fora do escopo. "
+        "Propostas aceitas: somente .py e .md do produto. Toda proposta exige unittest. "
+        "O Programador terá a proposta validada antes de ser aplicada. "
+        "O executor roda os testes e faz rollback se algum falhar. "
+        "O Testador deve emitir JSON PASS/FAIL com evidência real.\n"
+        "CONTEXTO DE CÓDIGO REAL:\n" + code_context
+    )
+    team = DevelopmentTeam(
+        Path(tempfile.gettempdir()) / "sermax-development-team.sqlite3",
+        model_call=backend,
+        workspace_adapter=workspace,
+        test_runner=test_runner,
+    )
+    task_id = team.enqueue(objective, evidence=evidence)
+    print(f"Tarefa SERMAX registrada: {task_id}")
+    team.run_next()
+    result = team.get_task(task_id)
+    print(f"Status: {result['status']}")
+    if result["status"] != "completed":
+        print(result.get("error", "Tarefa não concluída."), file=sys.stderr)
+        return 1
+    print(result["result"])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+===== FILE: SERMAX-Windows/sermax_jarvis_worker.py =====
+===== GIT_BLOB_SHA: 6dabcc69603caa0c61648bd147b50d64b8985761 =====
+"""Worker isolado do OpenJarvis, fixado à política de segurança do SERMAX."""
+from __future__ import annotations
+
+import contextlib
+import json
+import os
+import sys
+from pathlib import Path
+
+
+def _configurar_openjarvis():
+    """Cria configuração explícita. Não herda preferências do perfil do usuário."""
+    from openjarvis.core.config import JarvisConfig
+
+    config = JarvisConfig()
+    config.skills.enabled = False
+    config.tools.mcp.enabled = False
+    config.tools.enabled = ""
+    config.agent.tools = ""
+    config.agent.context_from_memory = False
+    config.agent.default_system_prompt = (
+        "Você é um componente interno do SERMAX. "
+        "Responda ao pedido recebido em português, com precisão. "
+        "Não afirme ser um assistente independente."
+    )
+    config.agent.system_prompt = config.agent.default_system_prompt
+    config.telemetry.enabled = False
+    config.traces.enabled = False
+    config.analytics.enabled = False
+    config.channel.enabled = False
+    config.tools.storage.enabled = False
+
+    # Impede a leitura acidental de arquivos SOUL/MEMORY/USER do perfil Jarvis.
+    isolated = Path(os.environ.get("SERMAX_ROOT", Path(__file__).resolve().parent))
+    isolated = isolated / ".sermax-openjarvis-isolated"
+    config.memory_files.soul_path = str(isolated / "SOUL.md")
+    config.memory_files.memory_path = str(isolated / "MEMORY.md")
+    config.memory_files.user_path = str(isolated / "USER.md")
+    config.memory_files.persona_name = ""
+    return config
+
+
+def main():
+    try:
+        request = json.load(sys.stdin)
+        if not isinstance(request, dict):
+            raise ValueError("Solicitação inválida.")
+        prompt = request.get("prompt")
+        model = request.get("model", "sermax")
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 4000:
+            raise ValueError("Pergunta inválida.")
+        if not isinstance(model, str) or not model.strip() or len(model) > 120:
+            raise ValueError("Modelo inválido.")
+
+        with contextlib.redirect_stdout(sys.stderr):
+            from openjarvis import Jarvis
+
+            sdk = Jarvis(
+                config=_configurar_openjarvis(),
+                engine_key="ollama",
+                model=model,
+            )
+            try:
+                response = sdk.ask(
+                    prompt.strip(),
+                    agent="simple",
+                    tools=[],
+                    context=False,
+                    temperature=0.2,
+                    max_tokens=512,
+                )
+            finally:
+                close = getattr(sdk, "close", None)
+                if callable(close):
+                    close()
+
+        if not isinstance(response, str) or not response.strip():
+            raise RuntimeError("OpenJarvis retornou resposta vazia.")
+        json.dump({"response": response.strip()}, sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
+        return 0
+    except Exception as exc:
+        print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+===== FILE: SERMAX-Windows/sermax_dev_proposal.py =====
+===== GIT_BLOB_SHA: ef082260d3b23bfd8dbcf7eb8c5ace934ded642d =====
+"""Validação e aplicação controlada de propostas do papel Programador."""
+from __future__ import annotations
+
+import json
+import os
+import tempfile
+from dataclasses import dataclass
+from typing import Any
+
+from sermax_workspace import MAX_FILE_BYTES, WorkspaceAdapter, WorkspaceError
+
+MAX_PROPOSAL_BYTES = 2_000_000
+MAX_FILES = 10
+MAX_PATH_CHARS = 240
+PROTECTED_BASENAMES = {
+    "sermax_github_agent_runner.py", "sermax_groq_backend.py",
+    "sermax_dev_team.py", "sermax_dev_proposal.py", "sermax_workspace.py",
+    "sermax.spec", "memoria_sermax.json", "memoria_neural_pestinha.json",
+}
+
+
+class ProposalError(ValueError):
+    """Proposta inválida ou fora do escopo."""
+
+
+@dataclass(frozen=True)
+class ProposedFile:
+    path: str
+    content: str
+
+
+@dataclass(frozen=True)
+class ValidatedProposal:
+    summary: str
+    files: tuple[ProposedFile, ...]
+    tests: tuple[str, ...]
+
+
+def _validate_development_path(path: str) -> None:
+    normalized = path.replace("\\", "/")
+    parts = normalized.split("/")
+    lowered = [part.casefold() for part in parts]
+    if (
+        normalized.startswith("/")
+        or any(not part or part in {".", ".."} for part in parts)
+        or any(part.startswith(".") for part in parts)
+        or any(part in {".github", ".git", ".sermax_dev_backups", "sermax_terminal"} for part in lowered)
+        or lowered[-1] in PROTECTED_BASENAMES
+        or not lowered[-1].endswith((".py", ".md"))
+    ):
+        raise ProposalError(
+            "Caminho fora do escopo: somente arquivos .py e .md do produto; "
+            "infraestrutura, workflows, credenciais e memórias são protegidos."
+        )
+
+
+def parse_proposal(raw: str) -> ValidatedProposal:
+    if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_PROPOSAL_BYTES:
+        raise ProposalError("Resposta do Programador ausente ou acima do limite.")
+    try:
+        data: Any = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ProposalError("O Programador precisa retornar JSON válido.") from exc
+    if not isinstance(data, dict) or set(data) != {"summary", "files", "tests"}:
+        raise ProposalError("A proposta exige os campos summary, files e tests.")
+    summary, files, tests = data["summary"], data["files"], data["tests"]
+    if not isinstance(summary, str) or not summary.strip() or len(summary) > 2000:
+        raise ProposalError("Resumo inválido.")
+    if not isinstance(files, list) or not 1 <= len(files) <= MAX_FILES:
+        raise ProposalError("A proposta deve conter de 1 a 10 arquivos.")
+    if (
+        not isinstance(tests, list)
+        or not tests
+        or any(test not in {"unittest", "compileall"} for test in tests)
+        or "unittest" not in tests
+    ):
+        raise ProposalError("A proposta precisa incluir a suíte unittest autorizada.")
+    parsed, seen = [], set()
+    for item in files:
+        if not isinstance(item, dict) or set(item) != {"path", "content"}:
+            raise ProposalError("Cada arquivo exige path e content.")
+        path, content = item["path"], item["content"]
+        if not isinstance(path, str) or not path.strip() or len(path) > MAX_PATH_CHARS:
+            raise ProposalError("Caminho inválido.")
+        _validate_development_path(path)
+        if not isinstance(content, str) or len(content.encode("utf-8")) > MAX_FILE_BYTES:
+            raise ProposalError("Conteúdo de arquivo inválido ou acima do limite.")
+        normalized = path.replace("\\", "/").casefold()
+        if normalized in seen:
+            raise ProposalError("A proposta contém caminhos duplicados.")
+        seen.add(normalized)
+        parsed.append(ProposedFile(path, content))
+    return ValidatedProposal(summary.strip(), tuple(parsed), tuple(dict.fromkeys(tests)))
+
+
+def preview_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> list[dict]:
+    previews = []
+    for item in proposal.files:
+        try:
+            diff = workspace.preview(item.path, item.content)
+        except WorkspaceError as exc:
+            raise ProposalError(f"Arquivo fora do escopo: {item.path}") from exc
+        previews.append({"path": item.path, "diff": diff})
+    return previews
+
+
+def apply_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal) -> list[str]:
+    preview_proposal(workspace, proposal)
+    written = []
+    for item in proposal.files:
+        workspace.write_text(item.path, item.content)
+        written.append(item.path)
+    return written
+
+
+def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProposal, test_runner):
+    """Aplica proposta e testes como transação: falha restaura todos os arquivos."""
+    preview_proposal(workspace, proposal)
+    snapshots, backup_snapshots = {}, {}
+    backup_root = workspace.backup_root
+    for item in proposal.files:
+        target = workspace._resolve(item.path, allow_missing=True)
+        existed = target.is_file()
+        snapshots[item.path] = (existed, target.read_bytes() if existed else None)
+        backup = backup_root / item.path
+        backup_snapshots[item.path] = (
+            backup.is_file(), backup.read_bytes() if backup.is_file() else None
+        )
+    try:
+        written = apply_proposal(workspace, proposal)
+        results = [test_runner.run(suite) for suite in proposal.tests]
+        if any(result.get("status") != "passed" for result in results):
+            raise RuntimeError("Testes da proposta falharam.")
+        return written, results
+    except Exception:
+        for relative, (existed, content) in snapshots.items():
+            target = workspace._resolve(relative, allow_missing=True)
+            if existed:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                fd, temp_name = tempfile.mkstemp(prefix=".sermax-rollback-", dir=str(target.parent))
+                try:
+                    with os.fdopen(fd, "wb") as stream:
+                        stream.write(content)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    os.replace(temp_name, target)
+                finally:
+                    if os.path.exists(temp_name):
+                        os.unlink(temp_name)
+            elif target.exists():
+                target.unlink()
+        for relative, (existed, content) in backup_snapshots.items():
+            backup = backup_root / relative
+            if existed:
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                backup.write_bytes(content)
+            elif backup.exists():
+                backup.unlink()
+        raise
+
+
+===== FILE: SERMAX-Windows/sermax_widget_state.py =====
+===== GIT_BLOB_SHA: f9438661f2a50d24df0124a4c08fd30d9ff99cb1 =====
+"""Contrato seguro de estados para o futuro widget do SERMAX.
+
+Este módulo não implementa nem simula uma rede neural. Ele define uma fronteira
+pequena entre eventos explícitos do aplicativo e estados visuais permitidos.
+Não importa o núcleo SERMAX, não lê conversas e não acessa arquivos de memória.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Final
+
+
+ESTADOS_VISUAIS: Final[frozenset[str]] = frozenset({
+    "idle",
+    "attention",
+    "processing",
+    "completed",
+    "error",
+})
+
+_EVENTOS_PARA_ESTADOS: Final[dict[str, str]] = {
+    "idle": "idle",
+    "attention": "attention",
+    "processing": "processing",
+    "completed": "completed",
+    "error": "error",
+}
+
+
+@dataclass(frozen=True)
+class WidgetState:
+    """Estado visual validado e seguro para consumo pela interface."""
+
+    name: str
+
+
+class WidgetStateController:
+    """Traduz eventos fechados em estados visuais, sem executar ações do SO."""
+
+    def __init__(self, neural_adapter=None) -> None:
+        self._state = WidgetState("idle")
+        self._neural_adapter = neural_adapter
+
+    @property
+    def state(self) -> WidgetState:
+        return self._state
+
+    def set_event(self, event: str) -> WidgetState:
+        """Atualiza o estado para um evento conhecido; entradas inválidas falham fechadas."""
+        if not isinstance(event, str):
+            self._state = WidgetState("error")
+            return self._state
+
+        evento = event.strip().lower()
+        state = _EVENTOS_PARA_ESTADOS.get(evento, "error")
+        if state not in ESTADOS_VISUAIS:
+            state = "error"
+        if self._neural_adapter is not None:
+            try:
+                state = self._neural_adapter.processar_evento(evento)
+            except Exception:
+                state = evento if evento in ESTADOS_VISUAIS else "error"
+        self._state = WidgetState(state if isinstance(state, str) and state in ESTADOS_VISUAIS else "error")
+        return self._state
+
+    def salvar_estado_neural(self) -> bool:
+        """Persiste o estado neural separado da memória pessoal SERMAX."""
+        if self._neural_adapter is None:
+            return False
+        try:
+            return bool(self._neural_adapter.salvar())
+        except Exception:
+            return False
+
+    def accept_neural_output(self, output: object) -> WidgetState:
+        """Aceita somente um rótulo visual permitido; qualquer saída inválida vira erro.
+
+        A rede neural ainda não está conectada. Este método define o limite de
+        segurança para uma futura integração e nunca executa comandos.
+        """
+        if not isinstance(output, str):
+            self._state = WidgetState("error")
+            return self._state
+
+        candidate = output.strip().lower()
+        self._state = WidgetState(
+            candidate if candidate in ESTADOS_VISUAIS else "error"
+        )
+        return self._state
+
+
+===== FILE: SERMAX-Windows/ARQUITETURA-SERMAX-UNIFICADO-JARVIS-PESTINHA.md =====
+===== GIT_BLOB_SHA: 70d6052531016529bed907169f575008dea89378 =====
+# Arquitetura SERMAX unificado: incorporação Jarvis + Pestinha
+
+**Objetivo aprovado pelo mantenedor:** o usuário interage exclusivamente com SERMAX. As tecnologias incorporadas de OpenJarvis e Pestinha são capacidades internas, coordenadas automaticamente pelo núcleo. Não deve existir dependência de comandos como `/jarvis`, `/pestinha` ou `/motor` para obter essas capacidades.
+
+**Estado:** especificação de arquitetura. Não representa integração concluída nem altera o comportamento executável atual.
+
+## 1. Princípio de integração
+
+SERMAX é o produto, a identidade conversacional, o supervisor e o ponto único de entrada. Jarvis e Pestinha deixam de ser apresentados como assistentes ou motores escolhidos pelo usuário.
+
+A separação em processos internos continua permitida quando exigida por compatibilidade de Python, isolamento de dependências ou estabilidade. Separação de processo não significa separação de produto: o núcleo deve coordenar os serviços sem intervenção manual do usuário.
+
+## 2. Capacidades a incorporar
+
+### OpenJarvis
+
+O inventário de capacidades deve cobrir, com base no código upstream fixado e em suas licenças:
+
+- interface unificada para modelos e provedores;
+- seleção automática de modelo/provedor por tarefa, com política SERMAX;
+- agentes e fluxo de execução;
+- ferramentas e chamadas estruturadas, integradas ao executor seguro SERMAX;
+- contexto e recuperação de informação;
+- memória e estado de agente, subordinados à arquitetura de memória SERMAX;
+- avaliação, observabilidade e métricas, quando disponíveis no upstream;
+- tratamento de falhas, timeout, fallback e cancelamento.
+
+Não considerar uma capacidade incorporada enquanto existir somente uma chamada ao método `ask()` com agente simples, sem ferramentas e sem contexto.
+
+### Pestinha
+
+O inventário deve examinar os módulos upstream, não somente a classe `LIFBrain`:
+
+- dinâmica neural LIF e estado interno;
+- estímulos e processamento temporal;
+- mecanismos de atenção, motivação e seleção de ação presentes no código;
+- memória/estado neural e persistência;
+- interfaces de percepção e ação, quando existirem;
+- aprendizagem, adaptação e mecanismos de feedback presentes no projeto.
+
+Cada capacidade deve receber uma decisão documentada: incorporar, adaptar, substituir por implementação SERMAX equivalente ou rejeitar por incompatibilidade, risco ou ausência de utilidade. Não atribuir ao Pestinha capacidades que o código upstream não implementa.
+
+## 3. Núcleo unificado SERMAX
+
+O núcleo deve coordenar um ciclo automático:
+
+1. interpretar a solicitação e recuperar contexto autorizado;
+2. classificar objetivo, risco, recursos necessários e necessidade de planejamento;
+3. selecionar internamente modelo, agente e ferramentas adequados;
+4. consultar os componentes neurais para sinais de atenção, estado, prioridade e adaptação, sem tratar saídas neurais como comandos confiáveis;
+5. planejar a execução e validar permissões;
+6. executar ferramentas por interfaces controladas do SERMAX;
+7. avaliar resultado, detectar falhas e decidir entre concluir, tentar novamente dentro de limites ou pedir aprovação;
+8. produzir uma única resposta SERMAX;
+9. registrar métricas e atualizar estados de aprendizagem autorizados.
+
+O fluxo não deve exigir que o usuário escolha Jarvis, Pestinha, agente ou motor.
+
+## 4. Memória e aprendizagem
+
+Manter domínios separados:
+
+- `memoria_sermax.json`: memória pessoal já existente, preservada byte a byte durante a migração e protegida contra sobrescrita acidental;
+- estado neural Pestinha: arquivo próprio, versionado e validado;
+- memória/contexto operacional de agentes: armazenamento próprio, com política de retenção e acesso definida pelo SERMAX;
+- logs técnicos: sem credenciais, conteúdo pessoal desnecessário ou segredos.
+
+O componente neural não recebe acesso irrestrito à memória pessoal. O núcleo entrega estímulos e sinais mínimos necessários. Qualquer aprendizagem baseada em conversas exige política explícita, filtragem, rastreabilidade e mecanismo de correção/esquecimento.
+
+## 5. Ferramentas e autonomia
+
+As ferramentas Jarvis devem ser adaptadas ao executor SERMAX. Não importar execução arbitrária de shell, acesso irrestrito a arquivos ou navegação sem política de permissões.
+
+Classificar ações por risco:
+- leitura e cálculo local: execução automática dentro de escopo permitido;
+- escrita em workspace temporário: permitida com limites, diff e rollback;
+- alteração da instalação ativa, exclusão, credenciais, compras, publicação, merge ou ações externas: aprovação explícita.
+
+Saídas de modelo e da rede neural são dados não confiáveis. Toda ação passa por validação determinística do executor.
+
+## 6. Compatibilidade e implantação
+
+- SERMAX Core e Pestinha permanecem no ambiente Python 3.14, se a compatibilidade upstream for confirmada.
+- OpenJarvis permanece em worker Python 3.13 enquanto o upstream exigir `<3.14`; o worker é serviço interno invisível ao usuário.
+- O launcher inicia e supervisiona os serviços necessários, verifica saúde e aplica fallback.
+- O Terminal original, rosto ASCII, cores, voz, atalhos existentes e caminho `C:\\SERMAX` devem ser preservados.
+- Atualização deve manter memória, configuração, modelos e arquivos do usuário, com backup e rollback.
+
+## 7. Etapas de engenharia e critérios de aceite
+
+### Etapa A: inventário upstream completo
+- fixar commits e dependências;
+- mapear módulos, APIs, capacidades, dados e permissões;
+- registrar licença por componente;
+- produzir matriz capacidade x destino SERMAX.
+
+Aceite: nenhuma afirmação de integração sem arquivo/API upstream identificado.
+
+### Etapa B: camada interna de capacidades
+- definir contratos internos independentes da interface;
+- substituir seleção manual de motor por roteamento automático;
+- unificar agentes, ferramentas e contexto sob o supervisor SERMAX;
+- definir ciclo neural útil além da expressão visual.
+
+Aceite: perguntas comuns e tarefas suportadas passam pelo mesmo ponto de entrada, sem comandos de seleção.
+
+### Etapa C: aprendizagem e memória
+- separar estado neural, memória pessoal e memória operacional;
+- implementar validação, migração, backup e recuperação;
+- testar isolamento de dados e persistência.
+
+Aceite: nenhum componente sobrescreve ou lê dados fora de sua permissão.
+
+### Etapa D: segurança e avaliação
+- testes de permissões e injeção de prompt;
+- limites de tempo, tentativas, CPU e RAM;
+- avaliação de qualidade por tarefa;
+- fallback quando Jarvis, Ollama ou Pestinha falharem.
+
+Aceite: falhas isoladas não derrubam o Terminal nem corrompem memórias.
+
+### Etapa E: empacotamento e validação
+- build Windows reproduzível;
+- teste do executável no computador do mantenedor;
+- revisão GPL-3.0-or-later do Pestinha e demais licenças;
+- atualizador com backup e rollback.
+
+Aceite: só declarar versão estável após todos os gates. Builds semanais incompletos devem ser marcados como experimentais e não instalados quando houver risco aos dados.
+
+## 8. Estado real na data desta especificação
+
+- OpenJarvis: adaptador de resposta e worker isolado existentes; não equivale à incorporação de todas as capacidades do projeto.
+- Pestinha: adaptador LIF existente, conectado a eventos limitados do ciclo e estados visuais; não equivale à incorporação de toda a arquitetura neural ou de aprendizagem.
+- Roteamento: existe seleção manual `/motor`; isso é provisório e contraria a experiência final pretendida.
+- Agentes com ferramentas, memória operacional unificada e roteamento automático: não comprovados como integrados.
+- Aprendizagem neural ampla e feedback adaptativo: não comprovados como integrados.
+- Testes contra modelos reais, desempenho no Windows do mantenedor, revisão de licenças e atualizador: pendentes.
+
+## 9. Regra de comunicação
+
+Relatórios devem separar: implementado, integrado ao fluxo principal, testado automaticamente, validado no Windows real e pendente. Nunca descrever um adaptador ou uma prova de conceito como incorporação completa.
+
+
+## 10. Inventário upstream confirmado nesta revisão
+
+### OpenJarvis
+
+Fonte consultada: repositório oficial `open-jarvis/OpenJarvis`, README e `pyproject.toml` atuais.
+
+O README upstream enumera oito agentes:
+- `morning_digest`: briefing agendado com e-mail, calendário, saúde, notícias e áudio;
+- `deep_research`: pesquisa em múltiplas etapas com citações;
+- `monitor_operative`: monitoramento contínuo com memória, compressão e recuperação;
+- `orchestrator`: raciocínio multi-turn com seleção automática de ferramentas;
+- `native_react`: ciclo ReAct;
+- `operative`: agente persistente com gestão de estado;
+- `native_openhands`: CodeAct com execução Python;
+- `simple`: conversa de turno único sem ferramentas.
+
+Também documenta catálogo de skills, instalação/sincronização, otimização de skills a partir de traces e avaliação/benchmark. O projeto se define como stack local-first com primitivas de agentes, avaliação de energia/latência/custo e ciclo de aprendizagem com traces locais.
+
+**Implicação para SERMAX:** priorizar primeiro `orchestrator`, `native_react`, `operative` e catálogo de skills, adaptados ao executor e às permissões SERMAX. Agentes de e-mail, saúde, calendário, pesquisa web e canais externos ficam desligados até existir integração, consentimento e política de dados específica. `native_openhands` não recebe shell irrestrito; qualquer execução de código deve ocorrer em workspace isolado, com limites, diff e rollback.
+
+O upstream declara Python `>=3.10,<3.14` e Apache-2.0 no manifesto consultado. A execução isolada em Python 3.13 permanece necessária no estado atual do projeto.
+
+### Pestinha
+
+Fontes consultadas: `pestinha/core/nervous_system.py`, `docs/REDE_NEURAL.md`, `docs/ARQUITETURA.md`, `PRIVACIDADE.md` e `pyproject.toml`.
+
+A documentação upstream descreve 470 neurônios LIF, 15.939 sinapses, 30 canais sensoriais, 10 populações de interneurônios e 15 populações motoras. Os mecanismos documentados incluem habituação, adaptação de limiar, inibição lateral, aprendizagem por reforço de três fatores, condicionamento Rescorla-Wagner e memória episódica contextual para decisões do personagem.
+
+A arquitetura upstream também inclui sensores de programa em primeiro plano, ociosidade, teclado/mouse e janelas. A política de privacidade declara que não lê título nem conteúdo de janelas, mas registra dados de rotina quando a opção correspondente é ativada. O estado persistente inclui rede, episódios, condicionamento, energia, preferências e estado de comportamento.
+
+**Limite técnico importante:** a rede Pestinha foi projetada para controlar o comportamento de um pet de tela. Ela não é, por si só, um modelo de linguagem, mecanismo geral de raciocínio ou substituto do núcleo cognitivo do SERMAX. Sua incorporação pode fornecer sinais de estado, atenção, adaptação e aprendizagem comportamental. A capacidade de raciocinar e conversar continua dependente do modelo/agente de linguagem e do supervisor SERMAX.
+
+**Implicação de privacidade:** não importar automaticamente os sensores de atividade do computador, leitura de janelas, histórico de rotina, interface Qt, inicialização com Windows ou mecanismos de interação física do pet. A primeira integração deve continuar com eventos sintéticos internos. Qualquer sensor adicional exige lista explícita de dados, finalidade, opção de ativação, retenção e testes de isolamento.
+
+**Licenciamento e assets:** o código declara GPL-3.0-or-later. O README upstream informa que imagens e textos em assets não estão cobertos pela licença do código. Portanto, não copiar assets, personagens, imagens, memes ou textos para o SERMAX sem licença individual verificada. A incorporação de código exige revisão de compatibilidade e cumprimento da GPL antes da distribuição.
+
+## 11. Matriz de prioridade para a integração
+
+| Capacidade | Decisão inicial |
+|---|---|
+| Jarvis orchestrator / ReAct | Adaptar ao supervisor e executor SERMAX, com permissões |
+| Jarvis operative e estado persistente | Avaliar para tarefas longas, estado separado e auditável |
+| Catálogo de skills | Integrar com allowlist, revisão de origem e permissões |
+| Deep research / web search | Opcional, atrás de política de rede e citações |
+| Morning digest, e-mail, calendário, saúde e canais | Não ativar sem conectores, consentimento e controles próprios |
+| OpenHands / execução de código | Sandbox obrigatório, sem shell livre |
+| Pestinha LIF, plasticidade e condicionamento | Adaptar como subsistema comportamental, com eventos SERMAX |
+| Sensores do Pestinha | Excluir da primeira integração |
+| Qt, pet de tela, assets e autostart | Excluir da integração do Terminal SERMAX |
+
+A matriz é uma decisão de arquitetura inicial. Cada linha ainda exige análise do código e dependências do commit efetivamente pinado antes de implementação.
+
+
+===== FILE: SERMAX-Windows/AVALIACAO-REDE-NEURAL-PESTINHA.md =====
+===== GIT_BLOB_SHA: 22635d73a2a68dcb69d758ac9252c8e71f0ff70e =====
+# SERMAX: avaliação técnica da rede neural do Pestinha
+
+**Estado:** análise de viabilidade. Nenhum código do Pestinha foi copiado para o SERMAX. Nenhuma rede neural foi integrada ou executada nesta etapa.
+
+## Resumo executivo
+
+A integração é tecnicamente plausível, mas não deve consistir em copiar os 470 neurônios para dentro do núcleo atual sem adaptação. O Pestinha tem arquitetura em camadas e sua rede neural está ligada a módulos de sensação, homeostase, memória, condicionamento, estado corporal e controladores de comportamento. O widget SERMAX precisa de uma interface menor e explícita.
+
+A recomendação é avaliar um adaptador independente entre o SERMAX e uma camada comportamental, mantendo Ollama como modelo de linguagem e preservando terminal, memória e comandos existentes.
+
+## O que a documentação do Pestinha informa
+
+Fonte: README, `pestinha/README.md`, `docs/ARQUITETURA.md`, `docs/REDE_NEURAL.md`, `pestinha/core/README.md` e `requirements.txt` no repositório oficial.
+
+- Rede LIF com 470 neurônios, 15.939 sinapses, 30 canais sensoriais, 10 populações de interneurônios e 15 populações motoras.
+- A rede recebe canais sensoriais normalizados e sinais internos como tédio, fadiga e antecipação.
+- Os motores influenciam expressões e decisões do personagem.
+- O projeto combina saídas da rede com regras explícitas. Nem toda decisão é tomada pela rede.
+- O aprendizado documentado inclui uma regra de três fatores para carinho/recompensa e condicionamento Rescorla-Wagner fora da rede.
+- O estado aprendido é salvo localmente, incluindo rede, homeostase, memória episódica e condicionamento.
+- O núcleo `pestinha/core/` é descrito como independente de Qt e de APIs do sistema, mas o aplicativo completo usa PySide6.
+
+## Dependências e impacto potencial
+
+O `requirements.txt` do Pestinha inclui PySide6, psutil, NumPy e dependências condicionais por sistema operacional. O aplicativo completo usa temporizadores Qt para ciclos de desenho, pensamento e leitura de contexto. A rede central pode ser separável da interface, mas isso precisa ser confirmado pela análise e execução dos módulos concretos.
+
+Não se deve assumir que o custo de cerca de 70 MB informado pelo projeto seja o consumo da rede isolada, nem que será o consumo dentro do SERMAX. Precisamos medir o processo isolado e a combinação final no Windows.
+
+## Arquitetura de integração proposta
+
+```text
+SERMAX Terminal / SERMAX Core
+        | eventos limitados e explícitos
+        v
+Adaptador comportamental SERMAX
+        |
+        +--> rede LIF isolada
+        |       |
+        |       +--> atenção / curiosidade / calma / fadiga
+        |       +--> sinal de decisão comportamental
+        |       +--> estado aprendido próprio do widget
+        |
+        v
+Widget SERMAX (rosto verde e animações)
+```
+
+O adaptador é uma camada proposta, não código já existente. Ele deve impedir que o módulo neural acesse diretamente `memoria_sermax.json`, histórico de conversas, prompts, respostas ou credenciais do SERMAX.
+
+## Limites de responsabilidade
+
+**Ollama e núcleo SERMAX:** linguagem, respostas, comandos e tarefas existentes.
+
+**Rede pulsada:** comportamento do personagem, modulação de atenção e escolha de expressões. Não substituirá o modelo de linguagem nem será apresentada como capaz de conversar por conta própria.
+
+**Widget:** renderização, movimento, controles de abrir/ocultar e exibição de estados. Se a rede falhar, o widget deve cair em animação básica e o terminal deve continuar funcional.
+
+## Plano de protótipo isolado
+
+1. Fixar o commit exato do Pestinha usado na análise e registrar a licença.
+2. Ler o módulo concreto da rede e suas interfaces de entrada/saída, junto aos módulos de estado e persistência necessários.
+3. Executar testes de unidade do núcleo neural sem iniciar a interface Qt nem ler dados do computador.
+4. Construir um adaptador com eventos sintéticos, por exemplo: SERMAX em repouso, iniciou tarefa, concluiu tarefa e encontrou erro.
+5. Validar que entradas inválidas, atrasos e falhas do adaptador não afetam o núcleo SERMAX.
+6. Medir RAM e CPU com a rede isolada e com o widget, em repouso e durante atividade.
+7. Só depois avaliar integração na branch e incluir os módulos necessários no empacotamento.
+
+## Testes necessários
+
+### Automatizados, ambiente isolado
+- estabilidade dos estados e saídas para entradas sintéticas;
+- persistência e recarga do estado próprio da rede;
+- recuperação de estado corrompido sem sobrescrever dados originais;
+- limites de frequência e tratamento de atraso;
+- ausência de acesso à memória principal do SERMAX;
+- fallback visual quando a rede não inicializa;
+- build e testes no Windows CI.
+
+### Windows do mantenedor
+- desempenho e RAM reais;
+- widget em segundo plano, arraste, transparência e múltiplos monitores;
+- convivência com Ollama, terminal, voz e comandos;
+- reinício do aplicativo sem perda da memória SERMAX;
+- teste de falha e encerramento isolado da rede;
+- verificação de que a rede não lê títulos/conteúdo de janelas nem outros dados além dos eventos autorizados.
+
+## Licença
+
+O repositório declara GPL-3.0. Se houver incorporação ou adaptação de código do Pestinha no produto distribuído, é necessário avaliar as obrigações da GPL, incluindo disponibilização do código-fonte correspondente e manutenção dos avisos de licença. A documentação de assets do próprio projeto diz para redistribuir somente imagens próprias ou com licença que permita redistribuição. Não copiar imagens, personagens, memes ou outros recursos sem licença verificada.
+
+Uma implementação independente baseada em conceitos gerais também exige cuidado para não copiar trechos protegidos do código. Esta nota não substitui revisão jurídica.
+
+## Situação e próximo passo
+
+- Arquitetura neural documentada: analisada em nível de documentação.
+- Módulo concreto da rede executado isoladamente nesta sessão: não executado.
+- Dependências instaladas e consumo medido: não executado.
+- Código de integração escrito: não.
+- Widget integrado ao SERMAX: não.
+- Testes Windows reais: não executados.
+
+Próxima etapa: examinar os módulos concretos em `pestinha/core/` e determinar a interface mínima para uma prova de conceito isolada. Não incorporar dependências nem alterar o núcleo SERMAX até essa análise terminar.
+
+
+===== FILE: SERMAX-Windows/INSPECAO-INTERFACE-REDE-PESTINHA.md =====
+===== GIT_BLOB_SHA: 656cbc28ce339102ea9ff0a9c398c80bd1da8a11 =====
+# SERMAX: inspeção da interface de rede do Pestinha
+
+**Estado:** inspeção estática de fonte. A rede ainda não foi executada nem integrada.
+
+Fonte principal consultada: `pestinha/core/nervous_system.py` no repositório `mille-okws/pestinha`.
+
+## Interface encontrada
+
+O cabeçalho do módulo documenta a classe `Brain` e estes métodos:
+- `stimulate({canal: intensidade_0_a_1})`, para entradas sensoriais;
+- `step(dt_ms)`, para avançar a simulação;
+- `motor_activity() -> {motor: Hz}`, para consultar atividade dos motores;
+- `snapshot()`, para obter estado usado na representação visual;
+- `save(path)` e `load(path)`, para persistência das sinapses.
+
+O módulo importa NumPy, além de componentes compartilhados do Pestinha: `log`, `mathutil.valor_real` e `store.read_json/write_json`. Portanto, não é um arquivo independente que deva ser copiado sozinho. A rede tem dependências de suporte, e a persistência precisa ser isolada do arquivo de memória do SERMAX.
+
+## Implicação para o adaptador SERMAX
+
+A primeira prova de conceito deve trabalhar com uma instância isolada de `Brain` e uma lista fechada de eventos sintéticos. Não passar texto de conversas nem ler o histórico pessoal. Exemplos de estímulos permitidos no protótipo:
+- `attention`: evento de início de tarefa;
+- `processing`: tarefa em execução;
+- `completed`: tarefa encerrada;
+- `error`: tarefa falhou;
+- `idle`: ausência de tarefa ativa.
+
+Esses eventos são uma proposta de mapeamento, não equivalências já definidas pelo Pestinha. Os nomes de canais do Pestinha precisam ser mapeados com base no comportamento esperado e testados antes de adotar valores.
+
+A saída da rede deve passar por uma camada de tradução que produza somente estados visuais permitidos para o widget. O widget não deve consumir diretamente todos os motores sem limites nem executar ações no Windows com base em saídas neurais.
+
+## Decisões de isolamento
+
+1. A rede não recebe acesso direto ao núcleo SERMAX, à memória principal, às credenciais ou ao conteúdo das conversas.
+2. O estado aprendido do personagem fica em arquivo próprio, separado de `memoria_sermax.json`.
+3. O widget continua funcional com animação básica caso a rede falhe.
+4. O fechamento ou travamento da rede não encerra o terminal.
+5. A execução deve ter limites de tempo e de consumo, definidos depois de medir o protótipo.
+6. Não incorporar o código GPL ao executável distribuído antes de decidir formalmente como cumprir as obrigações da licença.
+
+## Ainda não verificado
+
+- Resultado de importar o módulo em ambiente limpo;
+- versão mínima de NumPy realmente necessária;
+- testes unitários do módulo executados nesta sessão;
+- consumo real de CPU/RAM da rede isolada;
+- portabilidade de persistência e caminhos para `C:\\SERMAX`;
+- licença e compatibilidade do conjunto de dependências na distribuição final.
+
+## Próxima etapa técnica
+
+Obter o restante dos módulos `core/` e os testes correspondentes, identificar as dependências mínimas transitivas e montar uma prova de conceito isolada. Não alterar o terminal, o núcleo, o launcher ou o arquivo de memória nesta fase.
+
