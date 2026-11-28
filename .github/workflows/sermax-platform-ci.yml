@@ -121,6 +121,9 @@ jobs:
       - name: Run device pairing security tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest discover -s ../tests -p "test_lan_security.py" -v
+      - name: Run HTTP device authentication tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_auth.py
       - name: Run Windows autostart policy tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
@@ -191,6 +194,9 @@ jobs:
       - name: Run device pairing security tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest discover -s ../tests -p "test_lan_security.py" -v
+      - name: Run HTTP device authentication tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_auth.py
       - name: Run Windows autostart policy tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
