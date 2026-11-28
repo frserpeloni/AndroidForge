@@ -254,6 +254,23 @@ class LanSecurityTests(unittest.TestCase):
         credential = self.finalize(reservation)
         self.assertIsInstance(credential, str)
 
+    def test_pending_pairings_lists_only_unapproved_active_reservations(self):
+        first_code = self.issue(device="phone")
+        first = self.reserve("phone", first_code)
+        second_code = self.issue(device="tablet")
+        second = self.reserve("tablet", second_code)
+        self.assertTrue(self.approve(second, "tablet"))
+
+        pending = lan_security.list_pending_pairings(self.db)
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0]["reservation_id"], first)
+        self.assertEqual(pending[0]["device"], "phone")
+        self.assertNotIn("code", pending[0])
+        self.assertNotIn("credential", pending[0])
+
+        with patch.object(lan_security.time, "time", return_value=10**12):
+            self.assertEqual(lan_security.list_pending_pairings(self.db), [])
+
 
 if __name__ == "__main__":
     unittest.main()
