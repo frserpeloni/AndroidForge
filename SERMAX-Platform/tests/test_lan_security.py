@@ -178,7 +178,7 @@ class LanSecurityTests(unittest.TestCase):
         code = self.issue()
         reservation = self.reserve("phone", code)
         self.approve(reservation)
-        credential = self.finalize(reservation, credential_ttl_seconds=1)
+        credential = self.finalize(reservation, credential_ttl_seconds=60)
         self.assertTrue(lan_security.authenticate("phone", credential, self.db))
         with patch.object(lan_security.time, "time", return_value=10**12):
             self.assertFalse(lan_security.authenticate("phone", credential, self.db))
