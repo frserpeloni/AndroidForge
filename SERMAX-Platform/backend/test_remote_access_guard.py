@@ -21,6 +21,7 @@ class RemoteAccessGuardTests(unittest.TestCase):
         server.DATA_DIR = Path(self.temp.name)
         server.DB_PATH = server.DATA_DIR / "platform.sqlite3"
         server.SECURITY_DB_PATH = server.DATA_DIR / "device_security.sqlite3"
+        server.initialize_database()
         self.client = TestClient(server.app, client=("127.0.0.1", 51234))
         self.local_headers = {"host": "127.0.0.1:8765"}
         self.proxy_headers = {
