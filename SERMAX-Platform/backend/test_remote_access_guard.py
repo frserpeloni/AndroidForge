@@ -51,6 +51,15 @@ class RemoteAccessGuardTests(unittest.TestCase):
         self.assertTrue(credential)
         return device, credential
 
+    def test_global_request_body_limit_rejects_oversized_body_before_route_parsing(self):
+        body = b"x" * (server.MAX_REQUEST_BODY_BYTES + 1)
+        response = self.client.post(
+            "/api/chat/stream",
+            content=body,
+            headers=self.local_headers,
+        )
+        self.assertEqual(response.status_code, 413)
+
     def test_local_loopback_interface_remains_available(self):
         with patch.dict(os.environ, {"SERMAX_REMOTE_ACCESS_ENABLED": "0"}):
             response = self.client.get("/api/health", headers=self.local_headers)
