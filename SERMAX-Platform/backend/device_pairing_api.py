@@ -10,13 +10,32 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 try:
     from . import lan_security
 except ImportError:
     import lan_security
+
+try:
+    from .pairing_rate_limit import SlidingWindowRateLimiter
+except ImportError:
+    from pairing_rate_limit import SlidingWindowRateLimiter
+
+
+PAIRING_RATE_LIMITER = SlidingWindowRateLimiter(limit=8, window_seconds=60)
+
+
+def _enforce_pairing_rate_limit(request: Request, operation: str) -> None:
+    client = request.client
+    peer = client.host if client is not None else "unknown"
+    if not PAIRING_RATE_LIMITER.allow(operation + ":" + peer):
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas de pareamento. Aguarde antes de tentar novamente.",
+            headers={"Retry-After": "60"},
+        )
 
 
 class DeviceInput(BaseModel):
@@ -35,7 +54,8 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
     router = APIRouter()
 
     @router.post("/api/local/pairings", status_code=201)
-    def create_local_pairing(payload: DeviceInput):
+    def create_local_pairing(payload: DeviceInput, request: Request):
+        _enforce_pairing_rate_limit(request, "create")
         try:
             code = lan_security.generate_pairing_code(
                 payload.device_id.strip(), db_path=db_path_provider()
@@ -64,7 +84,8 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
         return {"approved": True, "device_id": payload.device_id.strip()}
 
     @router.post("/api/device/pairing/reserve", status_code=202)
-    def reserve_device_pairing(payload: PairingReserveInput):
+    def reserve_device_pairing(payload: PairingReserveInput, request: Request):
+        _enforce_pairing_rate_limit(request, "reserve")
         try:
             reservation_id = lan_security.reserve_pairing(
                 payload.device_id.strip(), payload.code, db_path=db_path_provider()
@@ -76,7 +97,8 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
         return {"reservation_id": reservation_id, "status": "awaiting_local_approval"}
 
     @router.post("/api/device/pairing/finalize")
-    def finalize_device_pairing(payload: PairingFinalizeInput):
+    def finalize_device_pairing(payload: PairingFinalizeInput, request: Request):
+        _enforce_pairing_rate_limit(request, "finalize")
         try:
             credential = lan_security.finalize_pairing(
                 payload.reservation_id, payload.device_id.strip(), db_path=db_path_provider()
