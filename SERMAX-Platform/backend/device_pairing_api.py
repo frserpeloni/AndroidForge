@@ -23,17 +23,25 @@ except ImportError:
     from pairing_rate_limit import SQLiteSlidingWindowRateLimiter
 
 
-PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=8, window_seconds=60)
+PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=120, window_seconds=60)
+DEVICE_PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=8, window_seconds=60)
 
 
 def _enforce_pairing_rate_limit(
-    request: Request, operation: str, db_path_provider: Callable[[], Path]
+    request: Request,
+    operation: str,
+    db_path_provider: Callable[[], Path],
+    device_id: str | None = None,
 ) -> None:
     client = request.client
     peer = client.host if client is not None else "unknown"
-    if not PAIRING_RATE_LIMITER.allow(
-        operation + ":" + peer, str(db_path_provider())
-    ):
+    db_path = str(db_path_provider())
+    allowed = PAIRING_RATE_LIMITER.allow(operation + ":" + peer, db_path)
+    if allowed and device_id:
+        allowed = DEVICE_PAIRING_RATE_LIMITER.allow(
+            operation + ":device:" + device_id.strip(), db_path
+        )
+    if not allowed:
         raise HTTPException(
             status_code=429,
             detail="Muitas tentativas de pareamento. Aguarde antes de tentar novamente.",
@@ -58,7 +66,7 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
 
     @router.post("/api/local/pairings", status_code=201)
     def create_local_pairing(payload: DeviceInput, request: Request):
-        _enforce_pairing_rate_limit(request, "create", db_path_provider)
+        _enforce_pairing_rate_limit(request, "create", db_path_provider, payload.device_id)
         try:
             code = lan_security.generate_pairing_code(
                 payload.device_id.strip(), db_path=db_path_provider()
@@ -88,7 +96,7 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
 
     @router.post("/api/device/pairing/reserve", status_code=202)
     def reserve_device_pairing(payload: PairingReserveInput, request: Request):
-        _enforce_pairing_rate_limit(request, "reserve", db_path_provider)
+        _enforce_pairing_rate_limit(request, "reserve", db_path_provider, payload.device_id)
         try:
             reservation_id = lan_security.reserve_pairing(
                 payload.device_id.strip(), payload.code, db_path=db_path_provider()
@@ -103,7 +111,7 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
     def finalize_device_pairing(
         payload: PairingFinalizeInput, request: Request, response: Response
     ):
-        _enforce_pairing_rate_limit(request, "finalize", db_path_provider)
+        _enforce_pairing_rate_limit(request, "finalize", db_path_provider, payload.device_id)
         try:
             credential = lan_security.finalize_pairing(
                 payload.reservation_id, payload.device_id.strip(), db_path=db_path_provider()
