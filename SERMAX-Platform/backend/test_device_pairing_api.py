@@ -1,6 +1,9 @@
 """Testes das rotas locais e do fluxo HTTP de pareamento SERMAX."""
+import os
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -100,6 +103,71 @@ class DevicePairingApiTests(unittest.TestCase):
         )
         self.assertEqual(limited.status_code, 429)
         self.assertEqual(limited.headers.get("retry-after"), "60")
+
+    def test_proxy_forwarded_ip_is_accepted_only_from_trusted_https_host(self):
+        request = SimpleNamespace(
+            client=SimpleNamespace(host="127.0.0.1"),
+            headers={
+                "host": "sermax-test.example.ts.net",
+                "x-forwarded-proto": "https",
+                "x-forwarded-for": "198.51.100.27",
+            },
+        )
+        env = {
+            "SERMAX_PUBLIC_HOST": "sermax-test.example.ts.net",
+            "SERMAX_TRUSTED_PROXY_IPS": "127.0.0.1,::1",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            self.assertEqual(
+                device_pairing_api._trusted_forwarded_client_ip(request),
+                "198.51.100.27",
+            )
+            request.headers["x-forwarded-for"] = "198.51.100.27, 203.0.113.9"
+            self.assertIsNone(device_pairing_api._trusted_forwarded_client_ip(request))
+            request.headers["x-forwarded-for"] = "not-an-ip"
+            self.assertIsNone(device_pairing_api._trusted_forwarded_client_ip(request))
+            request.headers["x-forwarded-for"] = "198.51.100.27"
+            request.headers["host"] = "attacker.example"
+            self.assertIsNone(device_pairing_api._trusted_forwarded_client_ip(request))
+            request.headers["host"] = "sermax-test.example.ts.net"
+            request.client = SimpleNamespace(host="192.0.2.50")
+            self.assertIsNone(device_pairing_api._trusted_forwarded_client_ip(request))
+
+    def test_proxy_client_rate_limit_separates_verified_source_ips(self):
+        client_limiter = device_pairing_api.SQLiteSlidingWindowRateLimiter(
+            limit=1, window_seconds=60
+        )
+        env = {
+            "SERMAX_REMOTE_ACCESS_ENABLED": "1",
+            "SERMAX_PUBLIC_HOST": "sermax-test.example.ts.net",
+            "SERMAX_TRUSTED_PROXY_IPS": "127.0.0.1",
+        }
+        with patch.dict(os.environ, env, clear=False), patch.object(
+            device_pairing_api, "CLIENT_PAIRING_RATE_LIMITER", client_limiter
+        ):
+            headers = {
+                "host": "sermax-test.example.ts.net",
+                "origin": "https://sermax-test.example.ts.net",
+                "x-forwarded-proto": "https",
+                "x-forwarded-for": "198.51.100.10",
+            }
+            payload = {"device_id": "android-test", "code": "invalid-code"}
+            first = self.client.post(
+                "/api/device/pairing/reserve", json=payload, headers=headers
+            )
+            self.assertEqual(first.status_code, 400)
+
+            repeated = self.client.post(
+                "/api/device/pairing/reserve", json=payload, headers=headers
+            )
+            self.assertEqual(repeated.status_code, 429)
+
+            other_client = self.client.post(
+                "/api/device/pairing/reserve",
+                json=payload,
+                headers={**headers, "x-forwarded-for": "198.51.100.11"},
+            )
+            self.assertEqual(other_client.status_code, 400)
 
     def test_invalid_pairing_code_does_not_create_reservation(self):
         response = self.client.post(
