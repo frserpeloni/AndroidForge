@@ -85,6 +85,29 @@ class RemoteAccessGuardTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"authenticated": True, "device_id": device})
 
+    def test_remote_logout_clears_both_protected_cookies_without_revoking_device(self):
+        device, credential = self._credential()
+        headers = {
+            **self.proxy_headers,
+            "cookie": f"sermax_device_id={device}; sermax_device_credential={credential}",
+        }
+        response = self.client.post("/api/device/logout", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"logged_out": True, "device_id": device})
+        cookies = response.headers.get_list("set-cookie")
+        self.assertEqual(len(cookies), 2)
+        self.assertTrue(all("max-age=0" in value.lower() for value in cookies))
+        self.assertTrue(all("httponly" in value.lower() for value in cookies))
+        self.assertTrue(all("secure" in value.lower() for value in cookies))
+        self.assertEqual(response.headers.get("cache-control"), "no-store")
+
+        still_valid = self.client.get("/api/device/session", headers=headers)
+        self.assertEqual(still_valid.status_code, 200)
+
+    def test_remote_logout_requires_authenticated_device(self):
+        response = self.client.post("/api/device/logout", headers=self.proxy_headers)
+        self.assertEqual(response.status_code, 401)
+
     def test_remote_admin_routes_remain_forbidden_even_with_valid_credential(self):
         device, credential = self._credential()
         headers = {
