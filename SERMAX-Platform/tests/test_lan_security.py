@@ -210,8 +210,10 @@ class LanSecurityTests(unittest.TestCase):
             self.reserve("phone", code, reservation_ttl_seconds=0)
 
     def test_cleanup_removes_expired_reservations_and_pairings(self):
-        code = self.issue(ttl_seconds=1)
-        reservation = self.reserve("phone", code, reservation_ttl_seconds=1)
+        # Give setup enough time on slower Windows runners; expiration is simulated below.
+        code = self.issue(ttl_seconds=60)
+        reservation = self.reserve("phone", code, reservation_ttl_seconds=60)
+        self.assertIsInstance(reservation, str)
         with patch.object(lan_security.time, "time", return_value=10**12):
             self.assertEqual(lan_security.cleanup_expired(self.db), 1)
             self.assertFalse(self.approve(reservation))
