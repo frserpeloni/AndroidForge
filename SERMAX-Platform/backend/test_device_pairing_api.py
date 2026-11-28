@@ -64,7 +64,15 @@ class DevicePairingApiTests(unittest.TestCase):
             headers=self.headers,
         )
         self.assertEqual(finalized.status_code, 200)
-        self.assertTrue(finalized.json()["credential"])
+        self.assertEqual(finalized.json(), {
+            "device_id": "android-phone", "authenticated": True
+        })
+        self.assertNotIn("credential", finalized.json())
+        set_cookie = finalized.headers.get_list("set-cookie")
+        self.assertEqual(len(set_cookie), 2)
+        self.assertTrue(all("httponly" in value.lower() for value in set_cookie))
+        self.assertTrue(all("secure" in value.lower() for value in set_cookie))
+        self.assertTrue(all("samesite=strict" in value.lower() for value in set_cookie))
 
     def test_remote_client_is_still_blocked_by_loopback_guard(self):
         external = TestClient(server.app, client=("192.0.2.20", 51001))
