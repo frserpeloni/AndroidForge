@@ -251,6 +251,8 @@ async def local_origin_guard(request: Request, call_next):
         return JSONResponse(status_code=403, content={"detail": "Conexão HTTPS do proxy não confirmada."})
 
     expected_origin = "https://" + public_host
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin != expected_origin:
+        return JSONResponse(status_code=403, content={"detail": "Origem obrigatória ou não autorizada."})
     if origin and origin != expected_origin:
         return JSONResponse(status_code=403, content={"detail": "Origem pública não autorizada."})
 
@@ -269,9 +271,11 @@ async def local_origin_guard(request: Request, call_next):
         return await call_next(request)
 
     try:
+        cookie_device = request.cookies.get("sermax_device_id")
+        cookie_credential = request.cookies.get("sermax_device_credential")
         device_id = authenticate_device_headers(
-            request.headers.get("x-sermax-device"),
-            request.headers.get("authorization"),
+            cookie_device,
+            "Bearer " + cookie_credential if cookie_credential else None,
             db_path=SECURITY_DB_PATH,
         )
     except DeviceAuthenticationError:
@@ -293,6 +297,12 @@ def stylesheet():
 @app.get("/app.js", include_in_schema=False)
 def javascript():
     return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
+
+
+@app.get("/api/device/session")
+def device_session(request: Request):
+    """Confirma a sessão autenticada sem expor a credencial ao JavaScript."""
+    return {"authenticated": True, "device_id": request.state.sermax_device_id}
 
 
 @app.get("/api/health")
