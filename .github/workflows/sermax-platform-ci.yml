@@ -133,6 +133,9 @@ jobs:
       - name: Run pairing rate limiter tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_pairing_rate_limit.py
+      - name: Run HTTP request body limit tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_request_body_limit.py
       - name: Run Windows autostart policy tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
@@ -215,6 +218,9 @@ jobs:
       - name: Run pairing rate limiter tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_pairing_rate_limit.py
+      - name: Run HTTP request body limit tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_request_body_limit.py
       - name: Run Windows autostart policy tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
