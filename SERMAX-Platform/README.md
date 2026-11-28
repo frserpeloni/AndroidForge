@@ -250,7 +250,7 @@ A política remota exige simultaneamente:
 - sessão individual em cookies `sermax_device_id` e `sermax_device_credential`, ambos `Secure`, `HttpOnly`, `SameSite=Strict`, com validade alinhada à credencial; o segredo não é entregue ao JavaScript;
 - cabeçalho `Origin` exato obrigatório em toda requisição remota que altera estado (`POST`, `PUT`, `PATCH`, `DELETE`).
 
-As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem sessão prévia, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central. A finalização emite a sessão exclusivamente por cookies protegidos. O endpoint `/api/device/session` confirma a identidade sem expor o segredo.
+As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem sessão prévia, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central. A finalização emite a sessão exclusivamente por cookies protegidos. O endpoint `/api/device/session` confirma a identidade sem expor o segredo. O endpoint `POST /api/device/logout` encerra a sessão do navegador removendo os dois cookies protegidos, sem revogar o cadastro do dispositivo. A interface remota apresenta a ação “Sair deste dispositivo”.
 
 **Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A interface do navegador já possui tela de pareamento, reserva do código, verificação manual da aprovação e sessão por cookie HttpOnly. O identificador da reserva fica em `sessionStorage` somente durante o pareamento, nunca a credencial. Ainda falta confirmar em execução real quais cabeçalhos o proxy Tailscale entrega ao backend e validar o comportamento do proxy. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
 
@@ -261,6 +261,6 @@ Referências:
 - https://tailscale.com/docs/features/tailscale-serve
 - https://tailscale.com/docs/reference/tailscale-cli/funnel
 
-As rotas de criação, reserva e finalização de pareamento têm limite de oito tentativas por minuto e por peer observado pelo backend. Quando o Funnel encaminhar todos os clientes pelo mesmo peer local, o limite será compartilhado entre eles. O mecanismo é em memória e reinicia junto com o processo, portanto não substitui controles persistentes contra abuso.
+O limitador de pareamento persiste eventos em SQLite e aplica duas camadas: até 120 tentativas por minuto e operação para o peer observado pelo backend, além de oito tentativas por minuto e operação para cada identificador de dispositivo. Como o Funnel pode apresentar um peer compartilhado, a camada por peer funciona como teto global de contenção; a camada por dispositivo reduz tentativas repetidas contra um mesmo identificador. A identificação de IP externo por cabeçalhos encaminhados não é confiada até a homologação do proxy.
 
 Testes da política: `backend/test_remote_access_guard.py`. Testes do limitador: `backend/test_pairing_rate_limit.py`. O CI executa ambos em Linux e Windows, além das baterias existentes.
