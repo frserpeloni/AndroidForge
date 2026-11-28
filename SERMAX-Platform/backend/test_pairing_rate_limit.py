@@ -58,6 +58,26 @@ class SlidingWindowRateLimiterTests(unittest.TestCase):
             now[0] = 110.1
             self.assertTrue(second.allow("reserve:proxy", db))
 
+    def test_sqlite_limiter_is_atomic_under_concurrent_attempts(self):
+        import tempfile
+        from concurrent.futures import ThreadPoolExecutor
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as folder:
+            db = str(Path(folder) / "security.sqlite3")
+            limit = 5
+            limiters = [
+                SQLiteSlidingWindowRateLimiter(limit=limit, window_seconds=60)
+                for _ in range(12)
+            ]
+            def attempt(index):
+                return limiters[index % len(limiters)].allow("reserve:shared-proxy", db)
+
+            with ThreadPoolExecutor(max_workers=12) as pool:
+                results = list(pool.map(attempt, range(24)))
+
+            self.assertEqual(sum(results), limit)
+
     def test_sqlite_limiter_keeps_operation_buckets_separate(self):
         import tempfile
         from pathlib import Path
