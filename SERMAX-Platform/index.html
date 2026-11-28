@@ -9,6 +9,28 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <section class="remote-auth-gate" id="remoteAuthGate" hidden aria-labelledby="remoteAuthTitle">
+    <div class="remote-auth-card">
+      <div class="brand-mark">S</div>
+      <p class="eyebrow">ACESSO PROTEGIDO</p>
+      <h1 id="remoteAuthTitle">Conectar dispositivo</h1>
+      <p>Informe o identificador e o código temporário gerado na tela Dispositivos do computador central. O acesso exige aprovação local.</p>
+      <form id="remotePairingForm" class="remote-pairing-form">
+        <label class="task-field">Identificador do dispositivo
+          <input id="remoteDeviceId" name="device_id" maxlength="128" required autocomplete="off" placeholder="Ex.: android-fabiano">
+        </label>
+        <label class="task-field">Código temporário
+          <input id="remotePairingCode" name="code" maxlength="256" required autocomplete="one-time-code" placeholder="Cole o código gerado no PC">
+        </label>
+        <button class="primary-button" id="remoteReserveButton" type="submit">Enviar pedido de pareamento</button>
+      </form>
+      <div class="remote-pairing-actions">
+        <button class="primary-button" id="remoteFinalizeButton" type="button" disabled>Verificar aprovação e conectar</button>
+        <button class="secondary-button" id="remoteCancelPairing" type="button" hidden>Cancelar pedido</button>
+      </div>
+      <p class="remote-auth-status" id="remoteAuthStatus" role="status" aria-live="polite">Verificando sessão deste dispositivo...</p>
+    </div>
+  </section>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
