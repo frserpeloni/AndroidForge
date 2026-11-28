@@ -15,7 +15,7 @@ function response(data, status = 200) {
 function setup(url = "http://127.0.0.1:8765") {
   const dom = new JSDOM(html, { url, runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [], pairings: [{reservation_id:"reserve-123456789012",device:"android-test",expires_at:1893456000}], pairingInvites: [], remoteSession: false, remoteApproved: false, remoteReserveCalls: [], remoteFinalizeCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [], pairings: [{reservation_id:"reserve-123456789012",device:"android-test",expires_at:1893456000}], pairingInvites: [], remoteSession: false, remoteApproved: false, remoteReserveCalls: [], remoteFinalizeCalls: [], remoteLogoutCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
   let nextTask = 1;
@@ -32,6 +32,11 @@ function setup(url = "http://127.0.0.1:8765") {
       return state.remoteSession
         ? response({authenticated:true,device_id:"android-browser"})
         : response({detail:"Dispositivo não autenticado."},401);
+    }
+    if (url === "/api/device/logout" && method === "POST") {
+      state.remoteLogoutCalls.push(true);
+      state.remoteSession = false;
+      return response({logged_out:true,device_id:"android-browser"});
     }
     if (url === "/api/device/pairing/reserve" && method === "POST") {
       state.remoteReserveCalls.push(body);
@@ -351,4 +356,12 @@ test("cliente remoto exige pareamento e só libera a interface após aprovação
   assert.equal(state.remoteSession, true);
   assert.equal(win.document.body.classList.contains("remote-locked"), false);
   assert.equal(win.document.getElementById("remoteAuthGate").hidden, true);
+  assert.equal(win.document.getElementById("remoteLogoutButton").hidden, false);
+
+  win.document.getElementById("remoteLogoutButton").click();
+  await tick();
+  assert.deepEqual(state.remoteLogoutCalls, [true]);
+  assert.equal(win.document.body.classList.contains("remote-locked"), true);
+  assert.equal(win.document.getElementById("remoteAuthGate").hidden, false);
+  assert.equal(win.document.getElementById("remoteLogoutButton").hidden, true);
 });
