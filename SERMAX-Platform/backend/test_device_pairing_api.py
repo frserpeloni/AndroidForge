@@ -14,7 +14,6 @@ class DevicePairingApiTests(unittest.TestCase):
         server.DATA_DIR = Path(self.temp.name)
         server.DB_PATH = server.DATA_DIR / "platform.sqlite3"
         server.SECURITY_DB_PATH = server.DATA_DIR / "device_security.sqlite3"
-        device_pairing_api.PAIRING_RATE_LIMITER.reset()
         self.client = TestClient(server.app, client=("127.0.0.1", 51000))
         self.headers = {"host": "127.0.0.1:8765"}
 
