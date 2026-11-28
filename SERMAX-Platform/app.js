@@ -961,6 +961,7 @@
       if (session.authenticated !== true || !session.device_id) return false;
       window.sessionStorage.removeItem(pairingStorageKey);
       $("remoteAuthGate").hidden = true;
+      $("remoteLogoutButton").hidden = false;
       document.body.classList.remove("remote-locked");
       startApp();
       return true;
@@ -972,6 +973,7 @@
   async function initializeRemoteClient() {
     document.body.classList.add("remote-locked");
     $("remoteAuthGate").hidden = false;
+    $("remoteLogoutButton").hidden = true;
     if (await checkRemoteSession()) return;
     restorePendingPairing();
     if (!$("remoteAuthStatus").textContent || $("remoteAuthStatus").textContent.includes("Verificando")) {
@@ -1056,6 +1058,34 @@
     $("remoteFinalizeButton").disabled = true;
     $("remoteCancelPairing").hidden = true;
     setRemotePairingStatus("Pedido local removido deste navegador. O código temporário anterior continua sujeito à expiração.");
+  });
+
+  $("remoteLogoutButton").addEventListener("click", async () => {
+    const button = $("remoteLogoutButton");
+    button.disabled = true;
+    try {
+      const response = await fetch("/api/device/logout", {
+        method: "POST",
+        credentials: "same-origin",
+        cache: "no-store"
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Não foi possível encerrar a sessão.");
+      window.sessionStorage.removeItem(pairingStorageKey);
+      button.hidden = true;
+      button.disabled = false;
+      $("remoteAuthGate").hidden = false;
+      $("remotePairingForm").hidden = false;
+      $("remotePairingCode").value = "";
+      $("remoteReserveButton").disabled = false;
+      $("remoteFinalizeButton").disabled = true;
+      $("remoteCancelPairing").hidden = true;
+      setRemotePairingStatus("Sessão encerrada neste navegador. Para conectar novamente, faça um novo pareamento.");
+      document.body.classList.add("remote-locked");
+    } catch (error) {
+      setRemotePairingStatus(error.message);
+      button.disabled = false;
+    }
   });
 
   if (isRemoteClient) {
