@@ -342,7 +342,7 @@ test("cliente remoto exige pareamento e só libera a interface após aprovação
 
   win.document.getElementById("remoteFinalizeButton").click();
   await tick();
-  assert.match(win.document.getElementById("remoteAuthStatus").textContent, /ainda não foi concluída/);
+  assert.match(win.document.getElementById("remoteAuthStatus").textContent, /ainda não aprovado/);
   assert.equal(win.document.body.classList.contains("remote-locked"), true);
 
   state.remoteApproved = true;
