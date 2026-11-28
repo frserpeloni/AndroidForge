@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 try:
@@ -96,7 +96,9 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
         return {"reservation_id": reservation_id, "status": "awaiting_local_approval"}
 
     @router.post("/api/device/pairing/finalize")
-    def finalize_device_pairing(payload: PairingFinalizeInput, request: Request):
+    def finalize_device_pairing(
+        payload: PairingFinalizeInput, request: Request, response: Response
+    ):
         _enforce_pairing_rate_limit(request, "finalize")
         try:
             credential = lan_security.finalize_pairing(
@@ -106,7 +108,27 @@ def create_pairing_router(db_path_provider: Callable[[], Path]) -> APIRouter:
             raise HTTPException(status_code=422, detail="Dados de pareamento inválidos.") from exc
         if credential is None:
             raise HTTPException(status_code=403, detail="Pareamento ainda não aprovado ou expirado.")
-        return {"device_id": payload.device_id.strip(), "credential": credential}
+
+        # A credencial sai somente em cookie protegido. O JavaScript nunca recebe o segredo.
+        response.set_cookie(
+            "sermax_device_id",
+            payload.device_id.strip(),
+            max_age=lan_security.DEFAULT_CREDENTIAL_TTL_SECONDS,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        response.set_cookie(
+            "sermax_device_credential",
+            credential,
+            max_age=lan_security.DEFAULT_CREDENTIAL_TTL_SECONDS,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+        return {"device_id": payload.device_id.strip(), "authenticated": True}
 
     @router.post("/api/local/devices/{device_id}/revoke")
     def revoke_local_device(device_id: str):
