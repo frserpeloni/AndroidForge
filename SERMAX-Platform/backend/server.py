@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 import ipaddress
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -304,6 +304,24 @@ def device_session(request: Request):
     """Confirma a sessão autenticada sem expor a credencial ao JavaScript."""
     return {"authenticated": True, "device_id": request.state.sermax_device_id}
 
+
+@app.post("/api/device/logout")
+def device_logout(request: Request, response: Response):
+    """Encerra a sessão deste navegador sem revogar o dispositivo cadastrado."""
+    device_id = getattr(request.state, "sermax_device_id", None)
+    if not device_id:
+        raise HTTPException(status_code=401, detail="Dispositivo não autenticado.")
+
+    for cookie_name in ("sermax_device_id", "sermax_device_credential"):
+        response.delete_cookie(
+            cookie_name,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return {"logged_out": True, "device_id": device_id}
 
 @app.get("/api/health")
 def health():
