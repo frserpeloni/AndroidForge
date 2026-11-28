@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from attachment_service import router as attachments_router
+from device_auth import DeviceAuthenticationError, authenticate_device_headers
 from device_pairing_api import create_pairing_router
 from ocr_service import get_ocr_engine_status
 
@@ -198,29 +199,86 @@ def startup() -> None:
 
 @app.middleware("http")
 async def local_origin_guard(request: Request, call_next):
-    # Validação do cabeçalho Host (mantida para compatibilidade)
-    host = request.headers.get("host", "")
-    if host not in {"127.0.0.1:8765", "localhost:8765"}:
-        return JSONResponse(status_code=403, content={"detail": "A API aceita somente acesso local."})
+    """Mantém administração local e exige identidade para rotas remotas via proxy confiável.
 
-    # Validação do cabeçalho Origin (mantida)
-    origin = request.headers.get("origin")
-    if origin and origin not in {"http://127.0.0.1:8765", "http://localhost:8765"}:
-        return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
-
-    # Nova verificação do IP real do cliente
+    O acesso remoto permanece desligado por padrão. A ativação exige configuração
+    explícita do host público, do proxy confiável e da indicação HTTPS do proxy.
+    """
     client = request.client
     if client is None:
         return JSONResponse(status_code=403, content={"detail": "Cliente desconhecido."})
     try:
-        ip = ipaddress.ip_address(client.host)
+        peer_ip = ipaddress.ip_address(client.host)
     except ValueError:
         return JSONResponse(status_code=403, content={"detail": "IP inválido."})
-    if not ip.is_loopback:
-        return JSONResponse(status_code=403, content={"detail": "Acesso externo não permitido."})
 
+    host = request.headers.get("host", "").strip().lower()
+    origin = request.headers.get("origin")
+    local_hosts = {"127.0.0.1:8765", "localhost:8765"}
+    local_origins = {"http://127.0.0.1:8765", "http://localhost:8765"}
+
+    # A interface administrativa permanece acessível no próprio PC.
+    if peer_ip.is_loopback and host in local_hosts:
+        if origin and origin not in local_origins:
+            return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
+        return await call_next(request)
+
+    # Configuração ausente equivale a acesso remoto desativado.
+    if os.environ.get("SERMAX_REMOTE_ACCESS_ENABLED") != "1":
+        return JSONResponse(status_code=403, content={"detail": "Acesso externo não habilitado."})
+
+    public_host = os.environ.get("SERMAX_PUBLIC_HOST", "").strip().lower()
+    if not public_host or host != public_host:
+        return JSONResponse(status_code=403, content={"detail": "Host público não autorizado."})
+
+    trusted_proxy_values = os.environ.get(
+        "SERMAX_TRUSTED_PROXY_IPS", "127.0.0.1,::1"
+    ).split(",")
+    try:
+        trusted_proxy_ips = {
+            ipaddress.ip_address(value.strip())
+            for value in trusted_proxy_values
+            if value.strip()
+        }
+    except ValueError:
+        return JSONResponse(status_code=503, content={"detail": "Configuração de proxy inválida."})
+
+    if peer_ip not in trusted_proxy_ips:
+        return JSONResponse(status_code=403, content={"detail": "Proxy de entrada não autorizado."})
+
+    # Somente o proxy autorizado pode afirmar o protocolo externo.
+    if request.headers.get("x-forwarded-proto", "").casefold() != "https":
+        return JSONResponse(status_code=403, content={"detail": "Conexão HTTPS do proxy não confirmada."})
+
+    expected_origin = "https://" + public_host
+    if origin and origin != expected_origin:
+        return JSONResponse(status_code=403, content={"detail": "Origem pública não autorizada."})
+
+    # Administração, convites e revogação nunca ficam disponíveis pela internet.
+    if request.url.path.startswith("/api/local/"):
+        return JSONResponse(status_code=403, content={"detail": "Operação restrita ao computador central."})
+
+    # Página e saúde mínima públicas. Pareamento depende de código de uso único
+    # e aprovação local. Todas as demais rotas de dados exigem credencial individual.
+    if request.url.path in {"/", "/styles.css", "/app.js", "/api/health"}:
+        return await call_next(request)
+    if request.url.path in {
+        "/api/device/pairing/reserve",
+        "/api/device/pairing/finalize",
+    } and request.method == "POST":
+        return await call_next(request)
+
+    try:
+        device_id = authenticate_device_headers(
+            request.headers.get("x-sermax-device"),
+            request.headers.get("authorization"),
+            db_path=SECURITY_DB_PATH,
+        )
+    except DeviceAuthenticationError:
+        return JSONResponse(status_code=401, content={"detail": "Dispositivo não autenticado."})
+
+    request.state.sermax_device_id = device_id
     return await call_next(request)
-
 
 @app.get("/", include_in_schema=False)
 def index():
