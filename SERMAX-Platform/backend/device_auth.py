@@ -7,6 +7,7 @@ depois de validar Host, HTTPS e Origin.
 from __future__ import annotations
 
 from pathlib import Path
+import sqlite3
 
 try:
     from .lan_security import authenticate
@@ -47,7 +48,7 @@ def authenticate_device_headers(
 
     try:
         valid = authenticate(device_id.strip(), credential, db_path=db_path)
-    except (ValueError, OSError):
+    except (ValueError, OSError, sqlite3.Error):
         valid = False
 
     if not valid:
