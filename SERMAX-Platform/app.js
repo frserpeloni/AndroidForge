@@ -921,7 +921,147 @@
     }
   });
 
-  refreshHealth();
-  refreshRecent();
-  setInterval(refreshHealth, 15000);
+  let appStarted = false;
+  function startApp() {
+    if (appStarted) return;
+    appStarted = true;
+    refreshHealth();
+    refreshRecent();
+    setInterval(refreshHealth, 15000);
+  }
+
+  const isRemoteClient = !["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
+  const pairingStorageKey = "sermax.pendingPairing.v1";
+
+  function setRemotePairingStatus(message) {
+    $("remoteAuthStatus").textContent = message;
+  }
+
+  function restorePendingPairing() {
+    try {
+      const saved = JSON.parse(window.sessionStorage.getItem(pairingStorageKey) || "null");
+      if (!saved || typeof saved.deviceId !== "string" || typeof saved.reservationId !== "string") return;
+      $("remoteDeviceId").value = saved.deviceId;
+      $("remotePairingForm").hidden = true;
+      $("remoteFinalizeButton").disabled = false;
+      $("remoteCancelPairing").hidden = false;
+      setRemotePairingStatus("Pedido enviado. Aprove este dispositivo no computador central. Depois, clique em Verificar aprovação e conectar.");
+    } catch {
+      window.sessionStorage.removeItem(pairingStorageKey);
+    }
+  }
+
+  async function checkRemoteSession() {
+    try {
+      const response = await fetch("/api/device/session", {
+        method: "GET", cache: "no-store", credentials: "same-origin"
+      });
+      if (!response.ok) return false;
+      const session = await response.json();
+      if (session.authenticated !== true || !session.device_id) return false;
+      window.sessionStorage.removeItem(pairingStorageKey);
+      $("remoteAuthGate").hidden = true;
+      document.body.classList.remove("remote-locked");
+      startApp();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function initializeRemoteClient() {
+    document.body.classList.add("remote-locked");
+    $("remoteAuthGate").hidden = false;
+    if (await checkRemoteSession()) return;
+    restorePendingPairing();
+    if (!$("remoteAuthStatus").textContent || $("remoteAuthStatus").textContent.includes("Verificando")) {
+      setRemotePairingStatus("Este navegador ainda não está autorizado. Use o código temporário emitido no computador central.");
+    }
+  }
+
+  $("remotePairingForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const deviceId = $("remoteDeviceId").value.trim();
+    const code = $("remotePairingCode").value.trim();
+    if (!deviceId || !code) return setRemotePairingStatus("Informe o identificador e o código temporário.");
+    const button = $("remoteReserveButton");
+    button.disabled = true;
+    setRemotePairingStatus("Enviando pedido ao computador central...");
+    try {
+      const response = await fetch("/api/device/pairing/reserve", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({device_id: deviceId, code})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Não foi possível reservar o código.");
+      window.sessionStorage.setItem(pairingStorageKey, JSON.stringify({
+        deviceId, reservationId: data.reservation_id
+      }));
+      $("remotePairingForm").hidden = true;
+      $("remoteFinalizeButton").disabled = false;
+      $("remoteCancelPairing").hidden = false;
+      $("remotePairingCode").value = "";
+      setRemotePairingStatus("Pedido enviado. Aprove este dispositivo no computador central. Depois, clique em Verificar aprovação e conectar.");
+    } catch (error) {
+      setRemotePairingStatus(error.message);
+      button.disabled = false;
+    }
+  });
+
+  $("remoteFinalizeButton").addEventListener("click", async () => {
+    let saved;
+    try {
+      saved = JSON.parse(window.sessionStorage.getItem(pairingStorageKey) || "null");
+    } catch {
+      saved = null;
+    }
+    if (!saved) {
+      setRemotePairingStatus("Nenhum pedido pendente neste navegador. Inicie o pareamento novamente.");
+      $("remotePairingForm").hidden = false;
+      $("remoteFinalizeButton").disabled = true;
+      return;
+    }
+    const button = $("remoteFinalizeButton");
+    button.disabled = true;
+    setRemotePairingStatus("Consultando a aprovação local...");
+    try {
+      const response = await fetch("/api/device/pairing/finalize", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          device_id: saved.deviceId,
+          reservation_id: saved.reservationId
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "A aprovação ainda não foi concluída.");
+      setRemotePairingStatus("Dispositivo autorizado. Confirmando sessão protegida...");
+      if (!(await checkRemoteSession())) {
+        throw new Error("O servidor não confirmou a sessão protegida. Tente novamente.");
+      }
+    } catch (error) {
+      setRemotePairingStatus(error.message + " Após aprovar no PC, tente novamente.");
+      button.disabled = false;
+    }
+  });
+
+  $("remoteCancelPairing").addEventListener("click", () => {
+    window.sessionStorage.removeItem(pairingStorageKey);
+    $("remotePairingForm").hidden = false;
+    $("remotePairingCode").value = "";
+    $("remoteReserveButton").disabled = false;
+    $("remoteFinalizeButton").disabled = true;
+    $("remoteCancelPairing").hidden = true;
+    setRemotePairingStatus("Pedido local removido deste navegador. O código temporário anterior continua sujeito à expiração.");
+  });
+
+  if (isRemoteClient) {
+    initializeRemoteClient();
+  } else {
+    $("remoteAuthGate").hidden = true;
+    startApp();
+  }
 })();
