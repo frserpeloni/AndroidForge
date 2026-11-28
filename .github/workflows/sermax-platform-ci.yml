@@ -124,6 +124,9 @@ jobs:
       - name: Run HTTP device authentication tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_device_auth.py
+      - name: Run trusted proxy remote access guard tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_remote_access_guard.py
       - name: Run device pairing API tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_device_pairing_api.py
@@ -200,6 +203,9 @@ jobs:
       - name: Run HTTP device authentication tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_device_auth.py
+      - name: Run trusted proxy remote access guard tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_remote_access_guard.py
       - name: Run device pairing API tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_device_pairing_api.py
