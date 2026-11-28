@@ -12,6 +12,7 @@ on:
       - sermax-platform-ocr-20261117
       - sermax-platform-single-instance-20261120
       - sermax-platform-windows-autostart-20261120
+      - sermax-platform-agent-scope-20261122
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -24,6 +25,7 @@ on:
       - sermax-platform-attachment-context-20261117-r2
       - sermax-platform-ocr-20261117
       - sermax-platform-single-instance-20261120
+      - sermax-platform-windows-autostart-20261120
     paths:
       - "SERMAX-Platform/**"
       - ".github/workflows/sermax-platform-ci.yml"
@@ -116,6 +118,24 @@ jobs:
       - name: Run platform instance lock tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_instance_lock.py
+      - name: Run device pairing security tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest discover -s ../tests -p "test_lan_security.py" -v
+      - name: Run HTTP device authentication tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_auth.py
+      - name: Run trusted proxy remote access guard tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_remote_access_guard.py
+      - name: Run device pairing API tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_pairing_api.py
+      - name: Run pairing rate limiter tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_pairing_rate_limit.py
+      - name: Run HTTP request body limit tests
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_request_body_limit.py
       - name: Run Windows autostart policy tests
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py
@@ -183,6 +203,24 @@ jobs:
       - name: Run platform instance lock tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_instance_lock.py
+      - name: Run device pairing security tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest discover -s ../tests -p "test_lan_security.py" -v
+      - name: Run HTTP device authentication tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_auth.py
+      - name: Run trusted proxy remote access guard tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_remote_access_guard.py
+      - name: Run device pairing API tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_device_pairing_api.py
+      - name: Run pairing rate limiter tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_pairing_rate_limit.py
+      - name: Run HTTP request body limit tests on Windows
+        working-directory: SERMAX-Platform/backend
+        run: python -m unittest -v test_request_body_limit.py
       - name: Run Windows autostart policy tests on Windows
         working-directory: SERMAX-Platform/backend
         run: python -m unittest -v test_windows_autostart.py

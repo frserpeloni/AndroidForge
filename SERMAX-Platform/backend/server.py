@@ -17,19 +17,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Literal
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 import ipaddress
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from attachment_service import router as attachments_router
+from device_auth import DeviceAuthenticationError, authenticate_device_headers
+from device_pairing_api import create_pairing_router
 from ocr_service import get_ocr_engine_status
+from request_body_limit import RequestBodyLimitMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
 DATA_DIR = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser().resolve()
 DB_PATH = DATA_DIR / "platform.sqlite3"
+SECURITY_DB_PATH = DATA_DIR / "device_security.sqlite3"
 MAX_MESSAGE_CHARS = 8000
 CHAT_LOCK = threading.Lock()
 STREAM_SLOT = threading.Lock()
@@ -196,29 +200,98 @@ def startup() -> None:
 
 @app.middleware("http")
 async def local_origin_guard(request: Request, call_next):
-    # Validação do cabeçalho Host (mantida para compatibilidade)
-    host = request.headers.get("host", "")
-    if host not in {"127.0.0.1:8765", "localhost:8765"}:
-        return JSONResponse(status_code=403, content={"detail": "A API aceita somente acesso local."})
+    """Mantém administração local e exige identidade para rotas remotas via proxy confiável.
 
-    # Validação do cabeçalho Origin (mantida)
-    origin = request.headers.get("origin")
-    if origin and origin not in {"http://127.0.0.1:8765", "http://localhost:8765"}:
-        return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
-
-    # Nova verificação do IP real do cliente
+    O acesso remoto permanece desligado por padrão. A ativação exige configuração
+    explícita do host público, do proxy confiável e da indicação HTTPS do proxy.
+    """
     client = request.client
     if client is None:
         return JSONResponse(status_code=403, content={"detail": "Cliente desconhecido."})
     try:
-        ip = ipaddress.ip_address(client.host)
+        peer_ip = ipaddress.ip_address(client.host)
     except ValueError:
         return JSONResponse(status_code=403, content={"detail": "IP inválido."})
-    if not ip.is_loopback:
-        return JSONResponse(status_code=403, content={"detail": "Acesso externo não permitido."})
 
+    host = request.headers.get("host", "").strip().lower()
+    origin = request.headers.get("origin")
+    local_hosts = {"127.0.0.1:8765", "localhost:8765"}
+    local_origins = {"http://127.0.0.1:8765", "http://localhost:8765"}
+
+    # A interface administrativa permanece acessível no próprio PC.
+    if peer_ip.is_loopback and host in local_hosts:
+        if origin and origin not in local_origins:
+            return JSONResponse(status_code=403, content={"detail": "Origem não autorizada."})
+        return await call_next(request)
+
+    # Configuração ausente equivale a acesso remoto desativado.
+    if os.environ.get("SERMAX_REMOTE_ACCESS_ENABLED") != "1":
+        return JSONResponse(status_code=403, content={"detail": "Acesso externo não habilitado."})
+
+    public_host = os.environ.get("SERMAX_PUBLIC_HOST", "").strip().lower()
+    if not public_host or host != public_host:
+        return JSONResponse(status_code=403, content={"detail": "Host público não autorizado."})
+
+    trusted_proxy_values = os.environ.get(
+        "SERMAX_TRUSTED_PROXY_IPS", "127.0.0.1,::1"
+    ).split(",")
+    try:
+        trusted_proxy_ips = {
+            ipaddress.ip_address(value.strip())
+            for value in trusted_proxy_values
+            if value.strip()
+        }
+    except ValueError:
+        return JSONResponse(status_code=503, content={"detail": "Configuração de proxy inválida."})
+
+    if peer_ip not in trusted_proxy_ips:
+        return JSONResponse(status_code=403, content={"detail": "Proxy de entrada não autorizado."})
+
+    # Somente o proxy autorizado pode afirmar o protocolo externo.
+    if request.headers.get("x-forwarded-proto", "").casefold() != "https":
+        return JSONResponse(status_code=403, content={"detail": "Conexão HTTPS do proxy não confirmada."})
+
+    expected_origin = "https://" + public_host
+    if request.method in {"POST", "PUT", "PATCH", "DELETE"} and origin != expected_origin:
+        return JSONResponse(status_code=403, content={"detail": "Origem obrigatória ou não autorizada."})
+    if origin and origin != expected_origin:
+        return JSONResponse(status_code=403, content={"detail": "Origem pública não autorizada."})
+
+    # Administração, convites e revogação nunca ficam disponíveis pela internet.
+    if request.url.path.startswith("/api/local/"):
+        return JSONResponse(status_code=403, content={"detail": "Operação restrita ao computador central."})
+
+    # Página e saúde mínima públicas. Pareamento depende de código de uso único
+    # e aprovação local. Todas as demais rotas de dados exigem credencial individual.
+    if request.url.path in {"/", "/styles.css", "/app.js", "/api/health"}:
+        return await call_next(request)
+    if request.url.path in {
+        "/api/device/pairing/reserve",
+        "/api/device/pairing/finalize",
+    } and request.method == "POST":
+        return await call_next(request)
+
+    try:
+        cookie_device = request.cookies.get("sermax_device_id")
+        cookie_credential = request.cookies.get("sermax_device_credential")
+        device_id = authenticate_device_headers(
+            cookie_device,
+            "Bearer " + cookie_credential if cookie_credential else None,
+            db_path=SECURITY_DB_PATH,
+        )
+    except DeviceAuthenticationError:
+        return JSONResponse(status_code=401, content={"detail": "Dispositivo não autenticado."})
+
+    request.state.sermax_device_id = device_id
     return await call_next(request)
 
+
+# Limita o corpo antes do parser JSON/multipart, inclusive em uploads fragmentados.
+MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=MAX_REQUEST_BODY_BYTES,
+)
 
 @app.get("/", include_in_schema=False)
 def index():
@@ -234,6 +307,30 @@ def stylesheet():
 def javascript():
     return FileResponse(WEB_DIR / "app.js", media_type="application/javascript")
 
+
+@app.get("/api/device/session")
+def device_session(request: Request):
+    """Confirma a sessão autenticada sem expor a credencial ao JavaScript."""
+    return {"authenticated": True, "device_id": request.state.sermax_device_id}
+
+
+@app.post("/api/device/logout")
+def device_logout(request: Request, response: Response):
+    """Encerra a sessão deste navegador sem revogar o dispositivo cadastrado."""
+    device_id = getattr(request.state, "sermax_device_id", None)
+    if not device_id:
+        raise HTTPException(status_code=401, detail="Dispositivo não autenticado.")
+
+    for cookie_name in ("sermax_device_id", "sermax_device_credential"):
+        response.delete_cookie(
+            cookie_name,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+    response.headers["Cache-Control"] = "no-store"
+    return {"logged_out": True, "device_id": device_id}
 
 @app.get("/api/health")
 def health():
@@ -836,6 +933,7 @@ def chat_stream(payload: ChatInput):
 
 
 app.include_router(attachments_router)
+app.include_router(create_pairing_router(lambda: SECURITY_DB_PATH))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 import sys
@@ -7,6 +8,7 @@ import sermax_workspace
 from pathlib import Path
 
 from sermax_workspace import WorkspaceAdapter, TestRunner, WorkspaceError
+from sermax_platform_github_agent_runner import PlatformWorkspaceAdapter
 
 
 class WorkspaceAdapterTests(unittest.TestCase):
@@ -31,6 +33,15 @@ class WorkspaceAdapterTests(unittest.TestCase):
                          "memoria_neural_pestinha.json", ".git/config"):
                 with self.subTest(name=name), self.assertRaises(WorkspaceError):
                     ws.read_text(name)
+
+    def test_platform_agent_adapter_blocks_server_but_allows_other_backend_modules(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            adapter = PlatformWorkspaceAdapter(root)
+            with self.assertRaises(WorkspaceError):
+                adapter.preview("backend/server.py", "SERVER = 'replacement'\n")
+            diff = adapter.preview("backend/instance_lock.py", "LOCK_ENABLED = True\n")
+            self.assertIsInstance(diff, str)
 
     def test_blocks_symlink_escape(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as outside:
@@ -59,6 +70,7 @@ class WorkspaceAdapterTests(unittest.TestCase):
             result = runner.run("unittest")
             self.assertEqual(result["status"], "passed", result["output"])
             self.assertIn("Ran 1 test", result["output"])
+            self.assertFalse((tests_dir / "__pycache__").exists())
 
 
     def test_test_runner_enforces_output_limit_during_execution(self):
@@ -113,6 +125,19 @@ class WorkspaceAdapterTests(unittest.TestCase):
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX"))
         self.assertTrue(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX\\workspace"))
         self.assertFalse(sermax_workspace._is_inside_windows_install(r"C:\\SERMAX_DEV"))
+
+    def test_restore_sandbox_ownership_for_temporary_cleanup(self):
+        with tempfile.TemporaryDirectory() as folder:
+            sandbox = Path(folder) / "workspace"
+            sandbox.mkdir()
+            runner = TestRunner(WorkspaceAdapter(folder), isolate_as_nobody=True)
+            with patch("sermax_workspace.subprocess.run") as mocked:
+                runner._restore_sandbox_ownership(sandbox)
+            args = mocked.call_args.args[0]
+            self.assertEqual(args[:4], ["sudo", "-n", "chown", "-R"])
+            self.assertEqual(args[4], f"{os.getuid()}:{os.getgid()}")
+            self.assertEqual(args[5], str(sandbox))
+            self.assertTrue(mocked.call_args.kwargs["check"])
 
 if __name__ == "__main__":
     unittest.main()

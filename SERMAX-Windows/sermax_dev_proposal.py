@@ -54,13 +54,42 @@ def _validate_development_path(path: str) -> None:
         )
 
 
+def _decode_proposal_json(raw: str) -> Any:
+    """Aceita JSON puro, bloco Markdown ou texto introdutório ao redor de um objeto JSON."""
+    decoder = json.JSONDecoder()
+    candidates = [raw.strip()]
+    if candidates[0].startswith("```"):
+        lines = candidates[0].splitlines()
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            candidates.insert(0, "\\n".join(lines[1:-1]).strip())
+    errors = []
+    for candidate in candidates:
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError as exc:
+            errors.append(exc)
+        # raw_decode tolera texto antes/depois, mas ainda exige um objeto JSON válido.
+        for index, char in enumerate(candidate):
+            if char != "{":
+                continue
+            try:
+                value, _end = decoder.raw_decode(candidate[index:])
+                return value
+            except json.JSONDecodeError as exc:
+                errors.append(exc)
+    if errors:
+        last = errors[-1]
+        raise ProposalError(
+            "O Programador precisa retornar um objeto JSON válido. "
+            f"Erro de sintaxe próximo à linha {last.lineno}, coluna {last.colno}."
+        ) from last
+    raise ProposalError("O Programador não retornou JSON.")
+
+
 def parse_proposal(raw: str) -> ValidatedProposal:
     if not isinstance(raw, str) or len(raw.encode("utf-8")) > MAX_PROPOSAL_BYTES:
         raise ProposalError("Resposta do Programador ausente ou acima do limite.")
-    try:
-        data: Any = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise ProposalError("O Programador precisa retornar JSON válido.") from exc
+    data: Any = _decode_proposal_json(raw)
     if not isinstance(data, dict) or set(data) != {"summary", "files", "tests"}:
         raise ProposalError("A proposta exige os campos summary, files e tests.")
     summary, files, tests = data["summary"], data["files"], data["tests"]
@@ -132,8 +161,18 @@ def apply_and_test_proposal(workspace: WorkspaceAdapter, proposal: ValidatedProp
     try:
         written = apply_proposal(workspace, proposal)
         results = [test_runner.run(suite) for suite in proposal.tests]
-        if any(result.get("status") != "passed" for result in results):
-            raise RuntimeError("Testes da proposta falharam.")
+        failed = [result for result in results if result.get("status") != "passed"]
+        if failed:
+            diagnostics = []
+            for result in failed:
+                output = str(result.get("output", ""))[-6_000:]
+                diagnostics.append(
+                    f"suite={result.get('suite')} status={result.get('status')} "
+                    f"returncode={result.get('returncode')} output:\n{output}"
+                )
+            raise RuntimeError(
+                "Testes da proposta falharam. Diagnóstico: " + "\n\n".join(diagnostics)
+            )
         return written, results
     except Exception:
         for relative, (existed, content) in snapshots.items():

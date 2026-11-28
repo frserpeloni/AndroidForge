@@ -175,6 +175,19 @@ class TestRunner:
         )
         return sandbox
 
+    @staticmethod
+    def _restore_sandbox_ownership(sandbox: Path) -> None:
+        """Devolve a árvore ao usuário atual antes da limpeza temporária."""
+        owner = f"{os.getuid()}:{os.getgid()}"
+        subprocess.run(
+            ["sudo", "-n", "chown", "-R", owner, str(sandbox)],
+            check=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=30,
+        )
+
     def run(self, suite: str) -> dict:
         if suite not in ALLOWED_TESTS:
             raise WorkspaceError("Conjunto de testes não autorizado.")
@@ -186,6 +199,8 @@ class TestRunner:
                        "SERMAX_ROOT"}
         }
         env["PYTHONIOENCODING"] = "utf-8"
+        # Evita arquivos .pyc pertencentes ao usuário isolado, que bloqueiam a limpeza do sandbox.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         started = time.monotonic()
 
         with tempfile.TemporaryDirectory(prefix="sermax-test-") as temporary:
@@ -238,11 +253,18 @@ class TestRunner:
                     output_file.seek(max(0, output_size - MAX_OUTPUT_BYTES))
                     raw = output_file.read(MAX_OUTPUT_BYTES)
                     output = raw.decode("utf-8", errors="replace")[-MAX_OUTPUT_CHARS:]
+                    if self.isolate_as_nobody:
+                        self._restore_sandbox_ownership(cwd)
                     return {
                         "suite": suite, "status": status, "returncode": returncode,
                         "output": output, "truncated": output_size > MAX_OUTPUT_BYTES,
                     }
                 except OSError as exc:
+                    if self.isolate_as_nobody and cwd != self.workspace.root:
+                        try:
+                            self._restore_sandbox_ownership(cwd)
+                        except (OSError, subprocess.SubprocessError):
+                            pass
                     return {
                         "suite": suite, "status": "failed", "returncode": None,
                         "output": f"{type(exc).__name__}: {exc}"[:MAX_OUTPUT_CHARS],

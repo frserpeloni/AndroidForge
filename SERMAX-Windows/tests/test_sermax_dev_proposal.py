@@ -30,6 +30,18 @@ class DevelopmentProposalTests(unittest.TestCase):
                 "old = 1\n",
             )
 
+    def test_accepts_markdown_fence_and_surrounding_explanation(self):
+        payload = json.dumps({
+            "summary": "Proposta válida",
+            "files": [{"path": "src/module.py", "content": "VALUE = 1\\n"}],
+            "tests": ["unittest"],
+        })
+        for raw in (f"```json\\n{payload}\\n```", f"Segue a proposta:\\n{payload}\\nFim."):
+            with self.subTest(raw=raw):
+                proposal = parse_proposal(raw)
+                self.assertEqual(proposal.summary, "Proposta válida")
+                self.assertEqual(proposal.files[0].path, "src/module.py")
+
     def test_rejects_invalid_json_schema_and_test_command(self):
         invalid = (
             "not-json",

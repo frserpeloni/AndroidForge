@@ -9,6 +9,28 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <section class="remote-auth-gate" id="remoteAuthGate" hidden aria-labelledby="remoteAuthTitle">
+    <div class="remote-auth-card">
+      <div class="brand-mark">S</div>
+      <p class="eyebrow">ACESSO PROTEGIDO</p>
+      <h1 id="remoteAuthTitle">Conectar dispositivo</h1>
+      <p>Informe o identificador e o código temporário gerado na tela Dispositivos do computador central. O acesso exige aprovação local.</p>
+      <form id="remotePairingForm" class="remote-pairing-form">
+        <label class="task-field">Identificador do dispositivo
+          <input id="remoteDeviceId" name="device_id" maxlength="128" required autocomplete="off" placeholder="Ex.: android-fabiano">
+        </label>
+        <label class="task-field">Código temporário
+          <input id="remotePairingCode" name="code" maxlength="256" required autocomplete="one-time-code" placeholder="Cole o código gerado no PC">
+        </label>
+        <button class="primary-button" id="remoteReserveButton" type="submit">Enviar pedido de pareamento</button>
+      </form>
+      <div class="remote-pairing-actions">
+        <button class="primary-button" id="remoteFinalizeButton" type="button" disabled>Verificar aprovação e conectar</button>
+        <button class="secondary-button" id="remoteCancelPairing" type="button" hidden>Cancelar pedido</button>
+      </div>
+      <p class="remote-auth-status" id="remoteAuthStatus" role="status" aria-live="polite">Verificando sessão deste dispositivo...</p>
+    </div>
+  </section>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
       <div class="brand">
@@ -23,6 +45,7 @@
         <button class="nav-item" data-view="tasks"><span>◷</span> Tarefas</button>
         <button class="nav-item" data-view="engines"><span>⌁</span> Motores</button>
         <button class="nav-item" data-view="memory"><span>◇</span> Memória</button>
+        <button class="nav-item" data-view="devices"><span>⌑</span> Dispositivos</button>
       </nav>
       <div class="side-section">
         <div class="side-heading">RECENTES</div>
@@ -38,7 +61,7 @@
       <header class="topbar">
         <button class="icon-button menu-toggle" id="openSidebar" aria-label="Abrir menu">☰</button>
         <div class="breadcrumb"><span>SERMAX</span><i>/</i><b id="sectionName">Conversa</b></div>
-        <div class="top-actions"><span class="connection"><span class="state-dot"></span> Desconectado</span><button class="icon-button" aria-label="Mais opções">···</button></div>
+        <div class="top-actions"><span class="connection"><span class="state-dot"></span> Desconectado</span><button class="secondary-button" id="remoteLogoutButton" type="button" hidden>Sair deste dispositivo</button><button class="icon-button" aria-label="Mais opções">···</button></div>
       </header>
 
       <section class="view active" id="chatView">
@@ -134,6 +157,22 @@
           <div class="memory-count" id="memoryCount" aria-live="polite">Aguardando consulta</div>
         </div>
         <div class="memory-list" id="memoryList" aria-live="polite"><p class="memory-empty">Abra uma conversa para carregar o núcleo e depois atualize este painel.</p></div>
+      </section>
+      <section class="view placeholder-view" id="devicesView">
+        <div class="page-heading">
+          <div><p class="eyebrow">SEGURANÇA LOCAL</p><h1>Dispositivos</h1><p>Emita convites no PC e aprove cada dispositivo antes da emissão da credencial.</p></div>
+          <button class="secondary-button" id="refreshDevices" type="button">↻ Atualizar pedidos</button>
+        </div>
+        <div class="device-security-note"><b>Aprovação presencial no computador</b><span>Esta tela funciona somente na API local. Nenhum dispositivo recebe acesso antes da aprovação explícita. O acesso pela internet permanece bloqueado.</span></div>
+        <form class="device-invite-form" id="deviceInviteForm">
+          <label class="task-field">Identificador do dispositivo
+            <input id="deviceInviteId" name="device_id" maxlength="128" required placeholder="Ex.: android-fabiano">
+          </label>
+          <button class="primary-button" type="submit">＋ Gerar código de pareamento</button>
+        </form>
+        <div class="device-invite-result" id="deviceInviteResult" aria-live="polite" hidden></div>
+        <div class="device-pending-heading"><h2>Pedidos aguardando aprovação</h2><span id="devicePendingCount">Aguardando consulta</span></div>
+        <div class="device-pending-list" id="devicePendingList" aria-live="polite"><p class="device-empty">Atualize para consultar pedidos.</p></div>
       </section>
       <div class="toast" id="toast" role="status"></div>
     </main>

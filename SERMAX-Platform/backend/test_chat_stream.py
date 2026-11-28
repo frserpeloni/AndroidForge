@@ -232,5 +232,50 @@ class ChatStreamApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
 
+    def test_chat_reconstructs_only_the_requested_conversation_history(self):
+        server.CORE_MODULE = AttachmentContextCore
+        original_session = [{"role": "assistant", "content": "sessão original"}]
+        AttachmentContextCore.sessao = original_session.copy()
+        AttachmentContextCore.observed_session = []
+        now = server.utc_now()
+
+        with server.database() as conn:
+            for conversation_id, title in (
+                ("conversation-alpha", "Conversa Alpha"),
+                ("conversation-beta", "Conversa Beta"),
+            ):
+                conn.execute(
+                    "INSERT INTO conversations(id,title,created_at,updated_at) VALUES(?,?,?,?)",
+                    (conversation_id, title, now, now),
+                )
+            conn.executemany(
+                "INSERT INTO messages(conversation_id,role,content,created_at,status) VALUES(?,?,?,?,?)",
+                [
+                    ("conversation-alpha", "user", "Contexto exclusivo Alpha", now, "complete"),
+                    ("conversation-alpha", "assistant", "Resposta exclusiva Alpha", now, "complete"),
+                    ("conversation-beta", "user", "Dado privado Beta", now, "complete"),
+                    ("conversation-beta", "assistant", "Resposta privada Beta", now, "complete"),
+                ],
+            )
+
+        response = self.client.post(
+            "/api/chat/stream",
+            json={
+                "message": "Continue a conversa Alpha.",
+                "conversation_id": "conversation-alpha",
+            },
+            headers=self.headers,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        observed = AttachmentContextCore.observed_session
+        observed_text = " ".join(item["content"] for item in observed)
+        self.assertIn("Contexto exclusivo Alpha", observed_text)
+        self.assertIn("Resposta exclusiva Alpha", observed_text)
+        self.assertNotIn("Dado privado Beta", observed_text)
+        self.assertNotIn("Resposta privada Beta", observed_text)
+        self.assertEqual(AttachmentContextCore.sessao, original_session)
+
+
 if __name__ == "__main__":
     unittest.main()

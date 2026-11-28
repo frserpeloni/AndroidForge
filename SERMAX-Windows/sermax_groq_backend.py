@@ -19,6 +19,7 @@ class GroqAPIError(RuntimeError):
 
 class GroqChatBackend:
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
+    GPT_OSS_MODELS = {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}
 
     def __init__(
         self,
@@ -64,8 +65,16 @@ class GroqChatBackend:
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.2,
-            "max_tokens": self.max_tokens,
         }
+        if self.model in self.GPT_OSS_MODELS:
+            # GPT-OSS retorna raciocínio em campo separado. Desativá-lo evita
+            # consumir a saída destinada ao conteúdo final da equipe.
+            payload["include_reasoning"] = False
+            payload["reasoning_effort"] = "low"
+            payload["max_completion_tokens"] = self.max_tokens
+        else:
+            payload["max_tokens"] = self.max_tokens
+
         request = urllib.request.Request(
             self.ENDPOINT,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -85,7 +94,11 @@ class GroqChatBackend:
                 data = json.loads(raw.decode("utf-8"))
                 answer = data["choices"][0]["message"]["content"]
                 if not isinstance(answer, str) or not answer.strip():
-                    raise GroqAPIError("A Groq retornou conteúdo vazio.")
+                    finish_reason = data["choices"][0].get("finish_reason", "unknown")
+                    raise GroqAPIError(
+                        "A Groq retornou conteúdo final vazio "
+                        f"(finish_reason={finish_reason})."
+                    )
                 return answer
             except urllib.error.HTTPError as exc:
                 try:
