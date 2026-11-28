@@ -261,6 +261,6 @@ Referências:
 - https://tailscale.com/docs/features/tailscale-serve
 - https://tailscale.com/docs/reference/tailscale-cli/funnel
 
-O limitador de pareamento persiste eventos em SQLite e aplica duas camadas: até 120 tentativas por minuto e operação para o peer observado pelo backend, além de oito tentativas por minuto e operação para cada identificador de dispositivo. Como o Funnel pode apresentar um peer compartilhado, a camada por peer funciona como teto global de contenção; a camada por dispositivo reduz tentativas repetidas contra um mesmo identificador. A identificação de IP externo por cabeçalhos encaminhados não é confiada até a homologação do proxy.
+O limitador de pareamento persiste eventos em SQLite e aplica três camadas: até 120 tentativas por minuto e operação para o peer observado pelo backend, até 30 por minuto e operação para o IP externo validado e oito por minuto e operação para cada identificador de dispositivo. O IP externo só é aceito quando o peer corresponde exatamente a um proxy confiável, o Host coincide com `SERMAX_PUBLIC_HOST`, `X-Forwarded-Proto` é `https` e `X-Forwarded-For` contém um único IP válido. O código do Tailscale substitui `X-Forwarded-For` pelo endereço de origem observado no proxy. O teto por peer permanece ativo para conter abuso agregado; o limite por IP reduz a interferência entre clientes que compartilham o proxy.
 
 Testes da política: `backend/test_remote_access_guard.py`. Testes do limitador: `backend/test_pairing_rate_limit.py`. O CI executa ambos em Linux e Windows, além das baterias existentes.
