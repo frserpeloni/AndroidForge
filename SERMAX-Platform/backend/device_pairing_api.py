@@ -23,13 +23,17 @@ except ImportError:
     from pairing_rate_limit import SQLiteSlidingWindowRateLimiter
 
 
-PAIRING_RATE_LIMITER = SlidingWindowRateLimiter(limit=8, window_seconds=60)
+PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=8, window_seconds=60)
 
 
-def _enforce_pairing_rate_limit(request: Request, operation: str) -> None:
+def _enforce_pairing_rate_limit(
+    request: Request, operation: str, db_path_provider: Callable[[], Path]
+) -> None:
     client = request.client
     peer = client.host if client is not None else "unknown"
-    if not PAIRING_RATE_LIMITER.allow(operation + ":" + peer):
+    if not PAIRING_RATE_LIMITER.allow(
+        operation + ":" + peer, str(db_path_provider())
+    ):
         raise HTTPException(
             status_code=429,
             detail="Muitas tentativas de pareamento. Aguarde antes de tentar novamente.",
