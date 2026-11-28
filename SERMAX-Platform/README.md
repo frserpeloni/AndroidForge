@@ -247,11 +247,12 @@ A política remota exige simultaneamente:
 - `SERMAX_TRUSTED_PROXY_IPS`, lista de IPs exatos autorizados a atuar como proxy;
 - cabeçalho `X-Forwarded-Proto: https` recebido de um peer que esteja na lista de proxies;
 - Host e Origin compatíveis com o hostname público;
-- credencial individual válida em `X-Sermax-Device` e `Authorization: Bearer` para rotas de dados.
+- sessão individual em cookies `sermax_device_id` e `sermax_device_credential`, ambos `Secure`, `HttpOnly`, `SameSite=Strict`, com validade alinhada à credencial; o segredo não é entregue ao JavaScript;
+- cabeçalho `Origin` exato obrigatório em toda requisição remota que altera estado (`POST`, `PUT`, `PATCH`, `DELETE`).
 
-As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem credencial de dispositivo, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central.
+As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem sessão prévia, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central. A finalização emite a sessão exclusivamente por cookies protegidos. O endpoint `/api/device/session` confirma a identidade sem expor o segredo.
 
-**Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A integração ainda depende de confirmar, em execução real, quais cabeçalhos o proxy Tailscale entrega ao backend, integrar o armazenamento seguro da credencial à interface do navegador e validar o comportamento do proxy em execução real. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
+**Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A interface do navegador já possui tela de pareamento, reserva do código, verificação manual da aprovação e sessão por cookie HttpOnly. O identificador da reserva fica em `sessionStorage` somente durante o pareamento, nunca a credencial. Ainda falta confirmar em execução real quais cabeçalhos o proxy Tailscale entrega ao backend e validar o comportamento do proxy. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
 
 O Funnel termina TLS no daemon Tailscale e encaminha o tráfego ao serviço local. A documentação oficial informa que o tráfego Funnel não inclui os cabeçalhos de identidade do Tailscale Serve. Por isso, a Plataforma não usa identidade Tailscale como autenticação de usuário. O proxy e seus cabeçalhos precisam passar por homologação antes de qualquer ativação.
 
