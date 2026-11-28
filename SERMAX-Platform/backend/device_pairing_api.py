@@ -6,6 +6,8 @@ de proxy confiável estiver habilitada. Essa política permanece desligada por p
 """
 from __future__ import annotations
 
+import ipaddress
+import os
 from pathlib import Path
 from typing import Callable
 
@@ -24,7 +26,44 @@ except ImportError:
 
 
 PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=120, window_seconds=60)
+CLIENT_PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=30, window_seconds=60)
 DEVICE_PAIRING_RATE_LIMITER = SQLiteSlidingWindowRateLimiter(limit=8, window_seconds=60)
+
+
+def _trusted_forwarded_client_ip(request: Request) -> str | None:
+    """Aceita X-Forwarded-For somente do proxy exato e para o host HTTPS esperado."""
+    client = request.client
+    peer = client.host if client is not None else "unknown"
+    try:
+        peer_ip = ipaddress.ip_address(peer)
+    except ValueError:
+        return None
+
+    trusted_peers = set()
+    for raw_ip in os.environ.get("SERMAX_TRUSTED_PROXY_IPS", "").split(","):
+        value = raw_ip.strip()
+        if not value:
+            continue
+        try:
+            trusted_peers.add(ipaddress.ip_address(value))
+        except ValueError:
+            continue
+
+    public_host = os.environ.get("SERMAX_PUBLIC_HOST", "").strip().casefold()
+    if not public_host or peer_ip not in trusted_peers:
+        return None
+    if request.headers.get("host", "").casefold() != public_host:
+        return None
+    if request.headers.get("x-forwarded-proto", "").casefold() != "https":
+        return None
+
+    forwarded_for = request.headers.get("x-forwarded-for", "").strip()
+    if not forwarded_for or "," in forwarded_for:
+        return None
+    try:
+        return str(ipaddress.ip_address(forwarded_for))
+    except ValueError:
+        return None
 
 
 def _enforce_pairing_rate_limit(
@@ -37,6 +76,11 @@ def _enforce_pairing_rate_limit(
     peer = client.host if client is not None else "unknown"
     db_path = str(db_path_provider())
     allowed = PAIRING_RATE_LIMITER.allow(operation + ":" + peer, db_path)
+    forwarded_client_ip = _trusted_forwarded_client_ip(request)
+    if allowed and forwarded_client_ip:
+        allowed = CLIENT_PAIRING_RATE_LIMITER.allow(
+            operation + ":client:" + forwarded_client_ip, db_path
+        )
     if allowed and device_id:
         allowed = DEVICE_PAIRING_RATE_LIMITER.allow(
             operation + ":device:" + device_id.strip(), db_path
