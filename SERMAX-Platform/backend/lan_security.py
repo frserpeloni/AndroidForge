@@ -409,3 +409,23 @@ def cleanup_expired(db_path: Path | str = DEFAULT_DB_PATH) -> int:
             if conn.in_transaction:
                 conn.rollback()
             raise
+
+def list_pending_pairings(db_path: Path | str = DEFAULT_DB_PATH) -> list[dict[str, object]]:
+    """Lista pedidos ainda sem aprovação local, sem expor códigos ou credenciais."""
+    now = int(time.time())
+    with _connection(db_path) as conn:
+        rows = conn.execute(
+            """SELECT r.reservation_id, r.device, r.expires_at
+               FROM pairing_reservations AS r
+               JOIN device_pairings AS p ON p.code = r.code
+               LEFT JOIN local_pairing_approvals AS a
+                 ON a.reservation_id = r.reservation_id
+               WHERE r.expires_at > ? AND p.expires_at > ?
+                 AND p.attempts_left > 0 AND a.reservation_id IS NULL
+               ORDER BY r.expires_at ASC""",
+            (now, now),
+        ).fetchall()
+    return [
+        {"reservation_id": row[0], "device": row[1], "expires_at": row[2]}
+        for row in rows
+    ]
