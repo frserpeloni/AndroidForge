@@ -236,3 +236,28 @@ python SERMAX-Platform/tools/check_local_inference.py
 O script envia uma solicitação fixa ao SERMAX. O núcleo tenta OpenJarvis local e usa Ollama local como fallback, conforme a configuração existente. A variável `SERMAX_JARVIS_PYTHON` deve apontar para o `python.exe` do ambiente OpenJarvis já instalado para que esse backend seja testado; sem ela, o adaptador procura `.venv-jarvis` dentro da pasta temporária e tende a seguir pelo fallback Ollama. O modelo definido no núcleo é `sermax`; confirme que esse modelo existe no Ollama com `ollama list`.
 
 O script direciona `SERMAX_ROOT` para uma pasta temporária, não carrega os arquivos de memória pessoais e bloqueia as funções de execução de comandos e planos. A pergunta fixa é `Responda exatamente com SERMAX_LOCAL_OK e nada mais.`. O relatório indica backend, agente, fallback e resposta. A pasta temporária é removida ao encerrar. O teste executa inferência real nos motores locais e pode levar alguns minutos; não é executado pelo CI.
+
+## Política de autenticação remota em desenvolvimento
+
+O middleware mantém o acesso local por loopback e adiciona uma política fechada por padrão para uma futura entrada HTTPS por proxy confiável.
+
+A política remota exige simultaneamente:
+- `SERMAX_REMOTE_ACCESS_ENABLED=1`, habilitação explícita;
+- `SERMAX_PUBLIC_HOST`, hostname público exato, sem curingas;
+- `SERMAX_TRUSTED_PROXY_IPS`, lista de IPs exatos autorizados a atuar como proxy;
+- cabeçalho `X-Forwarded-Proto: https` recebido de um peer que esteja na lista de proxies;
+- Host e Origin compatíveis com o hostname público;
+- credencial individual válida em `X-Sermax-Device` e `Authorization: Bearer` para rotas de dados.
+
+As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem credencial de dispositivo, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central.
+
+**Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A integração ainda depende de confirmar, em execução real, quais cabeçalhos o proxy Tailscale entrega ao backend, adicionar limites de requisição para as rotas públicas de pareamento e integrar o armazenamento seguro da credencial à interface do navegador. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
+
+O Funnel termina TLS no daemon Tailscale e encaminha o tráfego ao serviço local. A documentação oficial informa que o tráfego Funnel não inclui os cabeçalhos de identidade do Tailscale Serve. Por isso, a Plataforma não usa identidade Tailscale como autenticação de usuário. O proxy e seus cabeçalhos precisam passar por homologação antes de qualquer ativação.
+
+Referências:
+- https://tailscale.com/docs/features/tailscale-funnel
+- https://tailscale.com/docs/features/tailscale-serve
+- https://tailscale.com/docs/reference/tailscale-cli/funnel
+
+Testes da política: `backend/test_remote_access_guard.py`. O CI executa o teste em Linux e Windows, além das baterias existentes.
