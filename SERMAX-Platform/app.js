@@ -1,8 +1,8 @@
 (() => {
   const $ = id => document.getElementById(id);
   const nav = [...document.querySelectorAll(".nav-item")];
-  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",engines:"enginesView",memory:"memoryView"};
-  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",engines:"Motores",memory:"Memória"};
+  const views = {chat:"chatView",projects:"projectsView",tasks:"tasksView",engines:"enginesView",memory:"memoryView",devices:"devicesView"};
+  const names = {chat:"Conversa",projects:"Projetos",tasks:"Tarefas",engines:"Motores",memory:"Memória",devices:"Dispositivos"};
   let conversationId = null;
   let activeProjectId = null;
   let sending = false;
@@ -24,6 +24,7 @@
     if (name === "tasks") refreshTasks();
     if (name === "engines") refreshEngines();
     if (name === "memory") refreshMemory();
+    if (name === "devices") refreshDevices();
   }
   async function refreshHealth() {
     try {
@@ -807,6 +808,112 @@
   }
 
   $("refreshMemory").addEventListener("click", refreshMemory);
+
+  async function refreshDevices() {
+    const list = $("devicePendingList");
+    const count = $("devicePendingCount");
+    if (!list || !count) return;
+    list.textContent = "Consultando pedidos locais...";
+    count.textContent = "Consultando...";
+    try {
+      const response = await fetch("/api/local/pairings/pending", {method:"GET", cache:"no-store"});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao consultar pareamentos.");
+      list.replaceChildren();
+      const items = Array.isArray(data.items) ? data.items : [];
+      count.textContent = items.length + (items.length === 1 ? " pedido" : " pedidos");
+      if (!items.length) {
+        const empty = document.createElement("p");
+        empty.className = "device-empty";
+        empty.textContent = "Nenhum pedido aguardando aprovação.";
+        list.appendChild(empty);
+        return;
+      }
+      items.forEach(item => {
+        const card = document.createElement("article");
+        card.className = "device-pending-card";
+        const details = document.createElement("div");
+        const device = document.createElement("h3");
+        device.textContent = item.device || "Dispositivo sem identificação";
+        const expiry = document.createElement("p");
+        const date = new Date(Number(item.expires_at) * 1000);
+        expiry.textContent = "Expira em: " + (Number.isNaN(date.getTime()) ? "horário indisponível" : date.toLocaleString("pt-BR"));
+        const id = document.createElement("small");
+        id.textContent = "Pedido: " + String(item.reservation_id || "").slice(0, 12) + "…";
+        details.append(device, expiry, id);
+        const approve = document.createElement("button");
+        approve.type = "button";
+        approve.className = "primary-button";
+        approve.textContent = "Aprovar neste PC";
+        approve.addEventListener("click", async () => {
+          if (!window.confirm("Autorizar o dispositivo " + item.device + " neste computador?")) return;
+          approve.disabled = true;
+          try {
+            const result = await fetch("/api/local/pairings/" + encodeURIComponent(item.reservation_id) + "/approve", {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body:JSON.stringify({device_id:item.device})
+            });
+            const payload = await result.json();
+            if (!result.ok) throw new Error(payload.detail || "A aprovação falhou.");
+            toast("Dispositivo aprovado. A emissão da credencial ocorrerá na etapa de pareamento do cliente.");
+            await refreshDevices();
+          } catch (error) {
+            toast(error.message);
+            approve.disabled = false;
+          }
+        });
+        card.append(details, approve);
+        list.appendChild(card);
+      });
+    } catch (error) {
+      count.textContent = "Consulta indisponível";
+      list.textContent = error.message;
+      toast(error.message);
+    }
+  }
+
+  $("deviceInviteForm").addEventListener("submit", async event => {
+    event.preventDefault();
+    const deviceId = $("deviceInviteId").value.trim();
+    if (!deviceId) return toast("Informe o identificador do dispositivo.");
+    const result = $("deviceInviteResult");
+    result.hidden = false;
+    result.textContent = "Gerando convite local...";
+    try {
+      const response = await fetch("/api/local/pairings", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({device_id:deviceId})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Falha ao gerar convite.");
+      result.replaceChildren();
+      const label = document.createElement("p");
+      label.textContent = "Código temporário para " + data.device_id + ". Validade: " + data.expires_in + " segundos.";
+      const code = document.createElement("code");
+      code.className = "device-pairing-code";
+      code.textContent = data.code;
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.className = "secondary-button";
+      copy.textContent = "Copiar código";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(data.code);
+          toast("Código copiado.");
+        } catch {
+          toast("Cópia indisponível. Selecione o código manualmente.");
+        }
+      });
+      result.append(label, code, copy);
+      $("deviceInviteId").value = "";
+      toast("Convite gerado. O código é temporário e de uso único.");
+    } catch (error) {
+      result.textContent = error.message;
+      toast(error.message);
+    }
+  });
+  $("refreshDevices").addEventListener("click", refreshDevices);
+
   $("memorySearch").addEventListener("keydown", event => {
     if (event.key === "Enter") {
       event.preventDefault();
