@@ -24,12 +24,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from attachment_service import router as attachments_router
+from device_pairing_api import create_pairing_router
 from ocr_service import get_ocr_engine_status
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
 DATA_DIR = Path(os.environ.get("SERMAX_PLATFORM_DATA", Path.home() / ".sermax-platform")).expanduser().resolve()
 DB_PATH = DATA_DIR / "platform.sqlite3"
+SECURITY_DB_PATH = DATA_DIR / "device_security.sqlite3"
 MAX_MESSAGE_CHARS = 8000
 CHAT_LOCK = threading.Lock()
 STREAM_SLOT = threading.Lock()
@@ -836,6 +838,7 @@ def chat_stream(payload: ChatInput):
 
 
 app.include_router(attachments_router)
+app.include_router(create_pairing_router(lambda: SECURITY_DB_PATH))
 
 
 if __name__ == "__main__":
