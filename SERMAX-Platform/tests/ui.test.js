@@ -15,7 +15,7 @@ function response(data, status = 200) {
 function setup() {
   const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [], pairings: [{reservation_id:"reserve-123456789012",device:"android-test",expires_at:1893456000}], pairingInvites: [] };
   let nextProject = 1;
   let nextConversation = 1;
   let nextTask = 1;
@@ -29,6 +29,18 @@ function setup() {
     const method = options.method || "GET";
     const body = options.body ? JSON.parse(options.body) : {};
     if (url === "/api/health") return response({ core: "mock" });
+    if (url === "/api/local/pairings/pending" && method === "GET") return response({items:state.pairings});
+    if (url === "/api/local/pairings" && method === "POST") {
+      state.pairingInvites.push(body.device_id);
+      return response({device_id:body.device_id,code:"ONE-TIME-TEST-CODE",expires_in:300},201);
+    }
+    const pairingApproveMatch = url.match(/^\/api\/local\/pairings\/([^/]+)\/approve$/);
+    if (pairingApproveMatch && method === "POST") {
+      const index = state.pairings.findIndex(item => item.reservation_id === decodeURIComponent(pairingApproveMatch[1]) && item.device === body.device_id);
+      if (index < 0) return response({detail:"Pedido não encontrado"},404);
+      state.pairings.splice(index,1);
+      return response({approved:true,device_id:body.device_id});
+    }
     if (url === "/api/conversations" && method === "GET") return response(state.conversations);
     if (url === "/api/projects" && method === "GET") return response(state.projects.filter(p => !p.archived));
     if (url === "/api/projects" && method === "POST") {
@@ -269,4 +281,29 @@ test("conversa de projeto arquivado mantém o contexto e informa o estado", asyn
   recent.click();
   await tick();
   assert.equal(win.document.getElementById("activeProjectLabel").textContent, "Projeto: Projeto arquivado");
+});
+
+
+test("painel local gera convite e exige aprovação explícita do dispositivo", async () => {
+  const { win, state, tick } = setup();
+  win.document.querySelector('[data-view="devices"]').click();
+  await tick();
+
+  assert.match(win.document.getElementById("devicePendingList").textContent, /android-test/);
+  assert.match(win.document.querySelector(".device-security-note").textContent, /permanece bloqueado/);
+
+  win.document.getElementById("deviceInviteId").value = "android-novo";
+  win.document.getElementById("deviceInviteForm").dispatchEvent(
+    new win.Event("submit", { bubbles: true, cancelable: true })
+  );
+  await tick();
+  assert.deepEqual(state.pairingInvites, ["android-novo"]);
+  assert.match(win.document.getElementById("deviceInviteResult").textContent, /ONE-TIME-TEST-CODE/);
+
+  const approve = win.document.querySelector(".device-pending-card button");
+  assert.ok(approve);
+  approve.click();
+  await tick();
+  assert.equal(state.pairings.length, 0);
+  assert.match(win.document.getElementById("devicePendingList").textContent, /Nenhum pedido aguardando aprovação/);
 });
