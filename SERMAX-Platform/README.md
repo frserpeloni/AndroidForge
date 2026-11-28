@@ -251,7 +251,7 @@ A política remota exige simultaneamente:
 
 As rotas administrativas `/api/local/*` continuam exclusivas do acesso local. As rotas de reserva e finalização de pareamento permanecem sem credencial de dispositivo, pois fazem parte do primeiro vínculo, mas dependem do código temporário e da aprovação no computador central.
 
-**Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A integração ainda depende de confirmar, em execução real, quais cabeçalhos o proxy Tailscale entrega ao backend, adicionar limites de requisição para as rotas públicas de pareamento e integrar o armazenamento seguro da credencial à interface do navegador. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
+**Não habilite a variável remota nesta versão.** O acesso remoto continua desligado. A integração ainda depende de confirmar, em execução real, quais cabeçalhos o proxy Tailscale entrega ao backend, integrar o armazenamento seguro da credencial à interface do navegador e validar o comportamento do proxy em execução real. O teste automatizado simula um proxy confiável e não comprova o comportamento de rede do Tailscale Funnel.
 
 O Funnel termina TLS no daemon Tailscale e encaminha o tráfego ao serviço local. A documentação oficial informa que o tráfego Funnel não inclui os cabeçalhos de identidade do Tailscale Serve. Por isso, a Plataforma não usa identidade Tailscale como autenticação de usuário. O proxy e seus cabeçalhos precisam passar por homologação antes de qualquer ativação.
 
@@ -260,4 +260,6 @@ Referências:
 - https://tailscale.com/docs/features/tailscale-serve
 - https://tailscale.com/docs/reference/tailscale-cli/funnel
 
-Testes da política: `backend/test_remote_access_guard.py`. O CI executa o teste em Linux e Windows, além das baterias existentes.
+As rotas de criação, reserva e finalização de pareamento têm limite de oito tentativas por minuto e por peer observado pelo backend. Quando o Funnel encaminhar todos os clientes pelo mesmo peer local, o limite será compartilhado entre eles. O mecanismo é em memória e reinicia junto com o processo, portanto não substitui controles persistentes contra abuso.
+
+Testes da política: `backend/test_remote_access_guard.py`. Testes do limitador: `backend/test_pairing_rate_limit.py`. O CI executa ambos em Linux e Windows, além das baterias existentes.
