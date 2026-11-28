@@ -12,10 +12,10 @@ function response(data, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => data };
 }
 
-function setup() {
-  const dom = new JSDOM(html, { url: "http://127.0.0.1:8765", runScripts: "outside-only" });
+function setup(url = "http://127.0.0.1:8765") {
+  const dom = new JSDOM(html, { url, runScripts: "outside-only" });
   const win = dom.window;
-  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [], pairings: [{reservation_id:"reserve-123456789012",device:"android-test",expires_at:1893456000}], pairingInvites: [] };
+  const state = { projects: [], conversations: [], tasks: [], memories: [], coreLoaded: false, memoryCalls: [], engineCalls: 0, prompts: [], confirm: true, chatCalls: [], pairings: [{reservation_id:"reserve-123456789012",device:"android-test",expires_at:1893456000}], pairingInvites: [], remoteSession: false, remoteApproved: false, remoteReserveCalls: [], remoteFinalizeCalls: [] };
   let nextProject = 1;
   let nextConversation = 1;
   let nextTask = 1;
@@ -28,6 +28,21 @@ function setup() {
   win.fetch = async (url, options = {}) => {
     const method = options.method || "GET";
     const body = options.body ? JSON.parse(options.body) : {};
+    if (url === "/api/device/session" && method === "GET") {
+      return state.remoteSession
+        ? response({authenticated:true,device_id:"android-browser"})
+        : response({detail:"Dispositivo não autenticado."},401);
+    }
+    if (url === "/api/device/pairing/reserve" && method === "POST") {
+      state.remoteReserveCalls.push(body);
+      return response({reservation_id:"remote-reservation-123",status:"awaiting_local_approval"},202);
+    }
+    if (url === "/api/device/pairing/finalize" && method === "POST") {
+      state.remoteFinalizeCalls.push(body);
+      if (!state.remoteApproved) return response({detail:"Pareamento ainda não aprovado."},403);
+      state.remoteSession = true;
+      return response({device_id:body.device_id,authenticated:true});
+    }
     if (url === "/api/health") return response({ core: "mock" });
     if (url === "/api/local/pairings/pending" && method === "GET") return response({items:state.pairings});
     if (url === "/api/local/pairings" && method === "POST") {
@@ -306,4 +321,34 @@ test("painel local gera convite e exige aprovação explícita do dispositivo", 
   await tick();
   assert.equal(state.pairings.length, 0);
   assert.match(win.document.getElementById("devicePendingList").textContent, /Nenhum pedido aguardando aprovação/);
+});
+
+
+test("cliente remoto exige pareamento e só libera a interface após aprovação local", async () => {
+  const { win, state, tick } = setup("https://sermax.example.ts.net");
+  await tick();
+  assert.equal(win.document.body.classList.contains("remote-locked"), true);
+  assert.equal(win.document.getElementById("remoteAuthGate").hidden, false);
+
+  win.document.getElementById("remoteDeviceId").value = "android-browser";
+  win.document.getElementById("remotePairingCode").value = "TEMP-CODE";
+  win.document.getElementById("remotePairingForm").dispatchEvent(
+    new win.Event("submit", { bubbles: true, cancelable: true })
+  );
+  await tick();
+  assert.deepEqual(state.remoteReserveCalls, [{device_id:"android-browser",code:"TEMP-CODE"}]);
+  assert.equal(win.document.getElementById("remoteFinalizeButton").disabled, false);
+  assert.match(win.document.getElementById("remoteAuthStatus").textContent, /Aprove este dispositivo/);
+
+  win.document.getElementById("remoteFinalizeButton").click();
+  await tick();
+  assert.match(win.document.getElementById("remoteAuthStatus").textContent, /ainda não foi concluída/);
+  assert.equal(win.document.body.classList.contains("remote-locked"), true);
+
+  state.remoteApproved = true;
+  win.document.getElementById("remoteFinalizeButton").click();
+  await tick();
+  assert.equal(state.remoteSession, true);
+  assert.equal(win.document.body.classList.contains("remote-locked"), false);
+  assert.equal(win.document.getElementById("remoteAuthGate").hidden, true);
 });
