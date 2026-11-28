@@ -63,18 +63,33 @@ class RemoteAccessGuardTests(unittest.TestCase):
         device, credential = self._credential()
         headers = {
             **self.proxy_headers,
-            "x-sermax-device": device,
-            "authorization": "Bearer " + credential,
+            "cookie": f"sermax_device_id={device}; sermax_device_credential={credential}",
         }
         accepted = self.client.get("/api/projects", headers=headers)
         self.assertEqual(accepted.status_code, 200)
+
+    def test_remote_mutations_require_exact_origin(self):
+        headers = {key: value for key, value in self.proxy_headers.items() if key != "origin"}
+        response = self.client.post("/api/device/pairing/reserve", json={
+            "device_id": "phone", "code": "invalid"
+        }, headers=headers)
+        self.assertEqual(response.status_code, 403)
+
+    def test_authenticated_device_session_uses_cookie_identity(self):
+        device, credential = self._credential()
+        headers = {
+            **self.proxy_headers,
+            "cookie": f"sermax_device_id={device}; sermax_device_credential={credential}",
+        }
+        response = self.client.get("/api/device/session", headers=headers)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"authenticated": True, "device_id": device})
 
     def test_remote_admin_routes_remain_forbidden_even_with_valid_credential(self):
         device, credential = self._credential()
         headers = {
             **self.proxy_headers,
-            "x-sermax-device": device,
-            "authorization": "Bearer " + credential,
+            "cookie": f"sermax_device_id={device}; sermax_device_credential={credential}",
         }
         response = self.client.get("/api/local/pairings/pending", headers=headers)
         self.assertEqual(response.status_code, 403)
