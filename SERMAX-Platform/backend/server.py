@@ -27,6 +27,7 @@ from attachment_service import router as attachments_router
 from device_auth import DeviceAuthenticationError, authenticate_device_headers
 from device_pairing_api import create_pairing_router
 from ocr_service import get_ocr_engine_status
+from request_body_limit import RequestBodyLimitMiddleware
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE_DIR = Path(os.environ.get("SERMAX_CORE_DIR", ROOT / "SERMAX-Windows")).resolve()
@@ -283,6 +284,14 @@ async def local_origin_guard(request: Request, call_next):
 
     request.state.sermax_device_id = device_id
     return await call_next(request)
+
+
+# Limita o corpo antes do parser JSON/multipart, inclusive em uploads fragmentados.
+MAX_REQUEST_BODY_BYTES = 12 * 1024 * 1024
+app.add_middleware(
+    RequestBodyLimitMiddleware,
+    max_body_bytes=MAX_REQUEST_BODY_BYTES,
+)
 
 @app.get("/", include_in_schema=False)
 def index():
