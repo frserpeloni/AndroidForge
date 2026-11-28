@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 import server
+import device_pairing_api
 
 
 class DevicePairingApiTests(unittest.TestCase):
@@ -13,6 +14,7 @@ class DevicePairingApiTests(unittest.TestCase):
         server.DATA_DIR = Path(self.temp.name)
         server.DB_PATH = server.DATA_DIR / "platform.sqlite3"
         server.SECURITY_DB_PATH = server.DATA_DIR / "device_security.sqlite3"
+        device_pairing_api.PAIRING_RATE_LIMITER.reset()
         self.client = TestClient(server.app, client=("127.0.0.1", 51000))
         self.headers = {"host": "127.0.0.1:8765"}
 
@@ -75,6 +77,22 @@ class DevicePairingApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 403)
         finally:
             external.close()
+
+    def test_pairing_reservation_endpoint_limits_repeated_attempts(self):
+        for attempt in range(8):
+            response = self.client.post(
+                "/api/device/pairing/reserve",
+                json={"device_id": "android-phone", "code": "invalid-code"},
+                headers=self.headers,
+            )
+            self.assertEqual(response.status_code, 400, msg=f"attempt {attempt + 1}")
+        limited = self.client.post(
+            "/api/device/pairing/reserve",
+            json={"device_id": "android-phone", "code": "invalid-code"},
+            headers=self.headers,
+        )
+        self.assertEqual(limited.status_code, 429)
+        self.assertEqual(limited.headers.get("retry-after"), "60")
 
     def test_invalid_pairing_code_does_not_create_reservation(self):
         response = self.client.post(
