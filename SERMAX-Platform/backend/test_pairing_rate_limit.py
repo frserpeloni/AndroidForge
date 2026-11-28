@@ -1,7 +1,7 @@
 """Testes do limitador de janela deslizante."""
 import unittest
 
-from pairing_rate_limit import SlidingWindowRateLimiter
+from pairing_rate_limit import SlidingWindowRateLimiter, SQLiteSlidingWindowRateLimiter
 
 
 class SlidingWindowRateLimiterTests(unittest.TestCase):
@@ -37,6 +37,37 @@ class SlidingWindowRateLimiterTests(unittest.TestCase):
         self.assertTrue(limiter.allow("peer-a"))
         limiter.reset()
         self.assertTrue(limiter.allow("peer-a"))
+
+
+    def test_sqlite_limiter_persists_across_instances_and_expires(self):
+        import tempfile
+        from pathlib import Path
+
+        now = [100.0]
+        with tempfile.TemporaryDirectory() as folder:
+            db = str(Path(folder) / "security.sqlite3")
+            first = SQLiteSlidingWindowRateLimiter(
+                limit=2, window_seconds=10, clock=lambda: now[0]
+            )
+            second = SQLiteSlidingWindowRateLimiter(
+                limit=2, window_seconds=10, clock=lambda: now[0]
+            )
+            self.assertTrue(first.allow("reserve:proxy", db))
+            self.assertTrue(second.allow("reserve:proxy", db))
+            self.assertFalse(first.allow("reserve:proxy", db))
+            now[0] = 110.1
+            self.assertTrue(second.allow("reserve:proxy", db))
+
+    def test_sqlite_limiter_keeps_operation_buckets_separate(self):
+        import tempfile
+        from pathlib import Path
+
+        with tempfile.TemporaryDirectory() as folder:
+            db = str(Path(folder) / "security.sqlite3")
+            limiter = SQLiteSlidingWindowRateLimiter(limit=1, clock=lambda: 100.0)
+            self.assertTrue(limiter.allow("reserve:proxy", db))
+            self.assertTrue(limiter.allow("finalize:proxy", db))
+            self.assertFalse(limiter.allow("reserve:proxy", db))
 
 
 if __name__ == "__main__":
