@@ -170,5 +170,35 @@ class TestFeedbackNeural(unittest.TestCase):
         self.assertIn("Falha no feedback", result["reason"])
 
 
+class TestPlannerCommand(unittest.TestCase):
+    def test_plano_preserves_original_case_and_accents_with_leading_spaces(self):
+        from unittest.mock import patch
+
+        objective = "Organizar o Estoque da Tiger Auto Peças"
+        with patch.object(
+            core.sermax_planejador, "planejar", return_value="plano recebido"
+        ) as planner:
+            result = core.responder_comando_local("   /PLANO   " + objective)
+
+        self.assertEqual(result, "plano recebido")
+        planner.assert_called_once_with(
+            objective, modelo=core.MODELO, url=core.OLLAMA_URL
+        )
+
+    def test_planejar_alias_preserves_original_objective(self):
+        from unittest.mock import patch
+
+        objective = "Revisar Memória do Fiat Siena"
+        with patch.object(
+            core.sermax_planejador, "planejar", return_value="plano recebido"
+        ) as planner:
+            result = core.responder_comando_local("/planejar " + objective)
+
+        self.assertEqual(result, "plano recebido")
+        planner.assert_called_once_with(
+            objective, modelo=core.MODELO, url=core.OLLAMA_URL
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
