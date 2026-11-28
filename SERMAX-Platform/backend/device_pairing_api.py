@@ -1,9 +1,8 @@
 """Rotas de pareamento de dispositivos SERMAX.
 
 As rotas administrativas dependem do middleware local da API. As rotas de
-reserva e finalização são preparadas para o futuro cliente remoto, mas continuam
-inacessíveis externamente enquanto o middleware da Plataforma estiver em modo
-loopback-only.
+reserva e finalização aceitam o primeiro vínculo remoto somente quando a política
+de proxy confiável estiver habilitada. Essa política permanece desligada por padrão.
 """
 from __future__ import annotations
 
